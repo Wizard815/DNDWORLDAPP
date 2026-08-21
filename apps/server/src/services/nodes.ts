@@ -1,0 +1,395 @@
+import type {
+  Backlink,
+  CreateNodeInput,
+  MoveNodeInput,
+  NodeDetail,
+  NodeSummary,
+  SearchHit,
+  UnresolvedLink,
+  UpdateNodeInput,
+} from "@dndworldapp/schema";
+import { db, transaction } from "../db/index.ts";
+import type { NodeRow } from "../db/types.ts";
+import { canEdit, visibilitySqlFor } from "../auth/policy.ts";
+import type { Viewer } from "../auth/viewer.ts";
+import { badRequest, forbidden, notFound } from "../lib/errors.ts";
+import { shortId } from "../lib/id.ts";
+import { keyAfterAll, keyBetween } from "../lib/sortkey.ts";
+import { slugify, uniqueSlug } from "../lib/slug.ts";
+import { linkKey, parseWikilinks } from "../lib/wikilinks.ts";
+
+// ---------------------------------------------------------------------------
+// Statements
+// ---------------------------------------------------------------------------
+
+const selectNode = db.prepare("SELECT * FROM nodes WHERE id = ?");
+const slugTaken = db.prepare("SELECT 1 FROM nodes WHERE world_id = ? AND slug = ?");
+const insertNode = db.prepare(`
+  INSERT INTO nodes (id, world_id, parent_id, template_id, kind, title, slug, body_md, icon,
+                     sort_key, visibility, created_by, created_at, updated_at)
+  VALUES (@id, @worldId, @parentId, @templateId, @kind, @title, @slug, @bodyMd, @icon,
+          @sortKey, @visibility, @createdBy, @now, @now)
+`);
+const siblingKeys = db.prepare(
+  "SELECT sort_key FROM nodes WHERE world_id = ? AND parent_id IS ? AND id IS NOT ?",
+);
+const deleteLinksFrom = db.prepare("DELETE FROM links WHERE src_node_id = ?");
+const insertLink = db.prepare(`
+  INSERT INTO links (id, world_id, src_node_id, dst_node_id, target_text, label, kind, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, 'wikilink', ?)
+`);
+const findByTitleOrSlug = db.prepare(
+  "SELECT id FROM nodes WHERE world_id = ? AND (lower(title) = ? OR slug = ?) LIMIT 1",
+);
+const resolvePending = db.prepare(`
+  UPDATE links SET dst_node_id = ?
+  WHERE world_id = ? AND dst_node_id IS NULL AND (lower(target_text) = ? OR lower(target_text) = ?)
+`);
+const unresolveStale = db.prepare(`
+  UPDATE links SET dst_node_id = NULL
+  WHERE dst_node_id = ? AND lower(target_text) NOT IN (?, ?)
+`);
+
+// ---------------------------------------------------------------------------
+// Reads
+// ---------------------------------------------------------------------------
+
+function rowToSummary(row: NodeRow & { child_count?: number }): NodeSummary {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    title: row.title,
+    slug: row.slug,
+    icon: row.icon,
+    kind: row.kind,
+    visibility: row.visibility,
+    sortKey: row.sort_key,
+    childCount: row.child_count ?? 0,
+    isArchived: row.is_archived === 1,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * The whole visible tree in one query. At campaign scale (thousands of nodes)
+ * this is far cheaper than lazy-loading each level, and it lets the client do
+ * instant filtering and quick-switching without another round trip.
+ */
+export function getTree(worldId: string, viewer: Viewer): NodeSummary[] {
+  const outer = visibilitySqlFor(viewer.role, viewer.userId, "n.visibility", "n.created_by");
+  const inner = visibilitySqlFor(viewer.role, viewer.userId, "c.visibility", "c.created_by");
+
+  const sql = `
+    SELECT n.*,
+           (SELECT COUNT(*) FROM nodes c
+             WHERE c.parent_id = n.id AND c.is_archived = 0 AND ${inner.sql}) AS child_count
+    FROM nodes n
+    WHERE n.world_id = ? AND n.is_archived = 0 AND ${outer.sql}
+    ORDER BY n.sort_key
+  `;
+  const rows = db.prepare(sql).all(...inner.params, worldId, ...outer.params) as Array<
+    NodeRow & { child_count: number }
+  >;
+  return rows.map(rowToSummary);
+}
+
+export function getNodeRow(nodeId: string): NodeRow | null {
+  return (selectNode.get(nodeId) as NodeRow | undefined) ?? null;
+}
+
+/**
+ * Fetch a node the viewer is allowed to see. A hidden node is reported as "not
+ * found" rather than "forbidden", so probing ids cannot enumerate DM content.
+ */
+export function requireVisibleNode(nodeId: string, viewer: Viewer): NodeRow {
+  const row = getNodeRow(nodeId);
+  if (row === null) throw notFound("No such node.");
+  const vis = visibilitySqlFor(viewer.role, viewer.userId);
+  const allowed = db
+    .prepare(`SELECT 1 FROM nodes WHERE id = ? AND ${vis.sql}`)
+    .get(nodeId, ...vis.params);
+  if (allowed === undefined) throw notFound("No such node.");
+  return row;
+}
+
+export function getNodeDetail(nodeId: string, viewer: Viewer): NodeDetail {
+  const row = requireVisibleNode(nodeId, viewer);
+  const outer = visibilitySqlFor(viewer.role, viewer.userId, "n.visibility", "n.created_by");
+  const inner = visibilitySqlFor(viewer.role, viewer.userId, "c.visibility", "c.created_by");
+
+  const children = db
+    .prepare(
+      `SELECT n.*,
+              (SELECT COUNT(*) FROM nodes c
+                WHERE c.parent_id = n.id AND c.is_archived = 0 AND ${inner.sql}) AS child_count
+       FROM nodes n
+       WHERE n.parent_id = ? AND n.is_archived = 0 AND ${outer.sql}
+       ORDER BY n.sort_key`,
+    )
+    .all(...inner.params, nodeId, ...outer.params) as Array<NodeRow & { child_count: number }>;
+
+  return {
+    ...rowToSummary(row),
+    worldId: row.world_id,
+    bodyMd: row.body_md,
+    templateId: row.template_id,
+    breadcrumb: breadcrumbFor(row),
+    children: children.map(rowToSummary),
+    backlinks: backlinksFor(nodeId, viewer),
+    canEdit: canEdit(viewer.role, row.created_by, viewer.userId),
+  };
+}
+
+/** Walks parents to the root. The URL is flat, so the path is reconstructed here. */
+export function breadcrumbFor(row: NodeRow): Array<{ id: string; title: string; icon: string | null }> {
+  const trail: Array<{ id: string; title: string; icon: string | null }> = [];
+  let current = row.parent_id;
+  const guard = new Set<string>([row.id]);
+
+  while (current !== null && !guard.has(current)) {
+    guard.add(current);
+    const parent = getNodeRow(current);
+    if (parent === null) break;
+    trail.unshift({ id: parent.id, title: parent.title, icon: parent.icon });
+    current = parent.parent_id;
+  }
+  return trail;
+}
+
+export function backlinksFor(nodeId: string, viewer: Viewer): Backlink[] {
+  const vis = visibilitySqlFor(viewer.role, viewer.userId, "n.visibility", "n.created_by");
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT n.id, n.title, n.icon, l.label
+       FROM links l JOIN nodes n ON n.id = l.src_node_id
+       WHERE l.dst_node_id = ? AND n.is_archived = 0 AND ${vis.sql}
+       ORDER BY n.title`,
+    )
+    .all(nodeId, ...vis.params) as Array<{
+    id: string;
+    title: string;
+    icon: string | null;
+    label: string | null;
+  }>;
+
+  return rows.map((r) => ({ nodeId: r.id, title: r.title, icon: r.icon, label: r.label }));
+}
+
+/** Wiki links pointing at pages that do not exist yet — a to-do list, not an error. */
+export function unresolvedLinks(worldId: string): UnresolvedLink[] {
+  const rows = db
+    .prepare(
+      `SELECT target_text, COUNT(*) AS count FROM links
+       WHERE world_id = ? AND dst_node_id IS NULL
+       GROUP BY lower(target_text) ORDER BY count DESC, target_text LIMIT 200`,
+    )
+    .all(worldId) as Array<{ target_text: string; count: number }>;
+  return rows.map((r) => ({ targetText: r.target_text, count: r.count }));
+}
+
+export function searchNodes(
+  worldId: string,
+  viewer: Viewer,
+  query: string,
+  limit: number,
+): SearchHit[] {
+  const tokens = query
+    .split(/\s+/)
+    .map((t) => t.replace(/["*]/g, "").trim())
+    .filter((t) => t.length > 0);
+  if (tokens.length === 0) return [];
+  const match = tokens.map((t) => `"${t}"*`).join(" ");
+
+  const vis = visibilitySqlFor(viewer.role, viewer.userId, "n.visibility", "n.created_by");
+  const rows = db
+    .prepare(
+      `SELECT f.node_id, n.title, n.icon,
+              snippet(nodes_fts, 3, '<mark>', '</mark>', '…', 14) AS snippet
+       FROM nodes_fts f JOIN nodes n ON n.id = f.node_id
+       WHERE nodes_fts MATCH ? AND f.world_id = ? AND n.is_archived = 0 AND ${vis.sql}
+       ORDER BY f.rank LIMIT ?`,
+    )
+    .all(match, worldId, ...vis.params, limit) as Array<{
+    node_id: string;
+    title: string;
+    icon: string | null;
+    snippet: string;
+  }>;
+
+  return rows.map((r) => ({
+    nodeId: r.node_id,
+    title: r.title,
+    icon: r.icon,
+    snippet: r.snippet,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Links
+// ---------------------------------------------------------------------------
+
+function reindexLinks(row: NodeRow): void {
+  deleteLinksFrom.run(row.id);
+  const now = Date.now();
+  for (const link of parseWikilinks(row.body_md)) {
+    const key = linkKey(link.target);
+    const target = findByTitleOrSlug.get(row.world_id, key, slugify(link.target)) as
+      | { id: string }
+      | undefined;
+    insertLink.run(shortId(12), row.world_id, row.id, target?.id ?? null, link.target, link.label, now);
+  }
+}
+
+/** After a create or rename, adopt links that were waiting for this title. */
+function resettleLinksFor(row: NodeRow): void {
+  const title = linkKey(row.title);
+  resolvePending.run(row.id, row.world_id, title, row.slug);
+  unresolveStale.run(row.id, title, row.slug);
+}
+
+// ---------------------------------------------------------------------------
+// Writes
+// ---------------------------------------------------------------------------
+
+function nextSortKey(worldId: string, parentId: string | null, excludeId: string | null): string {
+  const rows = siblingKeys.all(worldId, parentId, excludeId) as Array<{ sort_key: string }>;
+  return keyAfterAll(rows.map((r) => r.sort_key));
+}
+
+export function createNode(worldId: string, viewer: Viewer, input: CreateNodeInput): NodeRow {
+  const parentId = input.parentId ?? null;
+  if (parentId !== null) {
+    const parent = requireVisibleNode(parentId, viewer);
+    if (parent.world_id !== worldId) throw badRequest("Parent belongs to a different world.");
+  }
+
+  const id = shortId();
+  const title = input.title.trim().length > 0 ? input.title.trim() : "Untitled";
+  const now = Date.now();
+
+  const row = transaction((): NodeRow => {
+    insertNode.run({
+      id,
+      worldId,
+      parentId,
+      templateId: input.templateId ?? null,
+      kind: input.kind ?? "document",
+      title,
+      slug: uniqueSlug(title, (s) => slugTaken.get(worldId, s) !== undefined),
+      bodyMd: input.bodyMd ?? "",
+      icon: input.icon ?? null,
+      sortKey: nextSortKey(worldId, parentId, null),
+      visibility: input.visibility ?? "members",
+      createdBy: viewer.userId,
+      now,
+    });
+    const created = selectNode.get(id) as NodeRow;
+    reindexLinks(created);
+    resettleLinksFor(created);
+    return created;
+  });
+
+  return row;
+}
+
+export function updateNode(nodeId: string, viewer: Viewer, input: UpdateNodeInput): NodeRow {
+  const existing = requireVisibleNode(nodeId, viewer);
+  if (!canEdit(viewer.role, existing.created_by, viewer.userId)) {
+    throw forbidden("You cannot edit this page.");
+  }
+
+  const title = input.title?.trim();
+  const renaming = title !== undefined && title.length > 0 && title !== existing.title;
+  const slug = renaming
+    ? uniqueSlug(title, (s) => s !== existing.slug && slugTaken.get(existing.world_id, s) !== undefined)
+    : existing.slug;
+
+  return transaction((): NodeRow => {
+    db.prepare(
+      `UPDATE nodes SET title = ?, slug = ?, body_md = ?, icon = ?, visibility = ?,
+                        template_id = ?, is_archived = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(
+      renaming ? title : existing.title,
+      slug,
+      input.bodyMd ?? existing.body_md,
+      input.icon !== undefined ? input.icon : existing.icon,
+      input.visibility ?? existing.visibility,
+      input.templateId !== undefined ? input.templateId : existing.template_id,
+      input.isArchived !== undefined ? (input.isArchived ? 1 : 0) : existing.is_archived,
+      Date.now(),
+      nodeId,
+    );
+
+    const updated = selectNode.get(nodeId) as NodeRow;
+    if (input.bodyMd !== undefined) reindexLinks(updated);
+    if (renaming) resettleLinksFor(updated);
+    return updated;
+  });
+}
+
+/** True when `candidateParent` is `nodeId` itself or sits beneath it. */
+function wouldCycle(nodeId: string, candidateParent: string | null): boolean {
+  let current = candidateParent;
+  const seen = new Set<string>();
+  while (current !== null) {
+    if (current === nodeId) return true;
+    if (seen.has(current)) return true;
+    seen.add(current);
+    current = getNodeRow(current)?.parent_id ?? null;
+  }
+  return false;
+}
+
+export function moveNode(nodeId: string, viewer: Viewer, input: MoveNodeInput): NodeRow {
+  const node = requireVisibleNode(nodeId, viewer);
+  if (!canEdit(viewer.role, node.created_by, viewer.userId)) {
+    throw forbidden("You cannot move this page.");
+  }
+
+  const parentId = input.parentId;
+  if (parentId !== null) {
+    const parent = requireVisibleNode(parentId, viewer);
+    if (parent.world_id !== node.world_id) throw badRequest("Cannot move between worlds.");
+  }
+  if (wouldCycle(nodeId, parentId)) {
+    throw badRequest("A page cannot be moved inside itself.");
+  }
+
+  const neighbourKey = (id: string | null | undefined): string | null => {
+    if (id === null || id === undefined) return null;
+    const sibling = getNodeRow(id);
+    if (sibling === null) throw badRequest("Unknown sibling.");
+    if (sibling.parent_id !== parentId) throw badRequest("Sibling is not under the target parent.");
+    return sibling.sort_key;
+  };
+
+  const after = neighbourKey(input.afterId);
+  const before = neighbourKey(input.beforeId);
+  const sortKey =
+    after === null && before === null
+      ? nextSortKey(node.world_id, parentId, nodeId)
+      : keyBetween(after, before);
+
+  db.prepare("UPDATE nodes SET parent_id = ?, sort_key = ?, updated_at = ? WHERE id = ?").run(
+    parentId,
+    sortKey,
+    Date.now(),
+    nodeId,
+  );
+  return selectNode.get(nodeId) as NodeRow;
+}
+
+/** Archive rather than delete; children go with it. */
+export function archiveNode(nodeId: string, viewer: Viewer): void {
+  const node = requireVisibleNode(nodeId, viewer);
+  if (!canEdit(viewer.role, node.created_by, viewer.userId)) {
+    throw forbidden("You cannot archive this page.");
+  }
+  db.prepare(
+    `WITH RECURSIVE subtree(id) AS (
+       SELECT ? UNION ALL SELECT n.id FROM nodes n JOIN subtree s ON n.parent_id = s.id
+     )
+     UPDATE nodes SET is_archived = 1, updated_at = ? WHERE id IN (SELECT id FROM subtree)`,
+  ).run(nodeId, Date.now());
+}

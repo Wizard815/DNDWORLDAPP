@@ -1,0 +1,25 @@
+{
+  "name": "dndworldapp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w @dndworldapp/server",
+    "dev:web": "npm run dev -w @dndworldapp/web",
+    "build": "npm run build -w @dndworldapp/web",
+    "start": "node apps/server/src/index.ts",
+    "test": "npm run test -w @dndworldapp/server",
+    "typecheck": "tsc -p apps/server/tsconfig.json && tsc -p apps/web/tsconfig.json",
+    "smoke": "npm run smoke -w @dndworldapp/server"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

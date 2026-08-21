@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: #17181b;
+  color: #d7d8dc;
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Wiki links: an existing page reads as a link, a missing one as a to-do. */
+.wikilink {
+  color: #9db8ff;
+  text-decoration: none;
+  border-bottom: 1px solid rgb(157 184 255 / 30%);
+}
+.wikilink:hover {
+  border-bottom-color: #9db8ff;
+}
+.wikilink-missing {
+  color: #c98b8b;
+  border-bottom: 1px dashed rgb(201 139 139 / 50%);
+}
+
+.prose-body {
+  line-height: 1.65;
+}
+.prose-body h1,
+.prose-body h2,
+.prose-body h3 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.4em 0 0.5em;
+  color: #f0f1f4;
+}
+.prose-body h1 {
+  font-size: 1.6rem;
+}
+.prose-body h2 {
+  font-size: 1.3rem;
+}
+.prose-body h3 {
+  font-size: 1.1rem;
+}
+.prose-body p {
+  margin: 0.75em 0;
+}
+.prose-body ul,
+.prose-body ol {
+  margin: 0.75em 0;
+  padding-left: 1.4em;
+}
+.prose-body ul {
+  list-style: disc;
+}
+.prose-body ol {
+  list-style: decimal;
+}
+.prose-body blockquote {
+  border-left: 3px solid #3a3d44;
+  margin: 1em 0;
+  padding-left: 1em;
+  color: #a7a9b0;
+}
+.prose-body code {
+  background: #24262b;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.prose-body pre {
+  background: #1d1f23;
+  padding: 0.9em;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.prose-body pre code {
+  background: none;
+  padding: 0;
+}
+.prose-body table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  display: block;
+  overflow-x: auto;
+}
+.prose-body th,
+.prose-body td {
+  border: 1px solid #33363d;
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+.prose-body mark {
+  background: #4a4526;
+  color: #f4edcc;
+}
+.prose-body img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+.prose-body a {
+  color: #9db8ff;
+}
+.prose-body hr {
+  border: 0;
+  border-top: 1px solid #2e3138;
+  margin: 1.5em 0;
+}
+
+/* Drop indicators while dragging a page in the tree. */
+.drop-into {
+  background: rgb(157 184 255 / 12%);
+  outline: 1px solid rgb(157 184 255 / 40%);
+}
+.drop-before {
+  box-shadow: inset 0 2px 0 0 #9db8ff;
+}
+.drop-after {
+  box-shadow: inset 0 -2px 0 0 #9db8ff;
+}
+
+textarea {
+  field-sizing: content;
+}

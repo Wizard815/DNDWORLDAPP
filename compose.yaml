@@ -1,0 +1,24 @@
+services:
+  dndworldapp:
+    build: .
+    image: dndworldapp:latest
+    container_name: dndworldapp
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Public URL. Set this to however you actually reach the app — it decides
+      # whether session cookies are marked secure.
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      # Required. Generate once with:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in a .env file next to compose.yaml}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      # A named volume, so the database is owned by the container's node user.
+      # To back up:  docker run --rm -v dndworldapp-data:/data -v "$PWD:/out" \
+      #                busybox tar czf /out/dndworldapp-backup.tgz -C /data .
+      - dndworldapp-data:/data
+
+volumes:
+  dndworldapp-data:
