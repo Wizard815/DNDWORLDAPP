@@ -202,6 +202,47 @@ export interface SearchHit {
 }
 
 // ---------------------------------------------------------------------------
+// API tokens
+// ---------------------------------------------------------------------------
+
+/**
+ * Scopes only narrow what the token's owner can already do — they never grant.
+ * `world:read`   GET requests
+ * `world:write`  everything that changes data
+ * `admin`        accounts and membership management
+ */
+export const SCOPES = ["world:read", "world:write", "admin"] as const;
+export type Scope = (typeof SCOPES)[number];
+export const scopeSchema = z.enum(SCOPES);
+
+export const createTokenInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  /** Pin the token to one world. Omit for every world the owner belongs to. */
+  worldId: z.string().nullable().optional(),
+  scopes: z.array(scopeSchema).min(1).default(["world:read"]),
+  expiresInDays: z.number().int().min(1).max(3650).nullable().optional(),
+});
+export type CreateTokenInput = z.infer<typeof createTokenInputSchema>;
+
+export interface TokenDto {
+  id: string;
+  name: string;
+  worldId: string | null;
+  scopes: Scope[];
+  prefix: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  expiresAt: number | null;
+  revokedAt: number | null;
+}
+
+/** Returned once, at creation. The plaintext is never stored or shown again. */
+export interface CreatedTokenDto {
+  token: TokenDto;
+  secret: string;
+}
+
+// ---------------------------------------------------------------------------
 // Assets
 // ---------------------------------------------------------------------------
 

@@ -56,14 +56,17 @@ uploaded images. Backup is a copy of that directory.
   location can carry a DM-only briefing, and the hidden text never leaves the server.
 - **Search.** SQLite FTS5, prefix matching, ranked snippets, Ctrl+K quick switcher.
 - **Images.** Content-addressed uploads.
-- **One API.** The client uses only `/api/v1` — no private routes — which is what will
-  keep the API complete enough for MCP in P1.
+- **One API.** The client uses only `/api/v1` — no private routes — which is what keeps
+  the API complete enough for MCP.
+- **Scoped API tokens.** Bearer tokens for scripts and the MCP server, pinnable to one
+  world, with read / write / admin scopes. Mint them from the sidebar footer. A token
+  acts as you and inherits your role; scopes only ever narrow that.
 
 ## What does not exist yet
 
 Maps, calendars, timelines, templates and typed fields, query views, boards, statblocks,
-the API tokens, the MCP server, and the Kanka importer. Those are P1–P6 in the plan, in
-that order.
+OpenAPI, the MCP server, and the Kanka importer. Those are the rest of P1 through P6 in
+the plan, in that order.
 
 ## Layout
 

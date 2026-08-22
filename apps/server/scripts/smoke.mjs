@@ -157,6 +157,81 @@ check("player cannot edit a DM-authored page", playerEdit.status === 403, player
 const playerSearch = (await player("GET", `/worlds/${worldId}/search?q=Crimson`)).body.hits;
 check("DM-only content does not leak through search", playerSearch.length === 0, playerSearch);
 
+console.log("\n== API tokens ==");
+
+function bearer(secret) {
+  return async function call(method, path, body) {
+    const headers = { authorization: `Bearer ${secret}` };
+    if (body !== undefined) headers["content-type"] = "application/json";
+    const res = await fetch(`${BASE}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await res.text();
+    let json;
+    try {
+      json = text.length > 0 ? JSON.parse(text) : null;
+    } catch {
+      json = text;
+    }
+    return { status: res.status, body: json };
+  };
+}
+
+const scratch = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Token Test Page", parentId: rootId })).body.node;
+
+const readTokenRes = await dm("POST", "/tokens", {
+  name: "read only",
+  worldId,
+  scopes: ["world:read"],
+});
+check("token created", readTokenRes.status === 201 && typeof readTokenRes.body.secret === "string", readTokenRes.body);
+check("secret is only returned at creation", !JSON.stringify(readTokenRes.body.token).includes(readTokenRes.body.secret ?? "x"), readTokenRes.body.token);
+const readApi = bearer(readTokenRes.body.secret);
+
+const tokenTree = await readApi("GET", `/worlds/${worldId}/tree`);
+check("read token can read", tokenTree.status === 200 && Array.isArray(tokenTree.body.nodes), tokenTree.status);
+
+const tokenWrite = await readApi("PATCH", `/nodes/${scratch.id}`, { title: "Should Not Happen" });
+check("read token cannot write", tokenWrite.status === 403, tokenWrite.body);
+
+const writeTokenRes = await dm("POST", "/tokens", {
+  name: "read write",
+  worldId,
+  scopes: ["world:write"],
+});
+const writeApi = bearer(writeTokenRes.body.secret);
+const wrote = await writeApi("PATCH", `/nodes/${scratch.id}`, { title: "Written By Token" });
+check("write token can write", wrote.status === 200, wrote.body);
+const writeRead = await writeApi("GET", `/nodes/${scratch.id}`);
+check("world:write implies world:read", writeRead.status === 200, writeRead.status);
+
+const tokenMembers = await writeApi("POST", `/worlds/${worldId}/members`, {
+  email: "player@example.com",
+  role: "dm",
+});
+check("token without admin scope cannot change membership", tokenMembers.status === 403, tokenMembers.body);
+
+const tokenListsTokens = await writeApi("GET", "/tokens");
+check("a token cannot manage tokens", tokenListsTokens.status === 403, tokenListsTokens.body);
+
+const secondWorld = (await dm("POST", "/worlds", { name: "Some Other World" })).body.world;
+const crossWorld = await writeApi("GET", `/worlds/${secondWorld.id}/tree`);
+check("world-pinned token cannot reach another world", crossWorld.status === 404, crossWorld.body);
+
+const listed = await dm("GET", "/tokens");
+check("tokens are listed for their owner", listed.body.tokens.length === 2, listed.body.tokens.length);
+check("stored token shows only a prefix", listed.body.tokens.every((t) => t.prefix.startsWith("dwa_") && t.prefix.length < 20), listed.body.tokens);
+
+const revoked = await dm("DELETE", `/tokens/${writeTokenRes.body.token.id}`);
+check("token revoked", revoked.status === 200, revoked.body);
+const afterRevoke = await writeApi("GET", `/worlds/${worldId}/tree`);
+check("revoked token stops working", afterRevoke.status === 401, afterRevoke.status);
+
+const garbage = await bearer("dwa_not-a-real-token")("GET", `/worlds/${worldId}/tree`);
+check("unknown token is rejected", garbage.status === 401, garbage.status);
+
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);
 check("archive succeeds", archived.status === 200, archived.body);

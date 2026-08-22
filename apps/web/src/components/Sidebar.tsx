@@ -21,6 +21,7 @@ interface Props {
   onCreate: (parentId: string | null) => void;
   onMove: (nodeId: string, input: MoveNodeInput) => void;
   onOpenSwitcher: () => void;
+  onOpenTokens: () => void;
   onSignOut: () => void;
 }
 
@@ -57,6 +58,7 @@ export function Sidebar({
   onCreate,
   onMove,
   onOpenSwitcher,
+  onOpenTokens,
   onSignOut,
 }: Props) {
   const [filter, setFilter] = useState("");
@@ -251,6 +253,13 @@ export function Sidebar({
           className="w-full rounded px-2 py-1.5 text-left text-xs text-[#8d9099] hover:bg-[#232529] hover:text-[#d7d8dc]"
         >
           + New top-level page
+        </button>
+        <button
+          type="button"
+          onClick={onOpenTokens}
+          className="w-full rounded px-2 py-1.5 text-left text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+        >
+          API tokens
         </button>
         <button
           type="button"

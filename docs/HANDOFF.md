@@ -46,11 +46,11 @@ If you are about to add a table called `characters`, or a nav section called
 
 ## 3. Current status
 
-**P0 is complete, verified, and runs.** Nothing else is started.
+**P0 is complete. P1.1 (API tokens) is complete.** Next up is P1.2, OpenAPI.
 
 Verified by:
 - `npm test` — 10 unit tests (fractional indexing, wiki-link parsing). All pass.
-- `npm run smoke` — 30 end-to-end API checks against a running server. All pass.
+- `npm run smoke` — 45 end-to-end API checks against a running server. All pass.
 - `npm run typecheck` — clean on both server and web.
 - `npm run build` — client builds.
 - Driven by hand in a browser: login → tree → page → posts → rendered wiki links.
@@ -71,11 +71,12 @@ Verified by:
 - FTS5 search with ranked snippets; Ctrl+K quick switcher
 - Content-addressed image upload
 - Dockerfile + compose, one image, one `/data` volume
+- **Scoped bearer tokens** (P1.1) with a management UI — see §7.1
 
 ### Not started
 
 Maps, calendars, timelines, templates and typed fields, the query/view engine, boards,
-statblocks, initiative, API tokens, the MCP server, the Kanka importer, realtime.
+statblocks, initiative, OpenAPI, the MCP server, the Kanka importer, realtime.
 
 ---
 
@@ -254,9 +255,48 @@ POST   /nodes/:nodeId/posts
 PATCH  /posts/:postId
 DELETE /posts/:postId
 
+GET    /tokens                              your tokens (session only)
+POST   /tokens                              { name, worldId?, scopes[], expiresInDays? }
+                                            -> { token, secret } — secret shown once
+DELETE /tokens/:tokenId                     revoke
+
 GET    /healthz                             outside /api, used by the Docker healthcheck
 GET    /media/<sha-prefix>/<sha><ext>        uploaded files (NOT /assets — see 8.2)
 ```
+
+### 7.1 Bearer tokens
+
+`Authorization: Bearer dwa_<64 hex>` works anywhere the session cookie does. Resolved in
+`auth/tokens.ts`, wired into `http/context.ts::attachUser`.
+
+**A token acts as its owner and inherits that user's role per world.** Scopes and the
+optional world binding only ever *narrow* what the owner could already do — a token can
+never grant more than the person holding it has. The visibility rules in §6.1 still apply
+underneath, unchanged.
+
+Scopes are hierarchical: `admin` ⊃ `world:write` ⊃ `world:read`.
+
+Enforcement is a single `preHandler` hook in `index.ts`, not per-route:
+
+| Request | Scope needed |
+|---|---|
+| `GET` / `HEAD` under `/api/v1/` | `world:read` |
+| anything else | `world:write` |
+| `/api/v1/users*`, any path containing `/members` | `admin` |
+| `/api/v1/tokens*` | **refused outright** for token auth |
+
+That last row matters: a token that could mint tokens would be an escalation path around
+its own scopes, world binding and expiry. Token management is session-only, by design.
+
+Other properties worth preserving:
+- Only the sha256 is stored. The plaintext is returned once at creation, never again.
+- A world-pinned token answers **404** for other worlds, not 403 — same reasoning as §6.1.
+- Revoked and expired tokens fail as **401**, not 403.
+- `last_used_at` is throttled to one write per minute, so reads stay reads.
+
+The UI is `apps/web/src/components/Tokens.tsx`, reached from the sidebar footer. Use it
+to mint the token the MCP server will hold — pin it to one world and give it
+`world:write`.
 
 ---
 
@@ -317,15 +357,10 @@ P1 is **API tokens + MCP server + the Kanka import**, in that order. It comes be
 and calendars on purpose: retrofitting an API is misery, and once the MCP server exists
 every later phase becomes scriptable and testable.
 
-### 9.1 API tokens
+### 9.1 API tokens — DONE
 
-- Migration `0002`: `api_tokens (id, user_id, world_id NULL, name, hash, scopes,
-  created_at, last_used_at, revoked_at)`. Store the sha256, never the token.
-- Accept `Authorization: Bearer <token>` alongside the session cookie. Do it in
-  `http/context.ts::attachUser` so every route gets it for free.
-- Scopes: `world:read`, `world:write`, `admin`. Enforce in one place next to `policy.ts`.
-- UI: a token list per world, create → show once → never again.
-- Update `smoke.mjs` to exercise a token-authenticated request.
+Migration `0002_api_tokens.sql`, `auth/tokens.ts`, `routes/tokens.ts`, the scope hook in
+`index.ts`, and `components/Tokens.tsx`. 14 smoke checks cover it. Details in §7.1.
 
 ### 9.2 OpenAPI
 

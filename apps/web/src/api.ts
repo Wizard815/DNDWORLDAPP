@@ -2,11 +2,14 @@ import type {
   AssetDto,
   Backlink,
   CreateNodeInput,
+  CreateTokenInput,
+  CreatedTokenDto,
   MoveNodeInput,
   NodeDetail,
   NodeSummary,
   PostDto,
   SearchHit,
+  TokenDto,
   UpdateNodeInput,
   UserDto,
   Visibility,
@@ -110,6 +113,14 @@ export const api = {
 
   deletePost: (postId: string) => request<{ ok: true }>(`/posts/${postId}`, { method: "DELETE" }),
 
+  tokens: () => request<{ tokens: TokenDto[] }>("/tokens"),
+
+  createToken: (input: CreateTokenInput) =>
+    request<CreatedTokenDto>("/tokens", { method: "POST", ...json(input) }),
+
+  revokeToken: (tokenId: string) =>
+    request<{ ok: true }>(`/tokens/${tokenId}`, { method: "DELETE" }),
+
   uploadAsset: async (worldId: string, file: File): Promise<AssetDto> => {
     const form = new FormData();
     form.append("file", file);
@@ -123,4 +134,4 @@ export const api = {
   },
 };
 
-export type { Backlink, NodeDetail, NodeSummary, PostDto, SearchHit, UserDto, WorldDto };
+export type { Backlink, NodeDetail, NodeSummary, PostDto, SearchHit, TokenDto, UserDto, WorldDto };

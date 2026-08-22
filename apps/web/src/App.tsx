@@ -6,12 +6,14 @@ import { AuthScreen } from "./components/Auth.tsx";
 import { Backlinks, NodeView } from "./components/NodeView.tsx";
 import { QuickSwitcher } from "./components/QuickSwitcher.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
+import { Tokens } from "./components/Tokens.tsx";
 import { navigate, nodeIdFromPath, usePath } from "./lib/nav.ts";
 
 export function App() {
   const queryClient = useQueryClient();
   const path = usePath();
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [tokensOpen, setTokensOpen] = useState(false);
 
   const session = useQuery({
     queryKey: ["me"],
@@ -121,6 +123,7 @@ export function App() {
         onCreate={(parentId) => createNode.mutate({ parentId })}
         onMove={(nodeId, input) => moveNode.mutate({ nodeId, input })}
         onOpenSwitcher={() => setSwitcherOpen(true)}
+        onOpenTokens={() => setTokensOpen(true)}
         onSignOut={() => {
           void api.logout().then(() => queryClient.invalidateQueries());
         }}
@@ -144,6 +147,10 @@ export function App() {
         <div className="flex-1 p-8 text-sm text-[#7a7d86]">
           {node.isError ? "That page is not available." : "Pick a page."}
         </div>
+      )}
+
+      {tokensOpen && (
+        <Tokens worldId={world.id} worldName={world.name} onClose={() => setTokensOpen(false)} />
       )}
 
       {switcherOpen && (

@@ -9,10 +9,11 @@ import { ZodError } from "zod";
 import { purgeExpiredSessions } from "./auth/session.ts";
 import { appliedMigrations, closeDatabase } from "./db/index.ts";
 import { assertProductionSafe, env, paths } from "./env.ts";
-import { attachUser } from "./http/context.ts";
-import { HttpError } from "./lib/errors.ts";
+import { assertScope, attachUser } from "./http/context.ts";
+import { HttpError, forbidden } from "./lib/errors.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { nodeRoutes } from "./routes/nodes.ts";
+import { tokenRoutes } from "./routes/tokens.ts";
 import { worldRoutes } from "./routes/worlds.ts";
 
 assertProductionSafe();
@@ -30,8 +31,34 @@ await app.register(cookie, { secret: env.sessionSecret });
 await app.register(multipart);
 
 app.decorateRequest("user", null);
+app.decorateRequest("tokenAuth", null);
 app.addHook("onRequest", async (request) => {
   attachUser(request);
+});
+
+/**
+ * Scope enforcement for bearer tokens, in one place rather than per route.
+ * Reads need `world:read`, anything that changes data needs `world:write`, and
+ * account or membership management needs `admin`.
+ */
+app.addHook("preHandler", async (request) => {
+  if (request.tokenAuth === null) return;
+  if (!request.url.startsWith("/api/v1/")) return;
+
+  const path = request.url.split("?")[0] ?? "";
+
+  // Tokens may not manage tokens: that would route around their own scopes.
+  if (path.startsWith("/api/v1/tokens")) {
+    throw forbidden("Tokens cannot manage tokens. Sign in to do that.");
+  }
+
+  if (path.startsWith("/api/v1/users") || path.includes("/members")) {
+    assertScope(request, "admin");
+    return;
+  }
+
+  const isRead = request.method === "GET" || request.method === "HEAD";
+  assertScope(request, isRead ? "world:read" : "world:write");
 });
 
 app.setErrorHandler((error: unknown, request, reply) => {
@@ -70,6 +97,7 @@ app.get("/healthz", async () => ({
 await app.register(authRoutes);
 await app.register(worldRoutes);
 await app.register(nodeRoutes);
+await app.register(tokenRoutes);
 
 // Uploaded images, under /media so they cannot collide with the client bundle
 // that Vite emits into /assets. Content-addressed, so they cache forever.
