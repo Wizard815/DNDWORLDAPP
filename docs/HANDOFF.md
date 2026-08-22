@@ -48,15 +48,20 @@ If you are about to add a table called `characters`, or a nav section called
 
 ## 3. Current status
 
-**P0 and P1 are complete.** No bulk importer is planned — see §9.4. Next up is P2.
+**P0 and P1 are complete. P2 is underway** — inline secret blocks (the first, most-used
+item) are done; ACL, guest links and invites are not. No bulk importer is planned — see
+§9.4.
 
 Verified by:
-- `npm test` — 10 unit tests (fractional indexing, wiki-link parsing). All pass.
-- `npm run smoke` — 45 end-to-end API checks against a running server. All pass.
+- `npm test` — 20 unit tests (fractional indexing, wiki-link parsing, secret blocks). All
+  pass.
+- `npm run smoke` — 64 end-to-end API checks against a running server. All pass.
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All pass.
-- `npm run typecheck` — clean on both server and web.
+- `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
-- Driven by hand in a browser: login → tree → page → posts → rendered wiki links.
+- Driven by hand in a browser: login → tree → page → posts → rendered wiki links → typed
+  a `:::secret` block via the editor toolbar, confirmed it renders with the gold "Secret —
+  DM only" wrapper, and confirmed it survives a page reload.
 
 ### Working
 
@@ -78,10 +83,12 @@ Verified by:
 - **OpenAPI** generated from the Zod schemas: `/api/v1/openapi.json`, `/api/v1/docs`,
   and `npm run openapi` writes `docs/openapi.json` so drift is visible in review
 - **MCP server** (`apps/mcp`) over the public HTTP API
+- **Inline `:::secret` blocks** (P2, first item) in node and post bodies — see §7.2
 
 ### Not started
 
-Maps, calendars, timelines, templates and typed fields, the query/view engine, boards,
+The rest of P2 (per-node ACL, guest share links, "view as player", invites), maps,
+calendars, timelines, templates and typed fields, the query/view engine, boards,
 statblocks, initiative, realtime. No importer is planned — see §9.4.
 
 ---
@@ -91,7 +98,9 @@ statblocks, initiative, realtime. No importer is planned — see §9.4.
 ```
 apps/server/
   migrations/0001_init.sql   THE SCHEMA SOURCE OF TRUTH. Hand-written SQL.
-  scripts/smoke.mjs          45-check end-to-end API test. Needs an empty data dir.
+  migrations/0002_api_tokens.sql
+  migrations/0003_secret_blocks.sql  Drops the FTS insert/update triggers — see §7.2
+  scripts/smoke.mjs          64-check end-to-end API test. Needs an empty data dir.
   src/
     index.ts                 Fastify app: plugins, error handler, static serving, boot
     env.ts                   Config from env vars; refuses prod boot with the dev secret
@@ -102,6 +111,7 @@ apps/server/
     auth/
       password.ts            scrypt hashing
       session.ts             Cookie sessions; DB stores only the token's sha256
+      tokens.ts               Bearer tokens: hash, scopes, world pin
       policy.ts              ***THE AUTHORIZATION LAYER*** — read section 6
       viewer.ts              { userId, role } context type
     http/context.ts          requireUser / viewerForWorld / viewerForNode / startSession
@@ -109,10 +119,11 @@ apps/server/
       id.ts                  shortId(8) for nodes, longId(20) for everything else
       sortkey.ts             Fractional indexing (+ tests)
       wikilinks.ts           [[link]] parsing, code-aware (+ tests)
+      secrets.ts             :::secret parsing, redaction, the FTS-strip helper (+ tests)
       slug.ts                Slugify + per-world uniqueness
       errors.ts              HttpError + helpers
     services/                Business logic. Routes stay thin.
-      nodes.ts               Tree, detail, create/update/move/archive, link reindexing
+      nodes.ts               Tree, detail, create/update/move/archive, link + FTS reindexing
       posts.ts               Sections with visibility
       worlds.ts              Worlds, memberships, world creation (makes the root page)
       assets.ts              Content-addressed uploads
@@ -128,7 +139,8 @@ apps/web/
     api.ts                   The ONLY place the client talks to the server
     App.tsx                  Shell: auth gate, queries, layout, Ctrl+K
     lib/nav.ts               Hand-rolled routing over /n/:nodeId
-    lib/markdown.ts          Wiki-link rewriting → marked → DOMPurify
+    lib/markdown.ts          Segments out :::secret blocks, then wikilinks → marked → DOMPurify
+    lib/secrets.ts           Client mirror of the server's secret-block splitter
     components/
       Auth.tsx               Setup + login
       Sidebar.tsx            Tree, filter, drag-and-drop
@@ -233,8 +245,15 @@ When the editor is upgraded to TipTap, it must round-trip markdown on load/save.
 
 ### 6.4 Migrations are append-only SQL
 
-Add `migrations/0002_whatever.sql`. Never edit an applied migration. Update
-`src/db/types.ts` by hand in the same commit — nothing checks this for you.
+Add `migrations/000N_whatever.sql` (next is `0004`). Never edit an applied migration.
+Update `src/db/types.ts` by hand in the same commit — nothing checks this for you.
+
+### 6.5 A leak surface needs a test in the same commit that opens it
+
+`:::secret` blocks added a fifth place DM content could leak (the FTS index) to the four
+named in §6.1. It got the same treatment: excluded from indexing entirely, and
+`scripts/smoke.mjs` asserts it. When P4/P5 add map markers and timeline entries, they
+need the identical pass before they ship, not after.
 
 ---
 
@@ -263,13 +282,16 @@ DELETE /worlds/:worldId/members/:userId     (owner/dm only)
 POST   /worlds/:worldId/assets              multipart, images only, 25 MB cap
 
 GET    /nodes/:nodeId                       detail + breadcrumb + children + backlinks
+                                            (bodyMd has :::secret blocks stripped unless
+                                             you are owner/dm — see §7.2)
 PATCH  /nodes/:nodeId                       title, bodyMd, icon, visibility, templateId,
-                                            isArchived
+                                            isArchived. 400 if bodyMd is set and the
+                                            existing body has a secret you cannot see.
 POST   /nodes/:nodeId/move                  { parentId, afterId?, beforeId? }
 DELETE /nodes/:nodeId                       archives the subtree
-GET    /nodes/:nodeId/posts
+GET    /nodes/:nodeId/posts                 (same secret redaction as node bodies)
 POST   /nodes/:nodeId/posts
-PATCH  /posts/:postId
+PATCH  /posts/:postId                       same 400-if-secret-and-not-dm rule as nodes
 DELETE /posts/:postId
 
 GET    /tokens                              your tokens (session only)
@@ -314,6 +336,49 @@ Other properties worth preserving:
 The UI is `apps/web/src/components/Tokens.tsx`, reached from the sidebar footer. Use it
 to mint the token the MCP server will hold — pin it to one world and give it
 `world:write`.
+
+### 7.2 Inline `:::secret` blocks
+
+`:::secret` on its own line opens one, a lone `:::` closes it — inside a node's `body_md`
+or a post's `body_md`, no new column. Parsed once, in `lib/secrets.ts` on both the server
+and the client (the client is a documented duplicate, not the source of truth — the
+server's copy is; see the comment at the top of the client one). Built P2, first item, on
+direct evidence from a real LegendKeeper world: this pattern was used **70 times** against
+3 whole-hidden documents and 5 structured fields — DMs reach for inline secrecy, not
+whole-section hiding, and P0 had shipped the least-used mechanism first.
+
+**Read path.** `getNodeDetail` and `listPosts`/`createPost`/`updatePost` all pass the body
+through `redactForViewer(bodyMd, canSeeSecrets(viewer.role))` before it leaves the server.
+`canSeeSecrets` is `owner`/`dm` only — **role-gated, not authorship-gated**, same as
+node/post visibility. That means a player who once typed their own `:::secret` block would
+not see it back on their own next fetch. Documented trade-off: consistency with the rest
+of the visibility model wins over that edge case.
+
+**Write path.** A body PATCH is a wholesale replace. If the *existing* stored body
+contains a secret block and the viewer cannot see secrets, `updateNode`/`updatePost`
+reject the whole request with **400**, before touching the row — rather than either
+leaking the block to let them "safely" resave, or silently deleting content they cannot
+even see. Editing every other field (title, icon, visibility) still works; ask the owner
+or a DM to touch the body. New secret blocks written by a non-DM at *creation* time are
+allowed (nothing existing to protect yet) — an intentionally narrower guard than it might
+first appear.
+
+**Search.** The FTS index is no longer maintained by SQL trigger (see
+`migrations/0003_secret_blocks.sql`) — a trigger cannot call `stripSecrets()`. Reindexing
+is explicit JS in `services/nodes.ts::reindexFts()`, called after every create and every
+title/body update, storing the *stripped* text. Consequence: **secret content is not
+searchable by anyone, including the DM.** That is a deliberate simplification (one index,
+zero leak surface) over building a second, DM-only index — revisit only if it turns out to
+matter in practice.
+
+**Client rendering.** A body a non-DM viewer receives has already had the blocks removed,
+so `renderMarkdown` never makes a visibility decision — it only finds segments (via the
+client's `lib/secrets.ts`) so a DM's client can wrap them in `.secret-block` (gold border,
+"🔒 Secret — DM only" label; see `styles.css`). The editor toolbar has an "Insert secret"
+button (`NodeView.tsx` and `Posts.tsx`) that drops in a scaffold and selects the
+placeholder text for immediate typing-over. It uses `onMouseDown={preventDefault}` —
+without it, `Posts.tsx`'s save-on-blur would fire on the button click itself, saving the
+stale body and collapsing out of edit mode before the insertion ever ran.
 
 ---
 

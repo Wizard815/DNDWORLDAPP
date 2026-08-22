@@ -10,10 +10,11 @@ import type {
 } from "@dndworldapp/schema";
 import { db, transaction } from "../db/index.ts";
 import type { NodeRow } from "../db/types.ts";
-import { canEdit, visibilitySqlFor } from "../auth/policy.ts";
+import { canEdit, canSeeSecrets, visibilitySqlFor } from "../auth/policy.ts";
 import type { Viewer } from "../auth/viewer.ts";
 import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { shortId } from "../lib/id.ts";
+import { containsSecret, redactForViewer, stripSecrets } from "../lib/secrets.ts";
 import { keyAfterAll, keyBetween } from "../lib/sortkey.ts";
 import { slugify, uniqueSlug } from "../lib/slug.ts";
 import { linkKey, parseWikilinks } from "../lib/wikilinks.ts";
@@ -49,6 +50,10 @@ const unresolveStale = db.prepare(`
   UPDATE links SET dst_node_id = NULL
   WHERE dst_node_id = ? AND lower(target_text) NOT IN (?, ?)
 `);
+const deleteFtsRow = db.prepare("DELETE FROM nodes_fts WHERE node_id = ?");
+const insertFtsRow = db.prepare(
+  "INSERT INTO nodes_fts (node_id, world_id, title, body) VALUES (?, ?, ?, ?)",
+);
 
 // ---------------------------------------------------------------------------
 // Reads
@@ -131,7 +136,7 @@ export function getNodeDetail(nodeId: string, viewer: Viewer): NodeDetail {
   return {
     ...rowToSummary(row),
     worldId: row.world_id,
-    bodyMd: row.body_md,
+    bodyMd: redactForViewer(row.body_md, canSeeSecrets(viewer.role)),
     templateId: row.template_id,
     breadcrumb: breadcrumbFor(row),
     children: children.map(rowToSummary),
@@ -247,6 +252,17 @@ function resettleLinksFor(row: NodeRow): void {
   unresolveStale.run(row.id, title, row.slug);
 }
 
+/**
+ * Maintains nodes_fts. Was a SQL trigger until secret blocks arrived — a trigger
+ * cannot run stripSecrets(), and indexing the raw body would let a search
+ * snippet leak secret text to a player. So this runs in JS, explicitly, after
+ * every create and title/body update. See migrations/0003_secret_blocks.sql.
+ */
+function reindexFts(row: NodeRow): void {
+  deleteFtsRow.run(row.id);
+  insertFtsRow.run(row.id, row.world_id, row.title, stripSecrets(row.body_md));
+}
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------
@@ -286,6 +302,7 @@ export function createNode(worldId: string, viewer: Viewer, input: CreateNodeInp
     const created = selectNode.get(id) as NodeRow;
     reindexLinks(created);
     resettleLinksFor(created);
+    reindexFts(created);
     return created;
   });
 
@@ -296,6 +313,14 @@ export function updateNode(nodeId: string, viewer: Viewer, input: UpdateNodeInpu
   const existing = requireVisibleNode(nodeId, viewer);
   if (!canEdit(viewer.role, existing.created_by, viewer.userId)) {
     throw forbidden("You cannot edit this page.");
+  }
+  // A body edit is a wholesale replace (see input.bodyMd below), so a viewer who
+  // cannot see the existing secret block would silently delete it by saving.
+  // Reject rather than risk that — ask a DM to edit the body instead.
+  if (input.bodyMd !== undefined && !canSeeSecrets(viewer.role) && containsSecret(existing.body_md)) {
+    throw badRequest(
+      "This page has a DM-only secret section. Only the owner or a DM can edit its body.",
+    );
   }
 
   const title = input.title?.trim();
@@ -324,6 +349,7 @@ export function updateNode(nodeId: string, viewer: Viewer, input: UpdateNodeInpu
     const updated = selectNode.get(nodeId) as NodeRow;
     if (input.bodyMd !== undefined) reindexLinks(updated);
     if (renaming) resettleLinksFor(updated);
+    if (input.bodyMd !== undefined || renaming) reindexFts(updated);
     return updated;
   });
 }

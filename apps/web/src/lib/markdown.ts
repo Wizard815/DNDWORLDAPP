@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import type { NodeSummary } from "@dndworldapp/schema";
+import { splitSecretBlocks } from "./secrets.ts";
 
 const WIKILINK = /\[\[([^[\]|]+?)(?:\|([^[\]]*?))?\]\]/g;
 
@@ -44,12 +45,30 @@ export function sanitizeSnippet(html: string): string {
   return DOMPurify.sanitize(html, { ALLOWED_TAGS: ["mark"], ALLOWED_ATTR: [] });
 }
 
+/**
+ * A body a non-DM viewer receives has already had its `:::secret` blocks
+ * stripped server-side (see apps/server/src/lib/secrets.ts) — there is nothing
+ * for this function to hide. When a DM's client does receive one, it renders
+ * with the "Secret" wrapper below rather than as plain prose, so it stays
+ * visually distinct from what a player would see on the same page.
+ */
 export function renderMarkdown(md: string, nodes: NodeSummary[]): string {
   const index = new Map<string, NodeSummary>();
   for (const node of nodes) {
     index.set(node.title.toLowerCase(), node);
     index.set(node.slug.toLowerCase(), node);
   }
-  const html = marked.parse(renderWikilinks(md, index), { async: false, breaks: true });
-  return DOMPurify.sanitize(html, { ADD_ATTR: ["data-node", "data-missing", "target"] });
+
+  const renderSegment = (segmentMd: string): string => {
+    const html = marked.parse(renderWikilinks(segmentMd, index), { async: false, breaks: true });
+    return DOMPurify.sanitize(html, { ADD_ATTR: ["data-node", "data-missing", "target"] }) as string;
+  };
+
+  return splitSecretBlocks(md)
+    .map((segment) =>
+      segment.kind === "text"
+        ? renderSegment(segment.md)
+        : `<div class="secret-block"><div class="secret-block-label">🔒 Secret — DM only</div>${renderSegment(segment.md)}</div>`,
+    )
+    .join("");
 }

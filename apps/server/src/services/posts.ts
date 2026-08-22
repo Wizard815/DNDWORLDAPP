@@ -1,10 +1,11 @@
 import type { CreatePostInput, PostDto, UpdatePostInput } from "@dndworldapp/schema";
 import { db } from "../db/index.ts";
 import type { PostRow } from "../db/types.ts";
-import { canEdit, visibilitySqlFor } from "../auth/policy.ts";
+import { canEdit, canSeeSecrets, visibilitySqlFor } from "../auth/policy.ts";
 import type { Viewer } from "../auth/viewer.ts";
-import { forbidden, notFound } from "../lib/errors.ts";
+import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { shortId } from "../lib/id.ts";
+import { containsSecret, redactForViewer } from "../lib/secrets.ts";
 import { keyAfterAll } from "../lib/sortkey.ts";
 import { requireVisibleNode } from "./nodes.ts";
 
@@ -13,6 +14,10 @@ import { requireVisibleNode } from "./nodes.ts";
  * own visibility. This is how one page is player-facing while its DM briefing
  * underneath stays hidden. The hidden rows never leave the database — they are
  * filtered in SQL, not in the client.
+ *
+ * A post's own body can additionally carry inline `:::secret` blocks (see
+ * lib/secrets.ts) — the fine-grained version of the same idea, for a DM aside
+ * inside an otherwise player-visible section rather than a whole hidden post.
  */
 
 const selectPost = db.prepare("SELECT * FROM posts WHERE id = ?");
@@ -22,12 +27,12 @@ const insertPost = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-function toDto(row: PostRow): PostDto {
+function toDto(row: PostRow, viewer: Viewer): PostDto {
   return {
     id: row.id,
     nodeId: row.node_id,
     title: row.title,
-    bodyMd: row.body_md,
+    bodyMd: redactForViewer(row.body_md, canSeeSecrets(viewer.role)),
     visibility: row.visibility,
     sortKey: row.sort_key,
     createdAt: row.created_at,
@@ -41,7 +46,7 @@ export function listPosts(nodeId: string, viewer: Viewer): PostDto[] {
   const rows = db
     .prepare(`SELECT * FROM posts WHERE node_id = ? AND ${vis.sql} ORDER BY sort_key`)
     .all(nodeId, ...vis.params) as PostRow[];
-  return rows.map(toDto);
+  return rows.map((row) => toDto(row, viewer));
 }
 
 export function createPost(nodeId: string, viewer: Viewer, input: CreatePostInput): PostDto {
@@ -65,7 +70,7 @@ export function createPost(nodeId: string, viewer: Viewer, input: CreatePostInpu
     now,
     now,
   );
-  return toDto(selectPost.get(id) as PostRow);
+  return toDto(selectPost.get(id) as PostRow, viewer);
 }
 
 function requireVisiblePost(postId: string, viewer: Viewer): PostRow {
@@ -84,6 +89,11 @@ export function updatePost(postId: string, viewer: Viewer, input: UpdatePostInpu
   if (!canEdit(viewer.role, existing.created_by, viewer.userId)) {
     throw forbidden("You cannot edit this section.");
   }
+  if (input.bodyMd !== undefined && !canSeeSecrets(viewer.role) && containsSecret(existing.body_md)) {
+    throw badRequest(
+      "This section has a DM-only secret block. Only the owner or a DM can edit its body.",
+    );
+  }
 
   db.prepare(
     "UPDATE posts SET title = ?, body_md = ?, visibility = ?, updated_at = ? WHERE id = ?",
@@ -94,7 +104,7 @@ export function updatePost(postId: string, viewer: Viewer, input: UpdatePostInpu
     Date.now(),
     postId,
   );
-  return toDto(selectPost.get(postId) as PostRow);
+  return toDto(selectPost.get(postId) as PostRow, viewer);
 }
 
 export function deletePost(postId: string, viewer: Viewer): void {

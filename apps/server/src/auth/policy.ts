@@ -70,3 +70,14 @@ export function canCreate(role: Role | null): boolean {
 export function isGameMaster(role: Role | null): boolean {
   return role === "owner" || role === "dm";
 }
+
+/**
+ * Who may see the content of a `:::secret` block. Deliberately role-gated, not
+ * authorship-gated — the same as node/post visibility — so a player who once
+ * typed `:::secret` into their own page would not see it back on the next
+ * fetch. That is a documented trade-off, not a bug: consistency with the rest
+ * of the visibility model wins over that edge case.
+ */
+export function canSeeSecrets(role: Role | null): boolean {
+  return isGameMaster(role);
+}

@@ -232,6 +232,105 @@ check("revoked token stops working", afterRevoke.status === 401, afterRevoke.sta
 const garbage = await bearer("dwa_not-a-real-token")("GET", `/worlds/${worldId}/tree`);
 check("unknown token is rejected", garbage.status === 401, garbage.status);
 
+console.log("\n== inline :::secret blocks ==");
+
+const SECRET_TOKEN = "Zorlathax9Rebellion";
+const PUBLIC_TOKEN = "TownOfBrightwater7";
+
+const secretPage = (
+  await dm("POST", `/worlds/${worldId}/nodes`, {
+    title: "Brightwater",
+    parentId: rootId,
+    bodyMd: [
+      `A quiet frontier town, ${PUBLIC_TOKEN} to travelers.`,
+      "",
+      ":::secret",
+      `The mayor is secretly funding the ${SECRET_TOKEN}.`,
+      ":::",
+      "",
+      "Trade caravans pass through weekly.",
+    ].join("\n"),
+  })
+).body.node;
+
+const dmView = (await dm("GET", `/nodes/${secretPage.id}`)).body.node;
+check("DM sees the secret text", dmView.bodyMd.includes(SECRET_TOKEN), dmView.bodyMd);
+check("DM sees the public text too", dmView.bodyMd.includes(PUBLIC_TOKEN), dmView.bodyMd);
+
+const playerView = (await player("GET", `/nodes/${secretPage.id}`)).body.node;
+check("player never receives the secret text", !playerView.bodyMd.includes(SECRET_TOKEN), playerView.bodyMd);
+check("player still sees the surrounding public text", playerView.bodyMd.includes(PUBLIC_TOKEN), playerView.bodyMd);
+check("the fence markers themselves are gone too", !playerView.bodyMd.includes(":::"), playerView.bodyMd);
+
+const playerSearchSecret = (await player("GET", `/worlds/${worldId}/search?q=${SECRET_TOKEN}`)).body.hits;
+check("player search cannot find secret-only text", playerSearchSecret.length === 0, playerSearchSecret);
+
+const dmSearchSecret = (await dm("GET", `/worlds/${worldId}/search?q=${SECRET_TOKEN}`)).body.hits;
+check(
+  "secret text is not indexed for anyone, including the DM (documented trade-off)",
+  dmSearchSecret.length === 0,
+  dmSearchSecret,
+);
+
+const playerSearchPublic = (await player("GET", `/worlds/${worldId}/search?q=${PUBLIC_TOKEN}`)).body.hits;
+check("player search still finds the public text on the same page", playerSearchPublic.some((h) => h.nodeId === secretPage.id), playerSearchPublic);
+
+// A player editing their own page, into which a DM has embedded a secret, must not
+// be able to silently delete content they cannot even see.
+const playerPage = (await player("POST", `/worlds/${worldId}/nodes`, { title: "Player's Own Page", parentId: rootId })).body.node;
+const dmInjected = await dm("PATCH", `/nodes/${playerPage.id}`, {
+  bodyMd: [`Visible to the player.`, "", ":::secret", `Only the DM should ever see: ${SECRET_TOKEN}`, ":::"].join("\n"),
+});
+check("DM can add a secret block to a page a player owns", dmInjected.status === 200, dmInjected.body);
+
+const playerBodyEditBlocked = await player("PATCH", `/nodes/${playerPage.id}`, { bodyMd: "Trying to edit my own page." });
+check(
+  "player is blocked from resaving a body that contains a secret they cannot see",
+  playerBodyEditBlocked.status === 400,
+  playerBodyEditBlocked.body,
+);
+
+const playerTitleEditStillWorks = await player("PATCH", `/nodes/${playerPage.id}`, { title: "Player's Renamed Page" });
+check("player can still edit fields other than the body", playerTitleEditStillWorks.status === 200, playerTitleEditStillWorks.body);
+
+const dmBodyEditStillWorks = await dm("PATCH", `/nodes/${playerPage.id}`, {
+  bodyMd: "DM rewrote the whole body, secret included.\n\n:::secret\nStill hidden.\n:::",
+});
+check("the owner/DM can still edit a body containing secrets", dmBodyEditStillWorks.status === 200, dmBodyEditStillWorks.body);
+
+// Posts carry the same rule. Player creates the post (so they own it and can
+// normally edit it); DM then injects a secret into it, same as the page case above.
+const playerOwnPost = await player("POST", `/nodes/${playerPage.id}/posts`, {
+  title: "Rumours",
+  bodyMd: "Common talk.",
+  visibility: "members",
+});
+check("player can create a post on their own page", playerOwnPost.status === 201, playerOwnPost.body);
+const postId = playerOwnPost.body.post.id;
+
+const dmInjectedPost = await dm("PATCH", `/posts/${postId}`, {
+  bodyMd: [`Common talk.`, "", ":::secret", `${SECRET_TOKEN} lives here too.`, ":::"].join("\n"),
+});
+check("DM can inject a secret into a player-owned post", dmInjectedPost.status === 200, dmInjectedPost.body);
+
+const playerOwnPosts = (await player("GET", `/nodes/${playerPage.id}/posts`)).body.posts;
+const playerRumours = playerOwnPosts.find((p) => p.id === postId);
+check("player sees their own post", playerRumours !== undefined, playerOwnPosts);
+check("but not the secret text the DM added to it", !playerRumours.bodyMd.includes(SECRET_TOKEN), playerRumours?.bodyMd);
+
+const playerPostEditBlocked = await player("PATCH", `/posts/${postId}`, { bodyMd: "trying to edit" });
+check(
+  "player is blocked from resaving their own post's body once it contains a secret they cannot see",
+  playerPostEditBlocked.status === 400,
+  playerPostEditBlocked.body,
+);
+
+const playerPostTitleStillWorks = await player("PATCH", `/posts/${postId}`, { title: "Rumours (renamed)" });
+check("player can still rename their own post", playerPostTitleStillWorks.status === 200, playerPostTitleStillWorks.body);
+
+const dmPostEditWorks = await dm("PATCH", `/posts/${postId}`, { bodyMd: "DM rewrote it, secret gone now." });
+check("DM can still edit that post's body", dmPostEditWorks.status === 200, dmPostEditWorks.body);
+
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);
 check("archive succeeds", archived.status === 200, archived.body);

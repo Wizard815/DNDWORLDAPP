@@ -4,12 +4,12 @@ Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
 
-> **Status, 2026-08-22 — P0 and P1 are built and running. No importer is planned.**
+> **Status, 2026-08-22 — P0 and P1 are built and running; P2 is underway. No importer is planned.**
 >
 > | | |
 > |---|---|
-> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server |
-> | **Next** | P2 visibility (inline secret blocks first) → P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks |
+> | **Next** | Rest of P2 (per-node ACL, guest share links, invites) → P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
 > Kanka day to day and will move content over by hand through Kanka's MCP and ours as it
@@ -183,6 +183,9 @@ audit_log     id, world_id, user_id, action, target, payload, at
 
 Notes:
 
+- **Inline secret blocks need no column.** `:::secret ... :::` is markdown syntax inside
+  `body_md` itself, redacted by role at read time — the same pattern as `visibility`, just
+  finer-grained. Built; see §7.2 of HANDOFF.md.
 - `start_abs` is an absolute integer **minute** count within a calendar, so sorting,
   ranges and "what happened between X and Y" are integer queries. Minutes rather than days
   because a calendar carries hours and minutes and events have a time of day — this
@@ -258,13 +261,19 @@ reverse-engineered export format in the latter — but neither is scheduled work
 import is wanted later, both are specified well enough to build from cold.
 
 **P2 — The rest of visibility.** Roles, node visibility and post visibility already work
-(P0). What remains, **most-used first**:
+(P0). Ordered **most-used first**, per the LegendKeeper evidence
+([legendkeeper-observations.md](legendkeeper-observations.md) §10.3):
 
-1. **GM-only secret blocks inside a body.** Evidence from a real LegendKeeper world:
-   `block-secret` used **70 times**, against 3 hidden documents and 5 structured
-   properties (see [legendkeeper-observations.md](legendkeeper-observations.md) §10.3).
-   Secrecy happens inline, mid-sentence — not by hiding whole sections. We built the
-   least-used mechanism first; this is the one that earns its keep.
+1. **GM-only secret blocks inside a body. ✅ built.** `:::secret ... :::` on their own
+   lines, inside a node or post body — the fine-grained sibling of whole-post
+   visibility, for a DM aside mid-prose rather than hiding a whole section. Stripped
+   server-side for anyone who is not owner/DM, so a player's response never contains
+   the block at all — not the text, not the fences. Excluded from the search index
+   entirely (for every role, including the DM) rather than building a second index; a
+   documented trade-off, not an oversight. A viewer who cannot see an existing secret
+   block is blocked from resaving that body wholesale (400, not a silent delete) —
+   asking a DM to edit it instead is safer than either leaking it or losing it. See
+   `src/lib/secrets.ts` on both server and client, and HANDOFF.md §7.2.
 2. Per-node ACL overrides for one-off exceptions.
 3. Guest share links scoped to a subtree, and an explicit "view as player" mode.
 4. An invite flow so a DM can add someone who has no account yet.

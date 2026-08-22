@@ -136,7 +136,8 @@ export function registerTools(server: McpServer, client: WorldClient): void {
     {
       title: "Get a page",
       description:
-        "A page's full markdown body, plus its breadcrumb, the pages inside it, and what links to it. Use include_posts to also fetch its sections.",
+        "A page's markdown body, plus its breadcrumb, the pages inside it, and what links to it. Use include_posts to also fetch its sections. " +
+        "Any :::secret ... ::: block only appears in the response if this token's owner is a DM — a player-level token receives the body with those blocks already removed.",
       inputSchema: {
         node_id: z.string().describe("The page id, e.g. ox9119wx."),
         include_posts: z.boolean().optional().describe("Also fetch the page's sections. Default true."),
@@ -211,7 +212,8 @@ export function registerTools(server: McpServer, client: WorldClient): void {
     {
       title: "Create a page",
       description:
-        "Create a page anywhere in the tree. Link to other pages from the body with [[Double Brackets]] — a link to a page that does not exist yet is fine and resolves itself later.",
+        "Create a page anywhere in the tree. Link to other pages from the body with [[Double Brackets]] — a link to a page that does not exist yet is fine and resolves itself later. " +
+        "For a DM-only aside inside otherwise player-visible prose, wrap it in a :::secret ... ::: block on its own lines — the server strips it out of anything a non-DM viewer receives, so it never reaches a player, even through search.",
       inputSchema: {
         title: z.string().min(1).max(300),
         world_id: worldIdArg,
@@ -243,7 +245,8 @@ export function registerTools(server: McpServer, client: WorldClient): void {
     {
       title: "Update a page",
       description:
-        "Change a page's title, body, icon or visibility. The body is replaced wholesale, so read it first with get_node if you mean to append.",
+        "Change a page's title, body, icon or visibility. The body is replaced wholesale, so read it first with get_node if you mean to append. " +
+        "Use :::secret ... ::: for a DM-only aside inside the body (see create_node). If the page already has one and you are not signed in as a DM, a body edit is rejected outright rather than risk silently deleting content you cannot see.",
       inputSchema: {
         node_id: z.string(),
         title: z.string().min(1).max(300).optional(),
@@ -316,7 +319,8 @@ export function registerTools(server: McpServer, client: WorldClient): void {
     {
       title: "Add a section to a page",
       description:
-        "Sections carry their own visibility, which is how a player-facing page holds DM-only notes. Use visibility 'dm' for anything the players must not read.",
+        "Sections carry their own visibility, which is how a player-facing page holds a whole DM-only block. Use visibility 'dm' to hide the entire section. " +
+        "For a shorter aside inside an otherwise player-visible section, wrap just that part in :::secret ... ::: instead (see create_node) — the finer-grained tool, and the one actually reached for most in practice.",
       inputSchema: {
         node_id: z.string(),
         title: z.string().max(300).optional(),
@@ -342,7 +346,8 @@ export function registerTools(server: McpServer, client: WorldClient): void {
     "update_post",
     {
       title: "Update a section",
-      description: "Change a section's title, body or visibility.",
+      description:
+        "Change a section's title, body or visibility. Same :::secret ... ::: rule and edit guard as update_node.",
       inputSchema: {
         post_id: z.string(),
         title: z.string().max(300).optional(),

@@ -6,9 +6,10 @@ A self-hosted worldbuilding and campaign app: **LegendKeeper's freeform structur
 One tree. Anything nests inside anything. A map is a page, a timeline is a page, a
 character is a page — type is a filter, not a folder you are forced to live in.
 
-**Status: P0 and P1 done** — the spine, scoped API tokens, a generated OpenAPI spec, and
-an MCP server. Next is templates and query views, then maps and calendars. No bulk
-importer is planned; content moves in through the API/MCP as needed.
+**Status: P0 and P1 done, P2 underway** — the spine, scoped API tokens, a generated
+OpenAPI spec, an MCP server, and inline `:::secret` blocks. Next is the rest of P2, then
+templates and query views. No bulk importer is planned; content moves in through the
+API/MCP as needed.
 
 **Picking this up? Read [docs/HANDOFF.md](docs/HANDOFF.md) first** — it covers what
 exists, the rules that must not be broken, the environment gotchas, and the next tasks in
@@ -56,6 +57,10 @@ uploaded images. Backup is a copy of that directory.
   panel, and a list of links pointing at pages that do not exist yet.
 - **DM notes.** Sections on a page, each with its own visibility. A player-facing
   location can carry a DM-only briefing, and the hidden text never leaves the server.
+- **Inline secrets.** Wrap `:::secret ... :::` around a line or two inside any page or
+  section to hide just that part from everyone but the owner/DM — mid-sentence, not a
+  whole hidden section. Stripped server-side, excluded from search, and a viewer who
+  cannot see an existing secret is blocked from resaving the body over it.
 - **Search.** SQLite FTS5, prefix matching, ranked snippets, Ctrl+K quick switcher.
 - **Images.** Content-addressed uploads.
 - **One API.** The client uses only `/api/v1` — no private routes — which is what keeps
@@ -142,12 +147,14 @@ docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.js
 ## Tests
 
 ```bash
-npm test          # unit: fractional indexing, wiki-link parsing
-npm run smoke     # 45 end-to-end API checks (needs an EMPTY data/ dir + running server)
+npm test          # unit: fractional indexing, wiki-link parsing, secret blocks
+npm run smoke     # 64 end-to-end API checks (needs an EMPTY data/ dir + running server)
 npm run test:mcp  # drives the MCP server over stdio (needs a running server)
 npm run typecheck
 ```
 
 The smoke suite asserts the DM-versus-player boundary in every place it could leak — the
-tree, a direct fetch by id, the posts list, and search — plus the token scope rules. The
-MCP test additionally proves a read-only token cannot write through an assistant.
+tree, a direct fetch by id, the posts list, search, and inline `:::secret` blocks (in
+both node and post bodies, including that a viewer who cannot see one is blocked from
+resaving over it) — plus the token scope rules. The MCP test additionally proves a
+read-only token cannot write through an assistant.

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { NodeSummary, PostDto, Visibility } from "@dndworldapp/schema";
 import { api } from "../api.ts";
 import { renderMarkdown } from "../lib/markdown.ts";
@@ -96,6 +96,22 @@ function PostCard({
   const [editing, setEditing] = useState(post.bodyMd.length === 0 && canEdit);
   const [title, setTitle] = useState(post.title);
   const [body, setBody] = useState(post.bodyMd);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /** Inserts a `:::secret` scaffold and selects the placeholder so typing replaces it. */
+  function insertSecretBlock(): void {
+    const textarea = textareaRef.current;
+    const caret = textarea?.selectionStart ?? body.length;
+    const placeholder = "Secret text.";
+    const scaffold = `\n:::secret\n${placeholder}\n:::\n`;
+    const next = `${body.slice(0, caret)}${scaffold}${body.slice(caret)}`;
+    setBody(next);
+    requestAnimationFrame(() => {
+      const selStart = caret + scaffold.indexOf(placeholder);
+      textarea?.focus();
+      textarea?.setSelectionRange(selStart, selStart + placeholder.length);
+    });
+  }
 
   async function save(): Promise<void> {
     await api.updatePost(post.id, { title, bodyMd: body });
@@ -167,13 +183,25 @@ function PostCard({
       </div>
 
       {editing ? (
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onBlur={() => void save()}
-          placeholder="Markdown. [[Links]] work here too."
-          className="min-h-24 w-full resize-none rounded border border-[#2c2f36] bg-[#1a1c20] p-3 font-mono text-xs outline-none focus:border-[#3f434b]"
-        />
+        <div>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={insertSecretBlock}
+            className="mb-1.5 rounded border border-[#5c5023] px-2 py-0.5 text-[10px] text-[#c9a227] hover:bg-[#221f14]"
+            title="Only the owner or a DM ever sees this — hidden from everyone else, even in search."
+          >
+            🔒 Insert secret
+          </button>
+          <textarea
+            ref={textareaRef}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            onBlur={() => void save()}
+            placeholder="Markdown. [[Links]] work here too."
+            className="min-h-24 w-full resize-none rounded border border-[#2c2f36] bg-[#1a1c20] p-3 font-mono text-xs outline-none focus:border-[#3f434b]"
+          />
+        </div>
       ) : (
         <div
           className="prose-body text-sm"
