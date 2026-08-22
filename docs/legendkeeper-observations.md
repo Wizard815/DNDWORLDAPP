@@ -1,9 +1,14 @@
 # LegendKeeper — observed structure
 
-Notes from inspecting a live published project (the "WIld West" / Saloon Info Hub world,
-project `cm5febnb60s9s13se9k3rbd9f`) in the browser on 2026-08-20. This is the read-only
-*viewer* app, so it reflects the published rendering of the editor's data, not the editor
-itself. Treat it as strong evidence, not documentation.
+Two rounds of field notes on the same project (`cm5febnb60s9s13se9k3rbd9f`), the owner's
+own world, inspected in a browser.
+
+- **Sections 1–8** — 2026-08-20, from the *published viewer* (`/p/…`), unauthenticated.
+- **Section 9** — 2026-08-22, from the *editor* (`/a/…`) signed in as owner. This is the
+  authoritative round: it reads the real REST API and the real data shapes. Where the two
+  disagree, section 9 wins.
+
+Neither is documentation. It is evidence, gathered read-only from the owner's own account.
 
 ## 1. URLs and identity
 
@@ -152,9 +157,11 @@ March, 550 AE                                      <- month section header
 - **Groups** are `Session Dates` and `World Timeline` — the same values as the `lane`
   field in the existing Kanka export at `TheOpenBin/07_DND/kanka_events.json`. Lanes and
   groups are the same concept; the plan's `dates.lane` column is right.
-- The gap labels ("14 days later", "111 days later") are a subtraction of absolute day
-  numbers. This validates storing `start_abs` as an integer day count and deriving all
-  display from the calendar schema.
+- The gap labels ("14 days later", "111 days later") are a subtraction of absolute time
+  numbers. This validates storing an integer absolute time and deriving all display from
+  the calendar schema. **Correction from §9.5: the unit is minutes, not days** — their
+  calendars carry `hoursInDay` / `minutesInHour` / `halfClock`, so events have a time of
+  day.
 
 ## 7. Their stack, for reference
 
@@ -174,3 +181,191 @@ scheduled last: it is load-bearing for their multiplayer editing and it is not f
 - Add `updated_at` epoch-ms to anything that will ever sync.
 - Make fields cheap to create, or nobody will use them — including you, on your own
   LegendKeeper world.
+
+---
+
+## 9. From inside the editor (2026-08-22, signed in as owner)
+
+The published viewer only showed the rendered surface. Signed in, the app exposes an
+undocumented **REST API v2** and the real data shapes. This section supersedes guesswork
+above.
+
+### 9.1 The API
+
+```
+GET  /api/v2/user/me/
+GET  /api/v2/projects/
+GET  /api/v2/invites/me/
+GET  /api/v2/auth/sync-token/                      -> { token, expiresAt }
+GET  /api/v2/projects/{id}/settings/
+GET  /api/v2/projects/{id}/members/
+GET  /api/v2/projects/{id}/invites/
+GET  /api/v2/projects/{id}/resources/              -> { resources, nextCursor, hasMore }
+GET  /api/v2/projects/{id}/resources/{resourceId}/ -> { resource }
+GET  /api/v2/projects/{id}/calendars/
+GET  /api/v2/projects/{id}/assets/
+POST /api/v2/projects/{id}/resources/sync-index/   -> 402 on this plan
+```
+
+Auth is NextAuth session cookies. Resource listing is **cursor-paginated** (50 per page;
+this project has 217). `tags`, `templates` and `maps` are **not** top-level collections —
+they live inside the resource, which is the tell for how the model is shaped.
+
+**Architecture split:** REST serves structure and metadata; **document content never
+appears in it**. Content syncs over **Yjs** to a separate collaboration host
+(`outstanding-pencil.legendkeeper.com`), authorised by the short-lived token from
+`/api/v2/auth/sync-token/`. Assets and map tiles sit on their own CDNs
+(`assets.` / `tiles.legendkeeper.com`).
+
+So: *structure over REST, prose over CRDT.* That is a clean seam, and it is the same seam
+we would need at P7.
+
+### 9.2 The real model is three levels, not two
+
+A **resource** (their word for what we call a node) looks like:
+
+```jsonc
+{
+  "id": "a5yddt9v",              // 8-char short id
+  "name": "Dungeon Divers",
+  "parentId": "kts9p4o5",        // unrestricted nesting
+  "pos": "N",                    // fractional index — single char at this depth
+  "tags": ["Group"],             // plain strings, not entities
+  "aliases": [],                 // alternative names
+  "iconGlyph": "fas fa-dice-d20",
+  "iconColor": "#C49454",
+  "iconShape": "pin-medium",
+  "isHidden": false,
+  "isLocked": false,
+  "showPropertyBar": false,
+  "banner": { "enabled": false, "url": null, "yPosition": 50 },
+  "permissions": { "<userId>": ... },   // per-resource, per-user
+  "documents":  [ { "id", "name", "type", "pos", "isHidden", "locatorId",
+                    "createdAt", "updatedAt" } ],
+  "properties": [ { "id", "pos", "type", "title", "data" } ],
+  "createdAt": "...", "updatedAt": "..."
+}
+```
+
+The important structural fact: **a resource has no body.** It has an ordered array of
+**documents**, each with its own `type`, its own `pos`, and its own `isHidden`.
+
+Observed `document.type` values across a 21-resource sample (26 documents):
+
+| type | count | what it is |
+|---|---|---|
+| `page` | 20 | ordinary prose |
+| `board` | 2 | kanban/canvas |
+| `time` | 2 | timeline |
+| `map` | 1 | map |
+| `blank` | 1 | empty placeholder |
+
+3 of 21 resources had **more than one document** — so a page can carry a write-up *and* a
+map *and* a board, presented as tabs. `locatorId` is almost certainly the Yjs document
+key.
+
+**This is a cleaner model than ours.** We have `nodes.body_md` *plus* a `posts[]` table,
+which are two mechanisms for the same idea. LegendKeeper has one: the body is simply the
+first document. Their `documents[].isHidden` is exactly our `posts.visibility`, and their
+`document.type` is exactly our `nodes.kind` — but attached one level lower, which is why
+one page can hold several renderers.
+
+### 9.3 Properties = the facts sidebar
+
+```jsonc
+"properties": [ { "id", "pos", "type", "title", "data" } ]
+```
+
+Observed `type` values: `TEXT_FIELD`, `TAGS`, `RESOURCE_LINK`. Ordered by fractional
+index, toggled per resource by `showPropertyBar`.
+
+Only **3 of 21** sampled resources had any properties at all — corroborating section 4:
+in a real, heavily-used world the structured-fields feature is mostly ignored in favour of
+typing `Name:` into the prose. Design accordingly.
+
+### 9.4 Permissions
+
+Project roles are only **`OWNER`** and **`MEMBER`** (7 members here). There is no
+DM/player/guest distinction — players are served by publishing the read-only `/p/` site.
+
+Fine-grained control comes from **`permissions` on each resource, keyed by user id**,
+present on every resource sampled. So their model is: coarse roles + per-resource
+per-user overrides.
+
+That is the same shape as Kanka's `entity_user` and as our planned P2 `acl` table — good
+independent confirmation. It also means **our four roles plus four visibility levels are
+genuinely richer than LegendKeeper's**, which is the differentiator the owner asked for.
+
+### 9.5 Calendars — copy this almost wholesale
+
+`/calendars/` returns 7 calendars, including built-in **Harptos, Eberron, Exandria,
+Greyhawk** presets. The schema is the most valuable single find in this whole exercise:
+
+```jsonc
+{
+  "id": "h6t2vscp", "name": "Gregorian (custom)",
+  "hasZeroYear": false,
+  "hoursInDay": 24, "minutesInHour": 60, "halfClock": true,
+  "maxMinutes": 2103269760,
+  "months":   [ { "id", "name", "length", "interval", "isIntercalary", "offset" } ],
+  "weekdays": [ { "id", "name" } ],
+  "epochWeekday": 1,
+  "weekResetsEachMonth": false,
+  "leapDays": [ { "id", "name", "month", "day", "offset",
+                  "interval": "400,!100,4",     // every 4, NOT every 100, BUT every 400
+                  "intercalary": false, "addsWeekDay": false, "weekDay": "" } ],
+  "negativeEra":  { "id", "name", "abbr", "hideAbbr", "resetMode", "startsAt": -209877120 },
+  "positiveEras": [ { "id", "name", "abbr", "hideAbbr", "resetMode", "startsAt": 0 } ],
+  "moons":  [ { "id", "name", "color", "phase", "shift" } ],
+  "format": { "id": "full-formal-era",
+              "day":   "DDDD, MMMM D^, YYYY E",
+              "month": "MMMM, YYYY E",
+              "year":  "YYYY E",
+              "time":  "DDDD, MMMM D^, YYYY E [at] HH:mm" }
+}
+```
+
+Four things worth stealing outright:
+
+1. **The leap-rule mini-DSL.** `"400,!100,4"` encodes "every 4 years, except every 100,
+   except every 400" in one string. Arbitrary leap rules without arbitrary code.
+2. **Absolute time is a minute count, not a day count.** `startsAt` and `maxMinutes` are
+   minutes. Our plan says `start_abs` in *days* — **change it to minutes**, because
+   `hoursInDay` / `minutesInHour` / `halfClock` mean events can carry a time of day.
+3. **Eras with `startsAt` and `resetMode`**, both negative and positive, so "Before
+   Arcana / Arcane Era" works without special-casing BC/AD.
+4. **A format token language** (`DDDD` weekday, `MMMM` month, `D^` ordinal day, `YYYY`
+   year, `E` era abbr, `[literal]`) so display is pure data, not code.
+
+Months carry `interval` and `isIntercalary`, so a month can appear only every N years or
+sit outside the weekday cycle. Moons are `phase` + `shift`.
+
+### 9.6 Icons are glyph + colour + shape
+
+`iconGlyph` is a FontAwesome class (`fas fa-dice-d20`), `iconColor` a hex, `iconShape` one
+of `pin-medium` / `pin-icon` / `diamond-medium`.
+
+Crucially these are **the same three fields a map pin carries** (section 5). That is *why*
+a pin can inherit from its target page — it is literally the same data. Our emoji-only
+`icon` column is simpler but forecloses that trick.
+
+### 9.7 Confirmations
+
+- `pos` values observed: `N W Z O e P A` — single-character fractional indexes, same
+  algorithm family as `lib/sortkey.ts`. Confirms the approach at tree level, not just for
+  map objects.
+- Short opaque ids everywhere; nesting via `parentId`; no folders.
+- Tags are plain strings on the resource, not tag entities. Simpler than ours — though
+  ours (tags are nodes) buys taggable pages, which is a Kanka strength worth keeping.
+
+### 9.8 What this changes for us
+
+| Finding | Action |
+|---|---|
+| Calendar schema + minute-based absolute time | **Change `dates.start_abs` from days to minutes** before P5. Adopt the leap-rule DSL, eras, moons and format tokens. |
+| `aliases[]` on a resource | Add it — `[[Cap]]` resolving to "Captain Daigo" is cheap and solves nickname links. |
+| Resource → documents[] → content | Consider collapsing `nodes.body_md` + `posts` into one ordered `documents` list. Gets multi-renderer pages free. Real refactor; decide before P3. |
+| Per-resource per-user permissions | Confirms the P2 `acl` design. Build it as planned. |
+| Icon = glyph + colour + shape | Revisit when maps land at P4, so pins can inherit. |
+| REST for structure, CRDT for prose | The seam to use at P7. Do not try to sync structure through Yjs. |
+| Properties barely used in a real world | Keep the P3 warning: typed fields must be cheaper than typing. |

@@ -150,7 +150,7 @@ map_layers    id, map_node_id, name, asset_id, opacity, z, is_default
 map_markers   id, map_node_id, layer_id, x, y, shape, icon, label, target_node_id,
               visibility
 calendars     node_id, schema (JSON: months, weekdays, leap rules, moons, eras)
-dates         node_id, calendar_id, start_abs (int days), end_abs, precision, lane,
+dates         node_id, calendar_id, start_abs (int MINUTES), end_abs, precision, lane,
               real_date
 views         node_id, kind (table|board|timeline|gallery|graph|calendar), query (JSON),
               config
@@ -159,10 +159,17 @@ audit_log     id, world_id, user_id, action, target, payload, at
 
 Notes:
 
-- `start_abs` is an absolute integer day count within a calendar, so sorting, ranges and
-  "what happened between X and Y" are integer queries. Display formatting is a pure
-  function of the calendar schema. `lane` matches the existing Kanka timeline export in
-  `TheOpenBin/07_DND/kanka_events.json`.
+- `start_abs` is an absolute integer **minute** count within a calendar, so sorting,
+  ranges and "what happened between X and Y" are integer queries. Minutes rather than days
+  because a calendar carries hours and minutes and events have a time of day — this
+  follows LegendKeeper, whose calendars store `startsAt` and `maxMinutes` in minutes.
+  Their whole calendar schema is worth copying: see
+  [legendkeeper-observations.md](legendkeeper-observations.md) §9.5, including the
+  `"400,!100,4"` leap-rule mini-DSL, eras with `startsAt`/`resetMode`, moons, and a format
+  token language. Display formatting is a pure function of the calendar schema. `lane`
+  matches the existing Kanka timeline export in `TheOpenBin/07_DND/kanka_events.json`.
+- `nodes.aliases` (a JSON array) lets `[[Cap]]` resolve to "Captain Daigo". LegendKeeper
+  carries `aliases[]` on every resource and it is cheap to add.
 - `fields` as rows (rather than only JSON) is what makes dataview-style querying cheap.
 - `visibility` + `acl` + `posts.visibility` is what makes DM / player / guest work
   without a second app.
