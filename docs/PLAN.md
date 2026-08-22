@@ -1,8 +1,20 @@
-# DNDWORLDAPP — Initial Plan
+# DNDWORLDAPP — Plan
 
 Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
+
+> **Status, 2026-08-22 — P0 and most of P1 are built and running.**
+>
+> | | |
+> |---|---|
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server |
+> | **Next** | P1.4 — the importers. LegendKeeper first: its format is fully specified and it holds the maps and timelines Kanka never had. |
+> | **Then** | P2 visibility (inline secret blocks first) → P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
+>
+> [HANDOFF.md](HANDOFF.md) is the operating manual for picking this up — what exists,
+> which rules must not be broken, and the environment gotchas. This file is the *why* and
+> the roadmap.
 
 ## 1. What this is
 
@@ -18,8 +30,11 @@ A self-hosted worldbuilding / TTRPG campaign web app:
   statblocks, initiative tracker, leaflet, fantasy calendar. Read them for behaviour and
   algorithms (calendar math, Leaflet CRS, statblock schema), not architecture. They get
   merged into one app instead of ten plugins that do not know about each other.
-- **First-class API + MCP**, because LegendKeeper has neither. Same shape as the Kanka
-  MCP already in daily use, so existing habits transfer.
+- **First-class API + MCP.** LegendKeeper turns out to *have* a REST API — it is simply
+  internal and undocumented (see [legendkeeper-observations.md](legendkeeper-observations.md)
+  §9.1), and there is no MCP server. Ours is public, specified, and shipped with an MCP
+  adapter. The tool surface deliberately echoes the Kanka MCP already in daily use, so
+  existing habits transfer.
 
 Non-goal: an Obsidian clone or a general note app. This is for building and *running* a
 campaign, with a DM, players, and guests looking at the same world at different
@@ -118,9 +133,11 @@ simplified. Detail in [kanka-mapping.md](kanka-mapping.md).
   specific user or role — one player's secret backstory node, for instance.
 - **Posts carry the same levels**, so a Location node can be player-visible while its
   "DM Notes" post stays `dm`. This is the most-used feature of the current Kanka setup
-  and it has to work on day one.
-- **Secret blocks** inside a body (a TipTap node) are stripped server-side for non-DM
-  readers, before the markdown ever leaves the API.
+  and it has to work on day one. ✅ built in P0.
+- **Secret blocks** inside a body are stripped server-side for non-DM readers, before the
+  markdown ever leaves the API. **This is the mechanism people actually reach for** — in
+  a real LegendKeeper world, inline secrets were used 70 times against 3 hidden sections
+  (§10.3 of the observations). Not yet built; first item of P2.
 
 Rule: visibility is enforced in one authorization layer that every query passes through.
 Never in the UI, never per-route.
@@ -133,9 +150,9 @@ worlds        id, name, slug, owner_id, settings (JSON)
 memberships   world_id, user_id, role (owner|dm|player|guest)
 api_tokens    id, user_id, world_id?, name, hash, scopes, last_used_at, revoked_at
 
-nodes         id, world_id, parent_id, template_id, title, slug, body_md, icon,
-              cover_asset_id, sort_key (fractional index), visibility, is_archived,
-              created_by, created_at, updated_at
+nodes         id, world_id, parent_id, template_id, kind, title, slug, body_md, icon,
+              aliases (JSON), cover_asset_id, sort_key (fractional index), visibility,
+              is_archived, created_by, created_at, updated_at
 posts         id, node_id, title, body_md, visibility, position, created_by
 acl           node_id, subject_type (user|role), subject_id, can_read, can_edit
 templates     id, world_id, name, icon, field_schema (JSON), default_body_md
@@ -174,47 +191,72 @@ Notes:
 - `visibility` + `acl` + `posts.visibility` is what makes DM / player / guest work
   without a second app.
 
-## 7. API + MCP
+## 7. API + MCP — built
 
 Rule: **the web client uses only the public API.** No private backdoor routes. That
 structurally guarantees the API is complete enough for MCP, scripts, and a future mobile
-view.
+view. It has already paid off once: the MCP server inherited the whole security model for
+free, and a read-only token provably cannot write through an assistant.
 
-- REST/JSON under `/api/v1`; OpenAPI generated from Zod schemas.
+- REST/JSON under `/api/v1`. **OpenAPI generated from the Zod schemas** — served at
+  `/api/v1/openapi.json`, with a small viewer at `/api/v1/docs`, and written to
+  `docs/openapi.json` by `npm run openapi` so contract drift shows up as a diff.
+- Every DTO in `packages/schema` is a Zod schema with its TypeScript type inferred from
+  it. Add a response field there and server validation, client types, the spec and the
+  MCP signatures all follow. That is what makes the spec generated rather than
+  maintained.
 - Auth: session cookie for the browser, scoped revocable bearer tokens for everything
-  else (`world:read`, `world:write`, `admin`). Tokens are per-world where it matters.
-- The **MCP server ships in-repo** as a thin adapter over that same API, stdio plus
-  streamable HTTP. Tools mirror the domain, not the tables, and deliberately echo the
-  Kanka MCP surface already in use: `find_nodes`, `get_node`, `create_node`,
-  `update_node`, `move_node`, `create_post`, `link_nodes`, `create_relation`, `run_view`,
-  `place_marker`, `add_event`, `advance_calendar`, `manage_permissions`.
-- Every write is attributable to a token and user, and lands in `audit_log`.
-- Webhooks and an event log later, so a Discord bot or Foundry can react.
+  else (`world:read` ⊂ `world:write` ⊂ `admin`), optionally pinned to one world.
+  **A token acts as its owner and inherits their role; scopes only ever narrow that.**
+  Tokens cannot manage tokens — that would route around their own scopes and expiry.
+- The **MCP server ships in-repo** (`apps/mcp`) as a thin adapter over that same API,
+  over stdio. Built: `list_worlds`, `get_tree`, `find_nodes`, `get_node`,
+  `list_unresolved_links`, `create_node`, `update_node`, `move_node`, `archive_node`,
+  `create_post`, `update_post`. Declared but not yet implemented, so the shape is
+  visible: `place_marker`, `add_event`, `advance_calendar`.
+
+Still to come: streamable-HTTP transport for MCP, an `audit_log` so every write is
+attributable, and webhooks so a Discord bot or Foundry can react.
 
 ## 8. Build phases
 
 Each phase ends deployed to the homelab and usable at a real session. Nothing ships as
 "foundation only".
 
-**P0 — Spine in a container. — built.** Repo scaffold, Dockerfile + compose, SQLite
+**P0 — Spine in a container. ✅ built.** Repo scaffold, Dockerfile + compose, SQLite
 migrations, users / sessions / first-run setup, worlds + memberships + roles, node CRUD,
 unrestricted nesting tree with drag-and-drop, markdown editor, `[[wikilinks]]` with
 autocomplete, backlinks panel, unresolved-link list, FTS5 search with a Ctrl+K switcher,
-posts with per-section visibility, image upload.
+posts with per-section visibility, image upload, page icons, archive.
 
-Two things landed earlier than planned because they were cheap to do now and expensive to
-retrofit: **roles and per-node/per-post visibility** (P2's core), and the flat
-short-id URL scheme. `npm run smoke` walks the whole surface and asserts the DM/player
-boundary in each of the four places it could leak.
+Two things landed earlier than planned because they were cheap now and expensive to
+retrofit: **roles and per-node/per-post visibility** (P2's core), and the flat short-id
+URL scheme. `npm run smoke` walks the whole surface and asserts the DM/player boundary in
+each of the four places it could leak.
 
-**P1 — API, tokens, MCP, and the imports.** Scoped tokens, a generated OpenAPI document
-and the MCP server are **done**. What remains is the imports: BloodEarth from Kanka
-(campaign `376198`), and the LegendKeeper world, whose export format is now fully
-specified in [legendkeeper-observations.md](legendkeeper-observations.md) §10.
+**P1 — API, tokens, MCP, and the imports.**
 
-Each import is the migration path *and* an honest test of the data model — if a real
+- **P1.1 Scoped API tokens ✅** — bearer auth beside the session cookie, hierarchical
+  scopes, optional world pin, a management UI, and the rule that tokens cannot mint
+  tokens.
+- **P1.2 OpenAPI ✅** — generated from the Zod schemas, served and written to disk.
+- **P1.3 MCP server ✅** — `apps/mcp` over stdio, verified by driving it as a real client
+  would.
+- **P1.4 The importers — next.** BloodEarth from Kanka (campaign `376198`), and the
+  LegendKeeper world, whose export format is fully specified in
+  [legendkeeper-observations.md](legendkeeper-observations.md) §10.
+
+**Do LegendKeeper first.** Its format is already reverse-engineered, the exports are
+already on disk, and it is the world that actually holds the maps and timelines Kanka
+never had — so it stress-tests the data model harder.
+
+Each import is the migration path *and* an honest test of the data model: if a real
 campaign with nested locations, hidden notes and a homebrew calendar round-trips cleanly,
 the model is sound. If it does not, better to learn that now than at P5.
+
+One hard constraint for both importers: **inline secret blocks must survive the import
+as secrets.** Flattening a LegendKeeper `block-secret` into visible prose would leak the
+DM's material to the players. That is a correctness requirement, not a nicety.
 
 **P2 — The rest of visibility.** Roles, node visibility and post visibility already work
 (P0). What remains, **most-used first**:
@@ -262,33 +304,58 @@ does most of the work.
 
 ## 9. Repo layout
 
+Built so far:
+
 ```
 DNDWORLDAPP/
   apps/
-    server/        Fastify, Drizzle, migrations, API v1
+    server/        Fastify + node:sqlite, migrations/*.sql, API v1
     web/           React + Vite client
-    mcp/           MCP server over the API
+    mcp/           MCP server over the public API (stdio)
   packages/
-    schema/        Zod types shared by server + web + mcp (single source of truth)
-    markdown/      wikilink + directive parser/serializer
-    calendar/      calendar math (pure, heavily unit-tested)
-    kanka-import/  Kanka API client + mapper
+    schema/        src/index.ts   Zod schemas; all DTO types inferred from them
+                   src/openapi.ts builds the OpenAPI document from those schemas
+  scripts/         write-openapi.mjs
   data/            worldapp.db, assets/   (gitignored; the container's /data)
-  docs/
+  docs/            PLAN, HANDOFF, kanka-mapping, legendkeeper-observations, openapi.json
   Dockerfile
   compose.yaml
 ```
 
-npm workspaces plus TypeScript project references.
+Planned, as their phases arrive:
+
+```
+  packages/
+    markdown/      wikilink + directive parser/serializer     (P3)
+    calendar/      calendar math — pure, heavily unit-tested  (P5)
+    kanka-import/  Kanka API client + mapper                  (P1.4)
+    lk-import/     LegendKeeper .json/.lk reader + ADF mapper (P1.4)
+```
+
+npm workspaces. No TypeScript project references and no build step for the server — Node
+24 runs the TypeScript directly.
 
 ## 10. Known risks
 
 - **Scope.** This is six apps in a trench coat. P0–P2 must be usable on their own or it
-  never ships.
+  never ships. So far each phase has ended deployable and tested; keep it that way.
+- **Permissions leak through the seams.** Every query goes through one authorization
+  layer, and the player view is tested as a first-class case. There are four surfaces
+  today where DM content could leak — the tree, a fetch by id, the posts list, search —
+  and the smoke suite asserts all four. **Every new surface needs the same treatment and
+  the same test**: map markers, timeline entries, query views, graph edges, exports,
+  webhooks. This is the easiest way to ruin the app.
 - **The view engine** is the hardest single piece. Keep the query a JSON filter tree, not
   a bespoke query language, at least until v2.
 - **Calendar math** breeds edge cases — pure functions, unit tests, no date logic in the
-  UI layer.
-- **Permissions leak through the seams.** Every query goes through one authorization
-  layer, and the player view is tested as a first-class case, not an afterthought.
-- **Realtime editing** is a tar pit. Deliberately last.
+  UI layer. Mitigated somewhat by adopting LegendKeeper's schema rather than inventing
+  one, but the leap-rule DSL and moon phases still need real tests.
+- **Building features nobody uses.** Evidence from a real LegendKeeper world: inline
+  secret blocks were used 70 times, hidden sections 3, structured fields 5, aliases 0. We
+  had already built the mechanism used 3 times and scheduled the one used 70 times for
+  later. Check the usage evidence before investing in a feature, not after.
+- **Realtime editing** is a tar pit. Deliberately last. When it comes: structure over
+  REST, prose over CRDT — the seam LegendKeeper uses.
+- **Schema drift between `migrations/*.sql` and `db/types.ts`.** Nothing checks it; it is
+  maintained by hand in the same commit. If this ever bites, that is the moment Drizzle
+  earns its place.
