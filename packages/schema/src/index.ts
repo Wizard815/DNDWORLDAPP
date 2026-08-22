@@ -1,8 +1,11 @@
 import { z } from "zod";
 
 /**
- * Shared contract between server, web client and (from P1) the MCP server.
- * The server validates with these; the client infers its types from them.
+ * Shared contract between server, web client and the MCP server.
+ *
+ * Everything is a Zod schema first; the TypeScript types are inferred from it.
+ * That way the OpenAPI document, the server's validation, the client's types and
+ * the MCP tool signatures all come from one definition and cannot drift apart.
  */
 
 // ---------------------------------------------------------------------------
@@ -26,7 +29,7 @@ export const roleSchema = z.enum(ROLES);
 
 /**
  * What renderer a node uses. The node table is one table; `kind` picks the view,
- * the way LegendKeeper swaps `resource-viewer ... map` for `... timeline`.
+ * the way LegendKeeper attaches a type to each document on a page.
  * P0 only implements `document`; the rest are reserved so their data can land
  * without a migration.
  */
@@ -60,12 +63,13 @@ export const loginInputSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginInputSchema>;
 
-export interface UserDto {
-  id: string;
-  name: string;
-  email: string;
-  isServerAdmin: boolean;
-}
+export const userDtoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  isServerAdmin: z.boolean(),
+});
+export type UserDto = z.infer<typeof userDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Worlds
@@ -76,13 +80,28 @@ export const createWorldInputSchema = z.object({
 });
 export type CreateWorldInput = z.infer<typeof createWorldInputSchema>;
 
-export interface WorldDto {
-  id: string;
-  name: string;
-  slug: string;
-  role: Role;
-  rootNodeId: string | null;
-}
+export const worldDtoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  role: roleSchema,
+  rootNodeId: z.string().nullable(),
+});
+export type WorldDto = z.infer<typeof worldDtoSchema>;
+
+export const addMemberInputSchema = z.object({
+  email: z.string().trim().email().max(254),
+  role: roleSchema,
+});
+export type AddMemberInput = z.infer<typeof addMemberInputSchema>;
+
+export const memberDtoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  role: roleSchema,
+});
+export type MemberDto = z.infer<typeof memberDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Nodes
@@ -123,41 +142,51 @@ export const moveNodeInputSchema = z.object({
 });
 export type MoveNodeInput = z.infer<typeof moveNodeInputSchema>;
 
-export interface NodeSummary {
-  id: string;
-  parentId: string | null;
-  title: string;
-  slug: string;
-  icon: string | null;
-  kind: NodeKind;
-  visibility: Visibility;
-  sortKey: string;
-  childCount: number;
-  isArchived: boolean;
-  updatedAt: number;
-}
+export const nodeSummarySchema = z.object({
+  id: z.string(),
+  parentId: z.string().nullable(),
+  title: z.string(),
+  slug: z.string(),
+  icon: z.string().nullable(),
+  kind: nodeKindSchema,
+  visibility: visibilitySchema,
+  sortKey: z.string(),
+  childCount: z.number().int(),
+  isArchived: z.boolean(),
+  updatedAt: z.number().int(),
+});
+export type NodeSummary = z.infer<typeof nodeSummarySchema>;
 
-export interface NodeDetail extends NodeSummary {
-  worldId: string;
-  bodyMd: string;
-  templateId: string | null;
-  breadcrumb: Array<{ id: string; title: string; icon: string | null }>;
-  children: NodeSummary[];
-  backlinks: Backlink[];
-  canEdit: boolean;
-}
+export const backlinkSchema = z.object({
+  nodeId: z.string(),
+  title: z.string(),
+  icon: z.string().nullable(),
+  label: z.string().nullable(),
+});
+export type Backlink = z.infer<typeof backlinkSchema>;
 
-export interface Backlink {
-  nodeId: string;
-  title: string;
-  icon: string | null;
-  label: string | null;
-}
+export const breadcrumbEntrySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  icon: z.string().nullable(),
+});
 
-export interface UnresolvedLink {
-  targetText: string;
-  count: number;
-}
+export const nodeDetailSchema = nodeSummarySchema.extend({
+  worldId: z.string(),
+  bodyMd: z.string(),
+  templateId: z.string().nullable(),
+  breadcrumb: z.array(breadcrumbEntrySchema),
+  children: z.array(nodeSummarySchema),
+  backlinks: z.array(backlinkSchema),
+  canEdit: z.boolean(),
+});
+export type NodeDetail = z.infer<typeof nodeDetailSchema>;
+
+export const unresolvedLinkSchema = z.object({
+  targetText: z.string(),
+  count: z.number().int(),
+});
+export type UnresolvedLink = z.infer<typeof unresolvedLinkSchema>;
 
 // ---------------------------------------------------------------------------
 // Posts (Kanka's entity notes: a node's DM-only sections live here)
@@ -173,16 +202,17 @@ export type CreatePostInput = z.infer<typeof createPostInputSchema>;
 export const updatePostInputSchema = createPostInputSchema.partial();
 export type UpdatePostInput = z.infer<typeof updatePostInputSchema>;
 
-export interface PostDto {
-  id: string;
-  nodeId: string;
-  title: string;
-  bodyMd: string;
-  visibility: Visibility;
-  sortKey: string;
-  createdAt: number;
-  updatedAt: number;
-}
+export const postDtoSchema = z.object({
+  id: z.string(),
+  nodeId: z.string(),
+  title: z.string(),
+  bodyMd: z.string(),
+  visibility: visibilitySchema,
+  sortKey: z.string(),
+  createdAt: z.number().int(),
+  updatedAt: z.number().int(),
+});
+export type PostDto = z.infer<typeof postDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Search
@@ -194,12 +224,13 @@ export const searchQuerySchema = z.object({
 });
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
 
-export interface SearchHit {
-  nodeId: string;
-  title: string;
-  icon: string | null;
-  snippet: string;
-}
+export const searchHitSchema = z.object({
+  nodeId: z.string(),
+  title: z.string(),
+  icon: z.string().nullable(),
+  snippet: z.string(),
+});
+export type SearchHit = z.infer<typeof searchHitSchema>;
 
 // ---------------------------------------------------------------------------
 // API tokens
@@ -224,40 +255,50 @@ export const createTokenInputSchema = z.object({
 });
 export type CreateTokenInput = z.infer<typeof createTokenInputSchema>;
 
-export interface TokenDto {
-  id: string;
-  name: string;
-  worldId: string | null;
-  scopes: Scope[];
-  prefix: string;
-  createdAt: number;
-  lastUsedAt: number | null;
-  expiresAt: number | null;
-  revokedAt: number | null;
-}
+export const tokenDtoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  worldId: z.string().nullable(),
+  scopes: z.array(scopeSchema),
+  prefix: z.string(),
+  createdAt: z.number().int(),
+  lastUsedAt: z.number().int().nullable(),
+  expiresAt: z.number().int().nullable(),
+  revokedAt: z.number().int().nullable(),
+});
+export type TokenDto = z.infer<typeof tokenDtoSchema>;
 
 /** Returned once, at creation. The plaintext is never stored or shown again. */
-export interface CreatedTokenDto {
-  token: TokenDto;
-  secret: string;
-}
+export const createdTokenDtoSchema = z.object({
+  token: tokenDtoSchema,
+  secret: z.string(),
+});
+export type CreatedTokenDto = z.infer<typeof createdTokenDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Assets
 // ---------------------------------------------------------------------------
 
-export interface AssetDto {
-  id: string;
-  url: string;
-  mime: string;
-  bytes: number;
-  origName: string;
-}
+export const assetDtoSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  mime: z.string(),
+  bytes: z.number().int(),
+  origName: z.string(),
+});
+export type AssetDto = z.infer<typeof assetDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
 
-export interface ApiError {
-  error: { code: string; message: string; details?: unknown };
-}
+export const apiErrorSchema = z.object({
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    details: z.unknown().optional(),
+  }),
+});
+export type ApiError = z.infer<typeof apiErrorSchema>;
+
+export const okSchema = z.object({ ok: z.literal(true) });

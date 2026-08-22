@@ -6,7 +6,8 @@ A self-hosted worldbuilding and campaign app: **LegendKeeper's freeform structur
 One tree. Anything nests inside anything. A map is a page, a timeline is a page, a
 character is a page — type is a filter, not a folder you are forced to live in.
 
-**Status: P0.** The spine works and runs.
+**Status: P0 and P1 done** — the spine, scoped API tokens, a generated OpenAPI spec, and
+an MCP server. Next is the importers, then maps and calendars.
 
 **Picking this up? Read [docs/HANDOFF.md](docs/HANDOFF.md) first** — it covers what
 exists, the rules that must not be broken, the environment gotchas, and the next tasks in
@@ -62,19 +63,63 @@ uploaded images. Backup is a copy of that directory.
   world, with read / write / admin scopes. Mint them from the sidebar footer. A token
   acts as you and inherits your role; scopes only ever narrow that.
 
+## Driving it from an AI assistant (MCP)
+
+The repo ships an MCP server in `apps/mcp`. It is a thin adapter over the same public
+HTTP API — no database access, no privileged path — so it can see and do exactly what its
+token's owner can, no more.
+
+1. In the app: sidebar footer → **API tokens** → name it, choose **Read + write**, leave it
+   pinned to one world. Copy the secret; it is shown once.
+2. Point your assistant at it:
+
+```json
+{
+  "mcpServers": {
+    "dndworldapp": {
+      "command": "node",
+      "args": ["/path/to/DNDWORLDAPP/apps/mcp/src/index.ts"],
+      "env": {
+        "DNDWORLDAPP_URL": "http://localhost:8080",
+        "DNDWORLDAPP_TOKEN": "dwa_...",
+        "DNDWORLDAPP_WORLD": "optional-world-id"
+      }
+    }
+  }
+}
+```
+
+Tools: `list_worlds`, `get_tree`, `find_nodes`, `get_node`, `list_unresolved_links`,
+`create_node`, `update_node`, `move_node`, `archive_node`, `create_post`, `update_post`.
+`place_marker`, `add_event` and `advance_calendar` are registered but report that they are
+not built yet, so the eventual shape is visible.
+
+Because it goes through the API, a **read-only token cannot write through MCP** — the
+scope check is the same one the browser hits.
+
+## API reference
+
+The OpenAPI spec is generated from the Zod schemas in `packages/schema`, so it cannot
+drift from what the server actually validates:
+
+- `/api/v1/openapi.json` — the spec
+- `/api/v1/docs` — a small readable viewer
+- `npm run openapi` — writes `docs/openapi.json`, so drift shows up in review
+
 ## What does not exist yet
 
 Maps, calendars, timelines, templates and typed fields, query views, boards, statblocks,
-OpenAPI, the MCP server, and the Kanka importer. Those are the rest of P1 through P6 in
-the plan, in that order.
+and the importers (Kanka and LegendKeeper). Those are the rest of P1 through P6 in the
+plan, in that order.
 
 ## Layout
 
 ```
-apps/server    Fastify + SQLite. Node runs the TypeScript directly — no build step.
-apps/web       React + Vite client.
-packages/schema  Zod contract shared by server and client (and later the MCP server).
-docs/          Plan, Kanka mapping, LegendKeeper findings.
+apps/server      Fastify + SQLite. Node runs the TypeScript directly — no build step.
+apps/web         React + Vite client.
+apps/mcp         MCP server, over the public HTTP API.
+packages/schema  Zod contract shared by the server, the client and the MCP server.
+docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.json.
 ```
 
 ## Decisions worth knowing
@@ -96,9 +141,12 @@ docs/          Plan, Kanka mapping, LegendKeeper findings.
 ## Tests
 
 ```bash
-npm test
+npm test          # unit: fractional indexing, wiki-link parsing
+npm run smoke     # 45 end-to-end API checks (needs an EMPTY data/ dir + running server)
+npm run test:mcp  # drives the MCP server over stdio (needs a running server)
+npm run typecheck
 ```
 
-Unit tests cover the fractional-index and wiki-link parsing logic. There is also an
-end-to-end smoke script that exercises the API against a running server, including the
-DM-versus-player boundary — see `docs/PLAN.md` for what P1 adds around it.
+The smoke suite asserts the DM-versus-player boundary in every place it could leak — the
+tree, a direct fetch by id, the posts list, and search — plus the token scope rules. The
+MCP test additionally proves a read-only token cannot write through an assistant.

@@ -1,6 +1,7 @@
 # HANDOFF — read this first
 
-Written 2026-08-21 for whoever (human or agent) picks this up next.
+Written 2026-08-21, last updated 2026-08-22, for whoever (human or agent) picks this up
+next.
 
 This document is the operating manual: what exists, why it is shaped this way, which
 rules must not be broken, and what to build next. The other docs are:
@@ -10,6 +11,7 @@ rules must not be broken, and what to build next. The other docs are:
 | [PLAN.md](PLAN.md) | The product plan and phase roadmap (P0–P7) |
 | [kanka-mapping.md](kanka-mapping.md) | Kanka's model → ours, and the import plan for the real campaign |
 | [legendkeeper-observations.md](legendkeeper-observations.md) | Field notes from inspecting a live LegendKeeper project |
+| [openapi.json](openapi.json) | Generated API contract — regenerate with `npm run openapi` |
 | [../README.md](../README.md) | Short version for a newcomer |
 
 ---
@@ -46,11 +48,13 @@ If you are about to add a table called `characters`, or a nav section called
 
 ## 3. Current status
 
-**P0 is complete. P1.1 (API tokens) is complete.** Next up is P1.2, OpenAPI.
+**P0 is complete. P1.1 (tokens), P1.2 (OpenAPI) and P1.3 (the MCP server) are complete.**
+Next up is P1.4: the importers.
 
 Verified by:
 - `npm test` — 10 unit tests (fractional indexing, wiki-link parsing). All pass.
 - `npm run smoke` — 45 end-to-end API checks against a running server. All pass.
+- `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All pass.
 - `npm run typecheck` — clean on both server and web.
 - `npm run build` — client builds.
 - Driven by hand in a browser: login → tree → page → posts → rendered wiki links.
@@ -72,11 +76,14 @@ Verified by:
 - Content-addressed image upload
 - Dockerfile + compose, one image, one `/data` volume
 - **Scoped bearer tokens** (P1.1) with a management UI — see §7.1
+- **OpenAPI** generated from the Zod schemas: `/api/v1/openapi.json`, `/api/v1/docs`,
+  and `npm run openapi` writes `docs/openapi.json` so drift is visible in review
+- **MCP server** (`apps/mcp`) over the public HTTP API
 
 ### Not started
 
 Maps, calendars, timelines, templates and typed fields, the query/view engine, boards,
-statblocks, initiative, OpenAPI, the MCP server, the Kanka importer, realtime.
+statblocks, initiative, the importers (Kanka and LegendKeeper), realtime.
 
 ---
 
@@ -85,7 +92,7 @@ statblocks, initiative, OpenAPI, the MCP server, the Kanka importer, realtime.
 ```
 apps/server/
   migrations/0001_init.sql   THE SCHEMA SOURCE OF TRUTH. Hand-written SQL.
-  scripts/smoke.mjs          30-check end-to-end API test. Needs an empty data dir.
+  scripts/smoke.mjs          45-check end-to-end API test. Needs an empty data dir.
   src/
     index.ts                 Fastify app: plugins, error handler, static serving, boot
     env.ts                   Config from env vars; refuses prod boot with the dev secret
@@ -114,6 +121,8 @@ apps/server/
       auth.ts                setup, login, logout, me, users
       worlds.ts              worlds, tree, search, members, node create, asset upload
       nodes.ts               node detail/update/move/archive, posts
+      tokens.ts              mint / list / revoke API tokens (session only)
+      openapi.ts             serves the generated spec + a small viewer
 
 apps/web/
   src/
@@ -127,9 +136,18 @@ apps/web/
       NodeView.tsx           Breadcrumb, title, editor, children, + Backlinks rail
       Posts.tsx              Sections with visibility badges
       QuickSwitcher.tsx      Ctrl+K
+      Tokens.tsx             API token management
+      IconPicker.tsx         Emoji picker on the page title
 
-packages/schema/src/index.ts Zod schemas + DTO types shared by server and client.
-                             The MCP server will import this too.
+apps/mcp/
+  src/index.ts               Entry: reads env, builds the client, stdio transport
+  src/client.ts              Typed HTTP client — the ONLY way it reaches the app
+  src/tools.ts               Tool definitions
+  scripts/integration-test.mjs  Drives the server over stdio like a real client
+
+packages/schema/
+  src/index.ts               Zod schemas; every DTO type is inferred from them
+  src/openapi.ts             Builds the OpenAPI document from those schemas
 ```
 
 ---
@@ -383,22 +401,29 @@ Migration `0002_api_tokens.sql`, `auth/tokens.ts`, `routes/tokens.ts`, the scope
 Generate from the Zod schemas in `packages/schema`. The point is that the MCP server and
 any future script have a contract, and that drift is visible.
 
-### 9.3 The MCP server (`apps/mcp`)
+### 9.3 The MCP server — DONE
 
-A thin adapter over the HTTP API — **not** direct database access, or rule 6.2 rots.
-stdio + streamable HTTP. Mirror the tool surface of the Kanka MCP the owner already uses
-daily, so habits transfer:
+`apps/mcp`, a thin adapter over the HTTP API — **never** direct database access, or rule
+6.2 rots. stdio transport. Configure with `DNDWORLDAPP_URL`, `DNDWORLDAPP_TOKEN` and
+optionally `DNDWORLDAPP_WORLD`.
 
-```
-find_nodes  get_node  create_node  update_node  move_node
-create_post  update_post
-link_nodes  create_relation
-run_view  place_marker  add_event  advance_calendar
-manage_permissions
-```
+Registered: `list_worlds`, `get_tree`, `find_nodes`, `get_node`,
+`list_unresolved_links`, `create_node`, `update_node`, `move_node`, `archive_node`,
+`create_post`, `update_post`. Plus `place_marker`, `add_event` and `advance_calendar`,
+which report that they are not built yet — declared on purpose so the eventual shape is
+visible.
 
-Tools that target unbuilt features (`place_marker`, `advance_calendar`) should return a
-clear "not implemented yet" rather than being omitted, so the shape is visible early.
+Two things to preserve when extending it:
+
+- **Everything goes through the API.** `src/client.ts` is the only door. That is what
+  makes `npm run test:mcp`'s last assertion true: a read-only token cannot write through
+  MCP, because it hits the same scope hook a browser would.
+- **`get_tree` renders an indented outline, not JSON.** Far cheaper for a model to read,
+  and it keeps ids visible for follow-up calls. Prefer prose-shaped tool output over
+  dumping structures.
+
+Streamable HTTP transport is not wired up. stdio covers Claude Desktop and Claude Code;
+add HTTP if something needs to reach it over a network.
 
 ### 9.4 The Kanka importer (`packages/kanka-import`)
 

@@ -207,11 +207,14 @@ retrofit: **roles and per-node/per-post visibility** (P2's core), and the flat
 short-id URL scheme. `npm run smoke` walks the whole surface and asserts the DM/player
 boundary in each of the four places it could leak.
 
-**P1 — API, tokens, MCP, and the Kanka import.** Lock the client onto `/api/v1`, publish
-OpenAPI, ship scoped tokens and the MCP server, then import BloodEarth (campaign
-`376198`) over the Kanka API — entities, posts with their visibility, attributes,
-relations, tags, calendar events. The import is the migration path *and* the first honest
-test of the data model.
+**P1 — API, tokens, MCP, and the imports.** Scoped tokens, a generated OpenAPI document
+and the MCP server are **done**. What remains is the imports: BloodEarth from Kanka
+(campaign `376198`), and the LegendKeeper world, whose export format is now fully
+specified in [legendkeeper-observations.md](legendkeeper-observations.md) §10.
+
+Each import is the migration path *and* an honest test of the data model — if a real
+campaign with nested locations, hidden notes and a homebrew calendar round-trips cleanly,
+the model is sound. If it does not, better to learn that now than at P5.
 
 **P2 — The rest of visibility.** Roles, node visibility and post visibility already work
 (P0). What remains, **most-used first**:

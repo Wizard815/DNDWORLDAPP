@@ -16,8 +16,11 @@
     "build": "npm run build -w @dndworldapp/web",
     "start": "node apps/server/src/index.ts",
     "test": "npm run test -w @dndworldapp/server",
-    "typecheck": "tsc -p apps/server/tsconfig.json && tsc -p apps/web/tsconfig.json",
-    "smoke": "npm run smoke -w @dndworldapp/server"
+    "typecheck": "tsc -p apps/server/tsconfig.json && tsc -p apps/web/tsconfig.json && tsc -p apps/mcp/tsconfig.json",
+    "smoke": "npm run smoke -w @dndworldapp/server",
+    "openapi": "node scripts/write-openapi.mjs",
+    "dev:mcp": "npm run start -w @dndworldapp/mcp",
+    "test:mcp": "npm run test -w @dndworldapp/mcp"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

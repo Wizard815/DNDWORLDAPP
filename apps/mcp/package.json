@@ -1,0 +1,22 @@
+{
+  "name": "@dndworldapp/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "dndworldapp-mcp": "src/index.ts"
+  },
+  "scripts": {
+    "start": "node src/index.ts",
+    "dev": "node --watch src/index.ts",
+    "test": "node scripts/integration-test.mjs"
+  },
+  "dependencies": {
+    "@dndworldapp/schema": "*",
+    "@modelcontextprotocol/sdk": "^1.13.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}

@@ -13,6 +13,7 @@ import { assertScope, attachUser } from "./http/context.ts";
 import { HttpError, forbidden } from "./lib/errors.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { nodeRoutes } from "./routes/nodes.ts";
+import { openApiRoutes } from "./routes/openapi.ts";
 import { tokenRoutes } from "./routes/tokens.ts";
 import { worldRoutes } from "./routes/worlds.ts";
 
@@ -46,6 +47,9 @@ app.addHook("preHandler", async (request) => {
   if (!request.url.startsWith("/api/v1/")) return;
 
   const path = request.url.split("?")[0] ?? "";
+
+  // The spec is a public contract, not data.
+  if (path === "/api/v1/openapi.json" || path === "/api/v1/docs") return;
 
   // Tokens may not manage tokens: that would route around their own scopes.
   if (path.startsWith("/api/v1/tokens")) {
@@ -98,6 +102,7 @@ await app.register(authRoutes);
 await app.register(worldRoutes);
 await app.register(nodeRoutes);
 await app.register(tokenRoutes);
+await app.register(openApiRoutes);
 
 // Uploaded images, under /media so they cannot collide with the client bundle
 // that Vite emits into /assets. Content-addressed, so they cache forever.
