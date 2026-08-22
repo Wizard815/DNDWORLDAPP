@@ -312,6 +312,59 @@ export const createdTokenDtoSchema = z.object({
 export type CreatedTokenDto = z.infer<typeof createdTokenDtoSchema>;
 
 // ---------------------------------------------------------------------------
+// Per-node ACL — additive grants on top of a node's own visibility
+// ---------------------------------------------------------------------------
+
+export const ACL_SUBJECT_TYPES = ["user", "role"] as const;
+export type AclSubjectType = (typeof ACL_SUBJECT_TYPES)[number];
+export const aclSubjectTypeSchema = z.enum(ACL_SUBJECT_TYPES);
+
+export const grantAclInputSchema = z.object({
+  subjectType: aclSubjectTypeSchema,
+  /** A user id when subjectType is 'user'; a role name when it is 'role'. */
+  subjectId: z.string().min(1),
+  canRead: z.boolean().default(true),
+  canEdit: z.boolean().default(false),
+});
+export type GrantAclInput = z.infer<typeof grantAclInputSchema>;
+
+export const aclEntryDtoSchema = z.object({
+  id: z.string(),
+  nodeId: z.string(),
+  subjectType: aclSubjectTypeSchema,
+  subjectId: z.string(),
+  /** Resolved for display: the username for a user, the role's label for a role. */
+  subjectLabel: z.string(),
+  canRead: z.boolean(),
+  canEdit: z.boolean(),
+  createdAt: z.number().int(),
+});
+export type AclEntryDto = z.infer<typeof aclEntryDtoSchema>;
+
+// ---------------------------------------------------------------------------
+// Anonymous share links — the no-account guest mechanism: a token-bearing URL
+// that grants read access to one page's subtree. See ACL above for the
+// named-account equivalent.
+// ---------------------------------------------------------------------------
+
+export const shareLinkDtoSchema = z.object({
+  id: z.string(),
+  nodeId: z.string(),
+  /** First few characters of the token, for telling links apart in a list. */
+  prefix: z.string(),
+  createdAt: z.number().int(),
+  revokedAt: z.number().int().nullable(),
+});
+export type ShareLinkDto = z.infer<typeof shareLinkDtoSchema>;
+
+/** Returned once, at creation. The plaintext token is never stored or shown again. */
+export const createdShareLinkDtoSchema = z.object({
+  shareLink: shareLinkDtoSchema,
+  token: z.string(),
+});
+export type CreatedShareLinkDto = z.infer<typeof createdShareLinkDtoSchema>;
+
+// ---------------------------------------------------------------------------
 // Assets
 // ---------------------------------------------------------------------------
 

@@ -14,6 +14,7 @@ import { HttpError, forbidden } from "./lib/errors.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { nodeRoutes } from "./routes/nodes.ts";
 import { openApiRoutes } from "./routes/openapi.ts";
+import { shareRoutes } from "./routes/share.ts";
 import { tokenRoutes } from "./routes/tokens.ts";
 import { worldRoutes } from "./routes/worlds.ts";
 
@@ -101,6 +102,7 @@ app.get("/healthz", async () => ({
 await app.register(authRoutes);
 await app.register(worldRoutes);
 await app.register(nodeRoutes);
+await app.register(shareRoutes);
 await app.register(tokenRoutes);
 await app.register(openApiRoutes);
 

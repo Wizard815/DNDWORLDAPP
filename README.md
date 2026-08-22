@@ -6,11 +6,11 @@ A self-hosted worldbuilding and campaign app: **LegendKeeper's freeform structur
 One tree. Anything nests inside anything. A map is a page, a timeline is a page, a
 character is a page — type is a filter, not a folder you are forced to live in.
 
-**Status: P0 and P1 done, P2 underway** — the spine, scoped API tokens, a generated
-OpenAPI spec, an MCP server, inline `:::secret` blocks, and username/password accounts
-with a DM member panel (no email, ever — this is self-hosted with no mail server). Next
-is per-node ACL and anonymous share links, then templates and query views. No bulk
-importer is planned; content moves in through the API/MCP as needed.
+**Status: P0, P1 and P2 done** — the spine, scoped API tokens, a generated OpenAPI spec,
+an MCP server, inline `:::secret` blocks, username/password accounts with a DM member
+panel (no email, ever — this is self-hosted with no mail server), per-node ACL overrides,
+anonymous share links, and "view as a player." Next is templates and query views. No
+bulk importer is planned; content moves in through the API/MCP as needed.
 
 **Picking this up? Read [docs/HANDOFF.md](docs/HANDOFF.md) first** — it covers what
 exists, the rules that must not be broken, the environment gotchas, and the next tasks in
@@ -74,6 +74,16 @@ uploaded images. Backup is a copy of that directory.
 - **Scoped API tokens.** Bearer tokens for scripts and the MCP server, pinnable to one
   world, with read / write / admin scopes. Mint them from the sidebar footer. A token
   acts as you and inherits your role; scopes only ever narrow that.
+- **Per-page access grants.** On top of a page's own visibility, an owner/DM can grant
+  read and/or edit to one specific account or to a whole role — "anyone with the player
+  role can edit this page," not just "this one person can." Additive only: a grant can
+  only widen access, never take it away.
+- **Anonymous share links.** A URL that needs no account at all, revealing one page and
+  its subtree — even a `members`- or `dm`-visibility page, since sharing it is the
+  point. Content underneath still follows its own visibility, so sharing one page never
+  silently exposes what's hidden inside it.
+- **"View as a player."** An owner/DM can preview their own world exactly as a player
+  would see it, one click from the DM Menu, without signing out.
 
 ## Driving it from an AI assistant (MCP)
 
@@ -121,7 +131,7 @@ drift from what the server actually validates:
 ## What does not exist yet
 
 Maps, calendars, timelines, templates and typed fields, query views, boards, statblocks.
-Those are P2 through P6 in the plan, in that order. No bulk importer from Kanka or
+Those are P3 through P6 in the plan, in that order. No bulk importer from Kanka or
 LegendKeeper is planned — content moves over by hand through the API/MCP as needed.
 
 ## Layout

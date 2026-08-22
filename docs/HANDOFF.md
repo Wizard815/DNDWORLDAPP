@@ -48,14 +48,12 @@ If you are about to add a table called `characters`, or a nav section called
 
 ## 3. Current status
 
-**P0 and P1 are complete. P2 is underway** — inline secret blocks and username/password
-accounts with a DM member panel are done; per-node ACL and anonymous share links are not.
-No bulk importer is planned — see §9.4.
+**P0, P1 and P2 are complete.** No bulk importer is planned — see §9.4.
 
 Verified by:
 - `npm test` — 20 unit tests (fractional indexing, wiki-link parsing, secret blocks). All
   pass.
-- `npm run smoke` — 75 end-to-end API checks against a running server. All pass.
+- `npm run smoke` — 112 end-to-end API checks against a running server. All pass.
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All pass.
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
@@ -100,12 +98,16 @@ same fix. Small, self-contained, not touched here.
 - **MCP server** (`apps/mcp`) over the public HTTP API
 - **Inline `:::secret` blocks** (P2, first item) in node and post bodies — see §7.2
 - **Username/password accounts, DM-driven, no email** (P2, second item) — see §7.3
+- **Per-node ACL overrides, "view as a player," and the DM Menu** (P2, third item) —
+  additive-only grants on top of a page's own visibility, plus a preview mode and a
+  single sidebar entry point for all of it — see §7.4
+- **Anonymous share links** (P2, fourth item) — a no-account guest mechanism, a
+  URL-bearing token that reveals one page's subtree — see §7.5
 
 ### Not started
 
-The rest of P2 (per-node ACL, anonymous share links, "view as player"), maps, calendars,
-timelines, templates and typed fields, the query/view engine, boards, statblocks,
-initiative, realtime. No importer is planned — see §9.4.
+Maps, calendars, timelines, templates and typed fields, the query/view engine, boards,
+statblocks, initiative, realtime. No importer is planned — see §9.4.
 
 ---
 
@@ -117,7 +119,9 @@ apps/server/
   migrations/0002_api_tokens.sql
   migrations/0003_secret_blocks.sql  Drops the FTS insert/update triggers — see §7.2
   migrations/0004_username_accounts.sql  RENAME COLUMN email TO username — see §7.3
-  scripts/smoke.mjs          75-check end-to-end API test. Needs an empty data dir.
+  migrations/0005_acl.sql    Per-node ACL overrides — see §7.4
+  migrations/0006_share_links.sql  Anonymous share links — see §7.5
+  scripts/smoke.mjs          112-check end-to-end API test. Needs an empty data dir.
   src/
     index.ts                 Fastify app: plugins, error handler, static serving, boot
     env.ts                   Config from env vars; refuses prod boot with the dev secret
@@ -132,6 +136,7 @@ apps/server/
       policy.ts              ***THE AUTHORIZATION LAYER*** — read section 6
       viewer.ts              { userId, role } context type
     http/context.ts          requireUser / viewerForWorld / viewerForNode / startSession
+                              (also the "view as a player" header — see §7.4)
     lib/
       id.ts                  shortId(8) for nodes, longId(20) for everything else
       sortkey.ts             Fractional indexing (+ tests)
@@ -144,10 +149,13 @@ apps/server/
       posts.ts               Sections with visibility
       worlds.ts              Worlds, memberships, world creation (makes the root page)
       assets.ts              Content-addressed uploads
+      acl.ts                 Per-node access grants — see §7.4
+      shareLinks.ts          Anonymous share links — see §7.5
     routes/
       auth.ts                setup, login, logout, me, self-service change-password
       worlds.ts              worlds, tree, search, members (add/create/remove/reset-pw), node create, asset upload
-      nodes.ts               node detail/update/move/archive, posts
+      nodes.ts               node detail/update/move/archive, posts, acl, share-links
+      share.ts               the anonymous half of a share link — no auth at all
       tokens.ts              mint / list / revoke API tokens (session only)
       openapi.ts             serves the generated spec + a small viewer
 
@@ -166,6 +174,8 @@ apps/web/
       QuickSwitcher.tsx      Ctrl+K
       Tokens.tsx             API token management
       Members.tsx            DM admin panel: add/create accounts, remove, reset passwords
+      Access.tsx             Per-node ACL grants + share link management — see §7.4/§7.5
+      ShareView.tsx          The anonymous half of a share link — no session, read-only
       IconPicker.tsx         Emoji picker on the page title
 
 apps/mcp/
@@ -203,6 +213,10 @@ links        id, world_id, src_node_id, dst_node_id(NULL = unresolved), target_t
              label, kind, created_at
 node_tags    (node_id, tag_node_id) PK
 nodes_fts    FTS5 virtual table, maintained by three triggers on `nodes`
+acl          id, node_id, subject_type(user|role), subject_id, can_read, can_edit,
+             created_by, created_at                                    — see §7.4
+share_links  id, node_id, hash(sha256), prefix, created_by, created_at, revoked_at
+                                                                        — see §7.5
 ```
 
 Notes that matter:
@@ -318,6 +332,17 @@ GET    /nodes/:nodeId/posts                 (same secret redaction as node bodie
 POST   /nodes/:nodeId/posts
 PATCH  /posts/:postId                       same 400-if-secret-and-not-dm rule as nodes
 DELETE /posts/:postId
+
+GET    /nodes/:nodeId/acl                   grants on this page (owner/dm only) — §7.4
+POST   /nodes/:nodeId/acl                   { subjectType, subjectId, canRead, canEdit }
+DELETE /nodes/:nodeId/acl/:aclId            revoke a grant
+
+GET    /nodes/:nodeId/share-links           share links on this page (owner/dm only) — §7.5
+POST   /nodes/:nodeId/share-links           -> { shareLink, token } — token shown once
+DELETE /nodes/:nodeId/share-links/:id       revoke a link
+
+GET    /share/:token/tree                   NO AUTH — the shared subtree, for a visitor
+GET    /share/:token/nodes/:nodeId          NO AUTH — one page within that subtree
 
 GET    /tokens                              your tokens (session only)
 POST   /tokens                              { name, worldId?, scopes[], expiresInDays? }
@@ -457,6 +482,105 @@ had nothing to check it against. Fixed by importing the shared types; if you add
 auth-adjacent call, import its input type from the schema package rather than inlining
 one, or the same drift can happen again undetected.
 
+### 7.4 Per-node ACL, "view as a player," and the DM Menu
+
+**ACL is deliberately additive-only.** `acl.ts`'s `nodeAclSql()` composes as
+`visibility OR acl` everywhere a read check happens (`services/nodes.ts::readableSql`) —
+there is no deny entry, so a grant can only widen what a page's own visibility already
+allows, never narrow it. That sidesteps the precedence question ("does a deny beat a
+role-based allow?") entirely, at the cost of not supporting "everyone except this one
+player." A grant is keyed on `(node_id, subject_type, subject_id)`; re-granting the same
+subject updates the existing row (`ON CONFLICT ... DO UPDATE`) rather than duplicating
+it. `subjectType: 'role'` is how "anyone with role X can edit this page" is expressed
+without touching the page's visibility for everyone else — `subjectId` is then a role
+name (`player`/`guest`; owner/dm already see and edit everything, so granting to them
+would be a no-op) rather than a user id.
+
+**A production bug worth knowing about, so it does not recur.** The first version of
+`readableSql()` in `services/nodes.ts` built the ACL fragment as
+`EXISTS (SELECT 1 FROM acl a WHERE a.node_id = id ...)` for the un-aliased case (used by
+`requireVisibleNode`). Because the correlated subquery's own `FROM acl a` **also** has an
+`id` column, the bare `id` resolved to `a.id` — the ACL row's own id — not the outer
+query's `nodes.id`. Every grant existed in the table but the check was silently comparing
+a row's `node_id` to its own `id`, so nothing ever matched. Cost a real debugging pass
+(smoke checks failing with "No such node" despite the grant being created and listed
+correctly) to find. The fix, and the reason it cannot happen again quietly, is in the
+function's own comment: the un-aliased fallback is explicitly `"nodes."`, never `""`.
+**Do not "simplify" that qualifier away.**
+
+**"View as a player"** (`http/context.ts::viewerForWorld`) is an `x-view-as: player`
+request header, honoured only when the real viewer is already `owner`/`dm`
+(`isGameMaster(role)`) — for anyone else it is a no-op, so a player cannot use it to
+grant themself anything. It downgrades the *same* `userId` to the `player` role for that
+request; it does not simulate a different, anonymous viewer. Consequence worth knowing:
+a DM previewing as a player can still edit a page **they themselves created**, since
+`canEdit` checks `creatorId === viewerId` regardless of role — but not a page a real
+player created. `api.ts` holds it as a module-level flag (`setViewAsPlayer`/
+`isViewingAsPlayer`) rather than threading it through every call site; toggling it
+invalidates every React Query cache entry, since a stale "what I could edit" from before
+the toggle would be actively misleading, not just outdated.
+
+**The DM Menu** (`Sidebar.tsx`) replaced two separate sidebar buttons ("Members," "API
+tokens") with one popover containing both plus "view as a player" (owner/dm only) — a
+straightforward instruction from the owner to keep the sidebar from accumulating a
+button per admin feature as P2 added more of them. Same pattern going forward: new
+DM-only surfaces belong inside this menu, not as new top-level sidebar buttons.
+
+The UI is `apps/web/src/components/Access.tsx`, reached from a page's "⋯" menu →
+"Access…" (owner/dm only, gated the same way `Members.tsx` is — see §7.3's client-side
+gating note, same reasoning applies here).
+
+### 7.5 Anonymous share links
+
+The second guest mechanism from the 2026-08-22 decision in §12 — a real account is one
+path, a token-bearing URL needing no account at all is the other. `services/shareLinks.ts`
+models it on `auth/tokens.ts`, not on `acl.ts`: a share link identifies a *link*, not a
+person or role, so only its sha256 is stored (`share_links.hash`) and the plaintext
+token is returned once, at creation, never again.
+
+**A share link grants read to the node it was made on *regardless of that node's own
+visibility*** — sharing a `members`- or `dm`-visibility page is the whole point of the
+feature. Its subtree, however, only cascades as far as **ordinary guest visibility**
+already reaches (`public`, or an explicit `guest`-role ACL grant) — so a DM-only page
+nested three levels under a shared root does not leak just because an ancestor was
+handed out. This is implemented as its own function
+(`shareLinks.ts::getShareScope`/`guestReadableSql`), not a reuse of `readableSql`'s
+`visibility OR acl` composition, specifically so the root gets its one-node exception
+without that exception silently applying to everything underneath it too.
+
+**A second parameter-ordering bug, same family as §7.4's.** `getShareScope`'s subtree
+query binds positional `?` placeholders across three separate places in one SQL string
+(the recursive CTE's seed, the child-count subquery, and the root-exception check) — the
+first version passed the JS params array in the wrong order (`inner.params` before the
+CTE seed instead of after it), so the CTE seeded with a visibility level string instead
+of the node id and the subtree resolved to nothing. Caught by the smoke checks (`"nodes":
+[]` on a share that should have had two rows), not by TypeScript — `.all(...args)` on a
+prepared statement has no way to check that positional order matches the SQL text.
+**When a query has more than one place with a `?`, get the JS args array in the exact
+same left-to-right order as they appear in the SQL, and say so in a comment**, the way
+`getShareScope` now does.
+
+**Route shape.** Management (`GET`/`POST /nodes/:nodeId/share-links`,
+`DELETE .../:shareLinkId`) is owner/dm only, alongside the ACL routes. The anonymous half
+(`routes/share.ts`: `GET /share/:token/tree`, `GET /share/:token/nodes/:nodeId`) needs no
+session or bearer token at all — the token in the URL *is* the credential — and both an
+unknown/revoked token and a node outside that particular share's scope answer the same
+404, so a valid token cannot be used to probe for ids beyond what was actually shared
+(same reasoning as the 404-not-403 rule in §6.1, applied to a second identity mechanism).
+
+**Client.** `ShareView.tsx` is a second top-level branch in `App.tsx`, checked after
+every hook (so hook call count stays fixed across renders — see React's rules of hooks)
+but before the session-loading gate, so it needs no session at all. **A real bug found
+in browser verification and fixed:** `App.tsx`'s "land on the world's root page when no
+page is addressed" `useEffect` ran on every render regardless of which JSX branch was
+ultimately returned — hooks fire independent of a later conditional `return`. An
+already-signed-in DM opening their own share link in the same browser (extremely likely
+— it is their own link) got silently redirected away from the share view back to their
+own dashboard, because `world?.rootNodeId` resolved once their session/worlds queries
+came back. Fixed by gating that effect on `shareToken === null` too. If you add another
+early-return branch to `App.tsx`, check whether the effects declared above it need the
+same guard — a hook does not know which branch below it will render.
+
 ---
 
 ## 8. Environment notes and gotchas
@@ -582,9 +706,10 @@ cold. But nothing currently on the roadmap depends on them.
 
 ### 9.5 Then, in order
 
-P2 visibility (inline secret blocks first, ACL, guest share links, "view as player",
-invites) → P3 templates + query views → P4 maps → P5 calendars + timelines → P6 play mode
-→ P7 hardening. See [PLAN.md](PLAN.md) §8.
+P2 is done (inline secret blocks, DM-driven accounts, per-node ACL, anonymous share
+links, "view as a player," the DM Menu — see §7.2–§7.5). Next: P3 templates + query views
+→ P4 maps → P5 calendars + timelines → P6 play mode → P7 hardening. See
+[PLAN.md](PLAN.md) §8.
 
 ---
 
@@ -639,13 +764,12 @@ docker compose up -d --build
 
 ## 12. Open questions for the owner
 
-1. ~~Guest access shape.~~ **Answered 2026-08-22:** both, not one. A guest can be a real
-   account (built — a DM creates it the same way as a player, capped at the `guest`
-   role) **and**, separately, an anonymous visitor on a share link scoped to one page's
-   subtree, needing no account at all (**not built yet** — this is P2 item 4, and it is
-   deliberately scoped as its own lightweight read-only endpoint rather than threading
-   guest+subtree scoping through the existing tree/search/detail query surface — see
-   PLAN.md §8 P2).
+1. ~~Guest access shape.~~ **Answered 2026-08-22, both halves now built.** A guest can be
+   a real account (a DM creates it the same way as a player, capped at the `guest` role)
+   **and**, separately, an anonymous visitor on a share link scoped to one page's
+   subtree, needing no account at all — built as its own lightweight, no-auth endpoint
+   (`routes/share.ts`) rather than threading guest+subtree scoping through the existing
+   tree/search/detail query surface. See §7.5.
 2. **Multiple worlds.** The schema supports many worlds per server, but the client shows
    only the first. Is a world switcher wanted, or is this a one-world install?
 3. ~~Kanka cutover.~~ **Answered 2026-08-22:** no bulk migration. The owner keeps running

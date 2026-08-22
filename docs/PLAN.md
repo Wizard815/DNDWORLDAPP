@@ -4,12 +4,12 @@ Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
 
-> **Status, 2026-08-22 — P0 and P1 are built and running; P2 is underway. No importer is planned.**
+> **Status, 2026-08-22 — P0, P1 and P2 are built and running. No importer is planned.**
 >
 > | | |
 > |---|---|
-> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere |
-> | **Next** | Rest of P2 (per-node ACL, anonymous share links, "view as player") → P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar |
+> | **Next** | P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
 > Kanka day to day and will move content over by hand through Kanka's MCP and ours as it
@@ -140,22 +140,28 @@ simplified. Detail in [kanka-mapping.md](kanka-mapping.md).
   sets — in the same action that adds them to the world. A DM can also reset a forgotten
   password outright (no reset-by-email possible), and anyone can change their own
   password given the current one. See [HANDOFF.md](HANDOFF.md) §7.3.
-- **Guests, decided 2026-08-22: both mechanisms, not one.** A guest can be a real account
-  (owner/DM creates it the same way as a player, capped at the `guest` role) **and**,
-  separately, an anonymous share link scoped to one page's subtree needs no account at
-  all. The account path is built; the anonymous link is not yet — see P2 below.
+- **Guests, decided 2026-08-22: both mechanisms, not one. ✅ both built.** A guest can be
+  a real account (owner/DM creates it the same way as a player, capped at the `guest`
+  role) **and**, separately, an anonymous share link scoped to one page's subtree, no
+  account at all. A share link grants read access to the node it was made on regardless
+  of that node's own visibility — sharing a `members`- or `dm`-visibility page is the
+  point — but its subtree only cascades as far as ordinary guest visibility already
+  reaches, so a DM-only page nested under a shared page does not leak just because its
+  parent was handed out. See HANDOFF.md §7.5.
 - **Node visibility** (fast path, one column): `public` / `members` / `dm` / `private`.
-  A guest on a share link sees only `public`; a logged-in player sees `public` plus
-  `members`; the DM sees everything.
-- **Per-node ACL overrides** (Kanka's `entity_user`): grant or deny read/edit to a
-  specific user or role — one player's secret backstory node, for instance.
+  A guest on a share link sees only `public` (plus the one shared root); a logged-in
+  player sees `public` plus `members`; the DM sees everything.
+- **Per-node ACL overrides** (Kanka's `entity_user`): grant read and/or edit to a specific
+  user or to a whole role, on top of a page's own visibility. ✅ built, deliberately
+  **additive only** — there is no deny entry, so a grant can only widen access, never
+  take it away. See HANDOFF.md §7.4.
 - **Posts carry the same levels**, so a Location node can be player-visible while its
   "DM Notes" post stays `dm`. This is the most-used feature of the current Kanka setup
   and it has to work on day one. ✅ built in P0.
 - **Secret blocks** inside a body are stripped server-side for non-DM readers, before the
   markdown ever leaves the API. **This is the mechanism people actually reach for** — in
   a real LegendKeeper world, inline secrets were used 70 times against 3 hidden sections
-  (§10.3 of the observations). Not yet built; first item of P2.
+  (§10.3 of the observations). ✅ built.
 
 Rule: visibility is enforced in one authorization layer that every query passes through.
 Never in the UI, never per-route.
@@ -292,11 +298,20 @@ import is wanted later, both are specified well enough to build from cold.
    self-service "change my password" (needs the current one) and a DM-driven reset (does
    not). Migration `0004_username_accounts.sql` — a column rename, not a schema
    redesign; see HANDOFF.md §7.3.
-3. Per-node ACL overrides for one-off exceptions — including "anyone with role X can
-   edit this specific page," not only "this specific person can."
-4. Anonymous share links, scoped to one page's subtree, needing no account — the second
-   guest mechanism from §5 above — and an explicit "view as player" mode for a DM
-   previewing their own world.
+3. **Per-node ACL overrides. ✅ built.** One-off exceptions on top of a page's own
+   visibility — "this specific person" or "anyone with role X," including edit, not just
+   read. Deliberately additive-only: there is no deny entry, so a grant can only widen
+   access, never take it away. Migration `0005_acl.sql`; see HANDOFF.md §7.4.
+4. **Anonymous share links. ✅ built.** Scoped to one page's subtree, needing no account —
+   the second guest mechanism from §5 above. A link grants read regardless of the shared
+   page's own visibility, but its subtree only cascades as far as ordinary guest
+   visibility already reaches. Migration `0006_share_links.sql`; see HANDOFF.md §7.5.
+5. **"View as a player" mode. ✅ built.** An owner/DM previewing their own world exactly
+   as a player would see it, via an `x-view-as: player` header that only ever narrows —
+   it does nothing for anyone who isn't already owner/DM. See HANDOFF.md §7.4.
+6. **DM Menu. ✅ built.** Members, API tokens, and "view as a player" collapsed into one
+   sidebar button instead of three, so the sidebar stays uncluttered as the admin surface
+   grows. See HANDOFF.md §7.4.
 
 **P3 — Templates and query views.** Template editor, typed fields, then the view engine:
 table, board (kanban), gallery. Views embeddable inside a node body.

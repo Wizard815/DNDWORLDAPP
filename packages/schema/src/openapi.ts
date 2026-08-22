@@ -32,6 +32,8 @@ const SearchHit = ref("SearchHit", S.searchHitSchema);
 const UnresolvedLink = ref("UnresolvedLink", S.unresolvedLinkSchema);
 const TokenDto = ref("TokenDto", S.tokenDtoSchema);
 const AssetDto = ref("AssetDto", S.assetDtoSchema);
+const AclEntryDto = ref("AclEntryDto", S.aclEntryDtoSchema);
+const ShareLinkDto = ref("ShareLinkDto", S.shareLinkDtoSchema);
 const ApiError = ref("ApiError", S.apiErrorSchema);
 
 const SetupInput = ref("SetupInput", S.setupInputSchema);
@@ -46,6 +48,7 @@ const MoveNodeInput = ref("MoveNodeInput", S.moveNodeInputSchema);
 const CreatePostInput = ref("CreatePostInput", S.createPostInputSchema);
 const UpdatePostInput = ref("UpdatePostInput", S.updatePostInputSchema);
 const CreateTokenInput = ref("CreateTokenInput", S.createTokenInputSchema);
+const GrantAclInput = ref("GrantAclInput", S.grantAclInputSchema);
 
 const obj = (properties: Json, required?: string[]): Json => ({
   type: "object",
@@ -330,6 +333,87 @@ const paths: Json = {
       responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
     },
   },
+  "/nodes/{nodeId}/acl": {
+    get: {
+      tags: ["acl"],
+      summary: "Who has an extra grant on this page",
+      description:
+        "Owner or DM only. Grants only ever widen access beyond the page's own visibility — there is no deny entry.",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(obj({ entries: arr(AclEntryDto) }, ["entries"])), ...ERRORS },
+    },
+    post: {
+      tags: ["acl"],
+      summary: "Grant read and/or edit on this page to a specific account or to a whole role",
+      description:
+        "Owner or DM only. subjectType 'user' + a user id grants one specific person; subjectType 'role' + a role name (e.g. 'player') grants everyone with that role — this is how \"anyone can edit this page\" is expressed without touching the page's visibility for everyone else. Re-posting the same subject updates the existing grant rather than duplicating it.",
+      parameters: [pathParam("nodeId", "Node id")],
+      requestBody: body(GrantAclInput),
+      responses: { 201: ok(obj({ entry: AclEntryDto }, ["entry"])), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/acl/{aclId}": {
+    delete: {
+      tags: ["acl"],
+      summary: "Revoke a grant",
+      parameters: [pathParam("nodeId", "Node id"), pathParam("aclId", "Grant id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/share-links": {
+    get: {
+      tags: ["share-links"],
+      summary: "Share links on this page",
+      description: "Owner or DM only.",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(obj({ shareLinks: arr(ShareLinkDto) }, ["shareLinks"])), ...ERRORS },
+    },
+    post: {
+      tags: ["share-links"],
+      summary: "Create a share link: an anonymous, read-only URL into this page's subtree",
+      description:
+        "Owner or DM only. Grants read access to this page regardless of its own visibility (that is the point of sharing it), and to its subtree under the same rules a signed-in guest gets everywhere else. The plaintext token is returned once and never again — only its hash is stored, the same as an API token.",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: {
+        201: ok(obj({ shareLink: ShareLinkDto, token: { type: "string" } }, ["shareLink", "token"])),
+        ...ERRORS,
+      },
+    },
+  },
+  "/nodes/{nodeId}/share-links/{shareLinkId}": {
+    delete: {
+      tags: ["share-links"],
+      summary: "Revoke a share link",
+      parameters: [pathParam("nodeId", "Node id"), pathParam("shareLinkId", "Share link id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+  "/share/{token}/tree": {
+    get: {
+      tags: ["share-links"],
+      summary: "The shared subtree, for an anonymous visitor",
+      description: "No authentication. An unknown or revoked token answers 404.",
+      security: [],
+      parameters: [pathParam("token", "Share link token")],
+      responses: {
+        200: ok(
+          obj({ rootId: { type: "string" }, nodes: arr(NodeSummary) }, ["rootId", "nodes"]),
+        ),
+        ...ERRORS,
+      },
+    },
+  },
+  "/share/{token}/nodes/{nodeId}": {
+    get: {
+      tags: ["share-links"],
+      summary: "One page within a share's subtree, for an anonymous visitor",
+      description:
+        "No authentication. 404 for an unknown/revoked token, or for a node outside this particular share's scope — the same response either way, so a valid token cannot be used to probe for ids beyond what was shared.",
+      security: [],
+      parameters: [pathParam("token", "Share link token"), pathParam("nodeId", "Node id")],
+      responses: { 200: ok(obj({ node: NodeDetail }, ["node"])), ...ERRORS },
+    },
+  },
 
   "/tokens": {
     get: {
@@ -401,6 +485,11 @@ export function buildOpenApiDocument(version = "0.1.0"): Json {
       { name: "nodes", description: "Pages — the spine of the app" },
       { name: "posts", description: "Sections on a page, each with its own visibility" },
       { name: "members", description: "Who is in a world, and their role" },
+      { name: "acl", description: "Per-page access grants, on top of a page's own visibility" },
+      {
+        name: "share-links",
+        description: "Anonymous, no-account read access to one page's subtree via a URL token",
+      },
       { name: "tokens", description: "API tokens for scripts and MCP" },
       { name: "assets", description: "Uploads" },
     ],

@@ -81,3 +81,29 @@ export function isGameMaster(role: Role | null): boolean {
 export function canSeeSecrets(role: Role | null): boolean {
   return isGameMaster(role);
 }
+
+/**
+ * Per-node ACL: one-off grants on top of everything above — "this specific
+ * person" or "anyone with this role" gets read or edit on one page, beyond
+ * what its visibility or ownership would otherwise allow.
+ *
+ * Deliberately **additive only**, in both directions. A grant can only widen
+ * access, never narrow it — there is no "deny" entry, so ACL can never take
+ * away what visibility already gives. That sidesteps the precedence question
+ * (does a deny beat a role-based allow, or the reverse?) entirely, at the cost
+ * of not supporting "everyone except this one player." If that is ever
+ * needed, it is a second column here, not a redesign — the callers already
+ * compose this as `visibility OR acl`, never as a replacement for it.
+ */
+export function nodeAclSql(
+  nodeIdColumn: string,
+  role: Role | null,
+  viewerId: string | null,
+  mode: "read" | "edit" = "read",
+): { sql: string; params: [string | null, Role | null] } {
+  const column = mode === "read" ? "can_read" : "can_edit";
+  return {
+    sql: `EXISTS (SELECT 1 FROM acl a WHERE a.node_id = ${nodeIdColumn} AND a.${column} = 1 AND ((a.subject_type = 'user' AND a.subject_id = ?) OR (a.subject_type = 'role' AND a.subject_id = ?)))`,
+    params: [viewerId, role],
+  };
+}

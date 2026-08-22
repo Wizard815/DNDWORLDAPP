@@ -1,21 +1,29 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import type { MoveNodeInput, NodeDetail } from "@dndworldapp/schema";
-import { ApiError, api } from "./api.ts";
+import { ApiError, api, setViewAsPlayer } from "./api.ts";
 import { AuthScreen } from "./components/Auth.tsx";
 import { Members } from "./components/Members.tsx";
 import { Backlinks, NodeView } from "./components/NodeView.tsx";
 import { QuickSwitcher } from "./components/QuickSwitcher.tsx";
+import { ShareView } from "./components/ShareView.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Tokens } from "./components/Tokens.tsx";
 import { navigate, nodeIdFromPath, usePath } from "./lib/nav.ts";
 
+function shareTokenFromPath(path: string): string | null {
+  const match = /^\/share\/([a-f0-9]+)/.exec(path);
+  return match?.[1] ?? null;
+}
+
 export function App() {
   const queryClient = useQueryClient();
   const path = usePath();
+  const shareToken = shareTokenFromPath(path);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [tokensOpen, setTokensOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [viewAsPlayer, setViewAsPlayerState] = useState(false);
 
   const session = useQuery({
     queryKey: ["me"],
@@ -57,12 +65,16 @@ export function App() {
     enabled: activeId !== null,
   });
 
-  // Land on the world's root page when no page is addressed.
+  // Land on the world's root page when no page is addressed. Never while a
+  // share link is open — an already-signed-in DM opening their own share
+  // link in the same browser must see the anonymous view, not get bounced
+  // back to their own dashboard by this effect (it runs regardless of which
+  // branch below actually gets rendered).
   useEffect(() => {
-    if (activeId === null && world?.rootNodeId != null) {
+    if (shareToken === null && activeId === null && world?.rootNodeId != null) {
       navigate(`/n/${world.rootNodeId}`);
     }
-  }, [activeId, world]);
+  }, [shareToken, activeId, world]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent): void {
@@ -74,6 +86,19 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  /**
+   * Flips the module-level flag api.ts reads on every request, then throws away
+   * everything cached so far — a stale "what I could edit" from before the
+   * toggle would be actively misleading, not just outdated.
+   */
+  const toggleViewAsPlayer = useCallback(() => {
+    setViewAsPlayerState((prev) => {
+      setViewAsPlayer(!prev);
+      void queryClient.invalidateQueries();
+      return !prev;
+    });
+  }, [queryClient]);
 
   const refreshTree = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["tree"] });
@@ -112,6 +137,13 @@ export function App() {
     [refreshTree, world],
   );
 
+  // A share link needs no session at all — rendered after the hooks above
+  // (so their call count stays fixed every render) but before anything that
+  // assumes a signed-in user exists.
+  if (shareToken !== null) {
+    return <ShareView token={shareToken} />;
+  }
+
   if (session.isLoading) {
     return <div className="p-8 text-sm text-[#7a7d86]">Loading…</div>;
   }
@@ -132,6 +164,7 @@ export function App() {
   }
 
   const nodes = tree.data?.nodes ?? [];
+  const isGameMaster = world.role === "owner" || world.role === "dm";
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -144,7 +177,12 @@ export function App() {
         onOpenSwitcher={() => setSwitcherOpen(true)}
         onOpenTokens={() => setTokensOpen(true)}
         onOpenMembers={() => setMembersOpen(true)}
+        isGameMaster={isGameMaster}
+        viewAsPlayer={viewAsPlayer}
+        onToggleViewAsPlayer={toggleViewAsPlayer}
         onSignOut={() => {
+          setViewAsPlayer(false);
+          setViewAsPlayerState(false);
           void api.logout().then(() => queryClient.invalidateQueries());
         }}
       />
@@ -155,6 +193,7 @@ export function App() {
             key={node.data.node.id}
             node={node.data.node}
             allNodes={nodes}
+            isGameMaster={isGameMaster}
             onChanged={refreshTree}
             onCreateChild={(parentId) => createNode.mutate({ parentId })}
             onCreateNamed={(title) =>
@@ -180,11 +219,7 @@ export function App() {
       )}
 
       {membersOpen && (
-        <Members
-          worldId={world.id}
-          canManage={world.role === "owner" || world.role === "dm"}
-          onClose={() => setMembersOpen(false)}
-        />
+        <Members worldId={world.id} canManage={isGameMaster} onClose={() => setMembersOpen(false)} />
       )}
 
       {switcherOpen && (

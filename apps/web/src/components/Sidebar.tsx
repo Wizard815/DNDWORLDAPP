@@ -24,6 +24,9 @@ interface Props {
   onOpenTokens: () => void;
   onOpenMembers: () => void;
   onSignOut: () => void;
+  isGameMaster: boolean;
+  viewAsPlayer: boolean;
+  onToggleViewAsPlayer: () => void;
 }
 
 function useExpanded(worldName: string) {
@@ -62,7 +65,11 @@ export function Sidebar({
   onOpenTokens,
   onOpenMembers,
   onSignOut,
+  isGameMaster,
+  viewAsPlayer,
+  onToggleViewAsPlayer,
 }: Props) {
+  const [dmMenuOpen, setDmMenuOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const { expanded, toggle, setExpanded } = useExpanded(worldName);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -256,20 +263,59 @@ export function Sidebar({
         >
           + New top-level page
         </button>
-        <button
-          type="button"
-          onClick={onOpenMembers}
-          className="w-full rounded px-2 py-1.5 text-left text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
-        >
-          Members
-        </button>
-        <button
-          type="button"
-          onClick={onOpenTokens}
-          className="w-full rounded px-2 py-1.5 text-left text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
-        >
-          API tokens
-        </button>
+        <div className="relative">
+          {viewAsPlayer && (
+            <div className="mb-1 rounded bg-[#3a2f16] px-2 py-1 text-[10px] text-[#e8cf8a]">
+              Viewing as a player
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setDmMenuOpen(!dmMenuOpen)}
+            className="w-full rounded px-2 py-1.5 text-left text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+          >
+            DM Menu
+          </button>
+          {dmMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setDmMenuOpen(false)} />
+              <div className="absolute bottom-full left-0 z-20 mb-1 w-full overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDmMenuOpen(false);
+                    onOpenMembers();
+                  }}
+                  className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                >
+                  Members
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDmMenuOpen(false);
+                    onOpenTokens();
+                  }}
+                  className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                >
+                  API tokens
+                </button>
+                {isGameMaster && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDmMenuOpen(false);
+                      onToggleViewAsPlayer();
+                    }}
+                    className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                  >
+                    {viewAsPlayer ? "✓ Viewing as a player" : "View as a player"}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
         <button
           type="button"
           onClick={onSignOut}

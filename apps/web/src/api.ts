@@ -1,11 +1,14 @@
 import type {
+  AclEntryDto,
   AddMemberInput,
   AssetDto,
   Backlink,
   ChangePasswordInput,
   CreateNodeInput,
   CreateTokenInput,
+  CreatedShareLinkDto,
   CreatedTokenDto,
+  GrantAclInput,
   LoginInput,
   MemberDto,
   MoveNodeInput,
@@ -14,6 +17,7 @@ import type {
   PostDto,
   SearchHit,
   SetupInput,
+  ShareLinkDto,
   TokenDto,
   UpdateNodeInput,
   UserDto,
@@ -36,11 +40,26 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * "View as a player": an owner/DM previewing their own world exactly as a
+ * player would see it. A module-level flag rather than a parameter threaded
+ * through every call site — every request picks it up automatically, and
+ * turning it on/off is one call from App.tsx followed by a query invalidation.
+ */
+let viewAsPlayer = false;
+export function setViewAsPlayer(enabled: boolean): void {
+  viewAsPlayer = enabled;
+}
+export function isViewingAsPlayer(): boolean {
+  return viewAsPlayer;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     ...init,
     headers: {
       ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(viewAsPlayer ? { "x-view-as": "player" } : {}),
       ...init?.headers,
     },
     credentials: "same-origin",
@@ -123,6 +142,29 @@ export const api = {
 
   archiveNode: (nodeId: string) => request<{ ok: true }>(`/nodes/${nodeId}`, { method: "DELETE" }),
 
+  acl: (nodeId: string) => request<{ entries: AclEntryDto[] }>(`/nodes/${nodeId}/acl`),
+
+  grantAcl: (nodeId: string, input: GrantAclInput) =>
+    request<{ entry: AclEntryDto }>(`/nodes/${nodeId}/acl`, { method: "POST", ...json(input) }),
+
+  revokeAcl: (nodeId: string, aclId: string) =>
+    request<{ ok: true }>(`/nodes/${nodeId}/acl/${aclId}`, { method: "DELETE" }),
+
+  shareLinks: (nodeId: string) => request<{ shareLinks: ShareLinkDto[] }>(`/nodes/${nodeId}/share-links`),
+
+  createShareLink: (nodeId: string) =>
+    request<CreatedShareLinkDto>(`/nodes/${nodeId}/share-links`, { method: "POST" }),
+
+  revokeShareLink: (nodeId: string, shareLinkId: string) =>
+    request<{ ok: true }>(`/nodes/${nodeId}/share-links/${shareLinkId}`, { method: "DELETE" }),
+
+  /** The anonymous half of a share link — no cookie or token needed. */
+  sharedTree: (token: string) =>
+    request<{ rootId: string; nodes: NodeSummary[] }>(`/share/${token}/tree`),
+
+  sharedNode: (token: string, nodeId: string) =>
+    request<{ node: NodeDetail }>(`/share/${token}/nodes/${nodeId}`),
+
   posts: (nodeId: string) => request<{ posts: PostDto[] }>(`/nodes/${nodeId}/posts`),
 
   createPost: (nodeId: string, input: { title: string; bodyMd: string; visibility: Visibility }) =>
@@ -149,6 +191,7 @@ export const api = {
     const response = await fetch(`/api/v1/worlds/${worldId}/assets`, {
       method: "POST",
       body: form,
+      headers: viewAsPlayer ? { "x-view-as": "player" } : undefined,
       credentials: "same-origin",
     });
     if (!response.ok) throw new ApiError(response.status, "upload_failed", "Upload failed.");
@@ -157,12 +200,14 @@ export const api = {
 };
 
 export type {
+  AclEntryDto,
   Backlink,
   MemberDto,
   NodeDetail,
   NodeSummary,
   PostDto,
   SearchHit,
+  ShareLinkDto,
   TokenDto,
   UserDto,
   WorldDto,

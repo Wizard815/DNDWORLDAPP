@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import type { Scope } from "@dndworldapp/schema";
 import type { UserRow } from "../db/types.ts";
 import { SESSION_COOKIE, createSession, userForToken } from "../auth/session.ts";
+import { isGameMaster } from "../auth/policy.ts";
 import { authenticateToken } from "../auth/tokens.ts";
 import type { TokenAuth } from "../auth/tokens.ts";
 import type { Viewer } from "../auth/viewer.ts";
@@ -83,6 +84,14 @@ export function viewerForWorld(request: FastifyRequest, worldId: string): Viewer
 
   const role = roleFor(worldId, user.id);
   if (role === null) throw notFound("No such world.");
+
+  // "View as a player": an owner/DM previewing their own world exactly as a
+  // player would see it. Only ever narrows — a player sending this header
+  // stays a player, and it does nothing for anyone who isn't already owner/dm.
+  if (request.headers["x-view-as"] === "player" && isGameMaster(role)) {
+    return { userId: user.id, role: "player" };
+  }
+
   return { userId: user.id, role };
 }
 

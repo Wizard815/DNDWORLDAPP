@@ -17,8 +17,8 @@ function check(label, condition, extra) {
 
 function makeSession() {
   const jar = new Map();
-  return async function call(method, path, body) {
-    const headers = {};
+  return async function call(method, path, body, extraHeaders) {
+    const headers = { ...extraHeaders };
     if (body !== undefined) headers["content-type"] = "application/json";
     if (jar.size > 0) headers.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
 
@@ -407,6 +407,202 @@ check("player can still rename their own post", playerPostTitleStillWorks.status
 
 const dmPostEditWorks = await dm("PATCH", `/posts/${postId}`, { bodyMd: "DM rewrote it, secret gone now." });
 check("DM can still edit that post's body", dmPostEditWorks.status === 200, dmPostEditWorks.body);
+
+console.log("\n== per-node ACL: additive grants on top of visibility ==");
+
+const player1Id = added.body.member.id;
+
+const aclSecretPage = (
+  await dm("POST", `/worlds/${worldId}/nodes`, {
+    title: "The Sealed Vault",
+    parentId: rootId,
+    visibility: "dm",
+  })
+).body.node;
+
+const beforeGrant = await player("GET", `/nodes/${aclSecretPage.id}`);
+check("without a grant, a DM-only page stays invisible to a player", beforeGrant.status === 404, beforeGrant.body);
+
+const playerListAclForbidden = await player("GET", `/nodes/${aclSecretPage.id}/acl`);
+check("a player cannot list access grants", playerListAclForbidden.status === 403, playerListAclForbidden.body);
+
+const badRole = await dm("POST", `/nodes/${aclSecretPage.id}/acl`, { subjectType: "role", subjectId: "wizard" });
+check("granting to a made-up role is rejected", badRole.status === 400, badRole.body);
+
+const badUser = await dm("POST", `/nodes/${aclSecretPage.id}/acl`, { subjectType: "user", subjectId: "no-such-user" });
+check("granting to a nonexistent account is rejected", badUser.status === 400, badUser.body);
+
+const emptyGrant = await dm("POST", `/nodes/${aclSecretPage.id}/acl`, {
+  subjectType: "user",
+  subjectId: player1Id,
+  canRead: false,
+  canEdit: false,
+});
+check("a grant with neither read nor edit is rejected", emptyGrant.status === 400, emptyGrant.body);
+
+const userGrant = await dm("POST", `/nodes/${aclSecretPage.id}/acl`, {
+  subjectType: "user",
+  subjectId: player1Id,
+  canRead: true,
+});
+check("DM grants one specific player read access", userGrant.status === 201, userGrant.body);
+
+const afterGrant = await player("GET", `/nodes/${aclSecretPage.id}`);
+check("that player can now see the DM-only page", afterGrant.status === 200, afterGrant.body);
+check("the grant does not also grant edit", afterGrant.body.node?.canEdit === false, afterGrant.body);
+
+const playerEditViaGrant = await player("PATCH", `/nodes/${aclSecretPage.id}`, { title: "Should still fail" });
+check("read-only grant does not allow writing", playerEditViaGrant.status === 403, playerEditViaGrant.body);
+
+const listedGrants = await dm("GET", `/nodes/${aclSecretPage.id}/acl`);
+check("the grant shows up with a resolved username, not a bare id", listedGrants.body.entries?.[0]?.subjectLabel === "player1", listedGrants.body);
+
+const aclRevoked = await dm("DELETE", `/nodes/${aclSecretPage.id}/acl/${listedGrants.body.entries[0].id}`);
+check("DM revokes the grant", aclRevoked.status === 200, aclRevoked.body);
+const afterAclRevoke = await player("GET", `/nodes/${aclSecretPage.id}`);
+check("the page is invisible again after revoking", afterAclRevoke.status === 404, afterAclRevoke.body);
+
+const aclRevokeAgain = await dm("DELETE", `/nodes/${aclSecretPage.id}/acl/${listedGrants.body.entries[0].id}`);
+check("revoking an already-gone grant is a 404", aclRevokeAgain.status === 404, aclRevokeAgain.body);
+
+// Role grants: "anyone with role X" rather than one specific person.
+const roleGrantPage = (
+  await dm("POST", `/worlds/${worldId}/nodes`, {
+    title: "Open Workshop",
+    parentId: rootId,
+    visibility: "members",
+  })
+).body.node;
+const roleGrant = await dm("POST", `/nodes/${roleGrantPage.id}/acl`, {
+  subjectType: "role",
+  subjectId: "player",
+  canRead: true,
+  canEdit: true,
+});
+check("DM grants edit to anyone with the player role", roleGrant.status === 201, roleGrant.body);
+
+const playerEditsSharedPage = await player("PATCH", `/nodes/${roleGrantPage.id}`, {
+  title: "Open Workshop (edited by a player)",
+});
+check(
+  "a player who did not create the page can edit it, via the role grant",
+  playerEditsSharedPage.status === 200,
+  playerEditsSharedPage.body,
+);
+
+// Re-granting the same subject updates the row rather than duplicating it.
+const regrant = await dm("POST", `/nodes/${roleGrantPage.id}/acl`, {
+  subjectType: "role",
+  subjectId: "player",
+  canRead: true,
+  canEdit: false,
+});
+check("granting the same subject again updates in place", regrant.status === 201, regrant.body);
+const afterRegrant = await dm("GET", `/nodes/${roleGrantPage.id}/acl`);
+check("still exactly one entry for that subject, not two", afterRegrant.body.entries.length === 1, afterRegrant.body);
+const playerEditBlockedAfterRegrant = await player("PATCH", `/nodes/${roleGrantPage.id}`, { title: "Trying again" });
+check("edit is gone now that the grant was updated to read-only", playerEditBlockedAfterRegrant.status === 403, playerEditBlockedAfterRegrant.body);
+
+console.log("\n== view as a player: a DM previewing their own world ==");
+
+const dmTreeNormally = (await dm("GET", `/worlds/${worldId}/tree`)).body.nodes;
+check("normally the DM sees the DM-only page", dmTreeNormally.some((n) => n.id === secret.id), dmTreeNormally.length);
+
+const dmTreeAsPlayer = await dm("GET", `/worlds/${worldId}/tree`, undefined, { "x-view-as": "player" });
+check(
+  "with the header, the same DM no longer sees DM-only pages",
+  !dmTreeAsPlayer.body.nodes.some((n) => n.id === secret.id),
+  dmTreeAsPlayer.body.nodes.length,
+);
+
+const dmSecretAsPlayer = await dm("GET", `/nodes/${secret.id}`, undefined, { "x-view-as": "player" });
+check("fetching a DM-only page directly also 404s while viewing as a player", dmSecretAsPlayer.status === 404, dmSecretAsPlayer.body);
+
+const dmViewingSomeoneElsesPage = await dm("GET", `/nodes/${playerPage.id}`, undefined, { "x-view-as": "player" });
+check(
+  "viewing as a player, the DM cannot edit a page a real player created",
+  dmViewingSomeoneElsesPage.body.node?.canEdit === false,
+  dmViewingSomeoneElsesPage.body,
+);
+
+const playerSendingTheHeader = await player("GET", `/worlds/${worldId}/tree`, undefined, { "x-view-as": "player" });
+check(
+  "a real player sending the header is unaffected — it only ever narrows, never grants",
+  playerSendingTheHeader.status === 200 && !playerSendingTheHeader.body.nodes.some((n) => n.id === secret.id),
+  playerSendingTheHeader.body.nodes?.length,
+);
+
+console.log("\n== anonymous share links: no account needed ==");
+
+const anon = makeSession(); // never logs in — an empty cookie jar, the same as a stranger with a URL
+
+const shareSource = (
+  await dm("POST", `/worlds/${worldId}/nodes`, {
+    title: "Player Handout: The Sunken Bell",
+    parentId: rootId,
+    visibility: "dm",
+    bodyMd: `Public lore text.\n\n:::secret\n${SECRET_TOKEN}\n:::\n`,
+  })
+).body.node;
+const shareChildPublic = (
+  await dm("POST", `/worlds/${worldId}/nodes`, {
+    title: "A Public Room",
+    parentId: shareSource.id,
+    visibility: "public",
+  })
+).body.node;
+const shareChildDmOnly = (
+  await dm("POST", `/worlds/${worldId}/nodes`, {
+    title: "A Hidden Room",
+    parentId: shareSource.id,
+    visibility: "dm",
+  })
+).body.node;
+
+const playerCannotList = await player("GET", `/nodes/${shareSource.id}/share-links`);
+check("a player cannot see share links", playerCannotList.status === 403, playerCannotList.body);
+const playerCannotCreate = await player("POST", `/nodes/${shareSource.id}/share-links`);
+check("a player cannot create a share link", playerCannotCreate.status === 403, playerCannotCreate.body);
+
+const created = await dm("POST", `/nodes/${shareSource.id}/share-links`);
+check("DM creates a share link", created.status === 201 && typeof created.body.token === "string", created.body);
+const token = created.body.token;
+
+const anonBadToken = await anon("GET", "/share/not-a-real-token/tree");
+check("an unknown token 404s", anonBadToken.status === 404, anonBadToken.body);
+
+const anonTree = await anon("GET", `/share/${token}/tree`);
+check(
+  "the anonymous tree includes the shared DM-only root, and its public child",
+  anonTree.status === 200 &&
+    anonTree.body.rootId === shareSource.id &&
+    anonTree.body.nodes.some((n) => n.id === shareSource.id) &&
+    anonTree.body.nodes.some((n) => n.id === shareChildPublic.id),
+  anonTree.body,
+);
+check(
+  "a DM-only page *underneath* the shared root does not inherit the share",
+  !anonTree.body.nodes.some((n) => n.id === shareChildDmOnly.id),
+  anonTree.body.nodes.map((n) => n.id),
+);
+
+const anonRoot = await anon("GET", `/share/${token}/nodes/${shareSource.id}`);
+check("secret blocks are stripped for an anonymous visitor", !anonRoot.body.node.bodyMd.includes(SECRET_TOKEN), anonRoot.body.node.bodyMd);
+check("the shared root's own breadcrumb is empty (nothing above it leaks)", anonRoot.body.node.breadcrumb.length === 0, anonRoot.body.node.breadcrumb);
+check("an anonymous visitor can never edit", anonRoot.body.node.canEdit === false, anonRoot.body.node);
+
+const anonHiddenChild = await anon("GET", `/share/${token}/nodes/${shareChildDmOnly.id}`);
+check("fetching the hidden child directly, even with a valid token, still 404s", anonHiddenChild.status === 404, anonHiddenChild.body);
+
+const anonOutsideScope = await anon("GET", `/share/${token}/nodes/${orgella.id}`);
+check("a valid token cannot be used to fetch a node outside its share", anonOutsideScope.status === 404, anonOutsideScope.body);
+
+const revokedLink = await dm("DELETE", `/nodes/${shareSource.id}/share-links/${created.body.shareLink.id}`);
+check("DM revokes the share link", revokedLink.status === 200, revokedLink.body);
+const anonAfterRevoke = await anon("GET", `/share/${token}/tree`);
+check("the revoked token no longer works", anonAfterRevoke.status === 404, anonAfterRevoke.body);
+const revokeAgain = await dm("DELETE", `/nodes/${shareSource.id}/share-links/${created.body.shareLink.id}`);
+check("revoking an already-revoked link 404s", revokeAgain.status === 404, revokeAgain.body);
 
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);

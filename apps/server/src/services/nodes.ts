@@ -10,7 +10,7 @@ import type {
 } from "@dndworldapp/schema";
 import { db, transaction } from "../db/index.ts";
 import type { NodeRow } from "../db/types.ts";
-import { canEdit, canSeeSecrets, visibilitySqlFor } from "../auth/policy.ts";
+import { canSeeSecrets, nodeAclSql, visibilitySqlFor } from "../auth/policy.ts";
 import type { Viewer } from "../auth/viewer.ts";
 import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { shortId } from "../lib/id.ts";
@@ -18,6 +18,25 @@ import { containsSecret, redactForViewer, stripSecrets } from "../lib/secrets.ts
 import { keyAfterAll, keyBetween } from "../lib/sortkey.ts";
 import { slugify, uniqueSlug } from "../lib/slug.ts";
 import { linkKey, parseWikilinks } from "../lib/wikilinks.ts";
+import { canEditNode } from "./acl.ts";
+
+/**
+ * "Can this viewer read a node?" is node visibility OR a per-node ACL grant —
+ * see nodeAclSql() in auth/policy.ts for why ACL only ever widens. `alias` is
+ * the table alias in the surrounding query ("n", "c", or "" for a bare
+ * `nodes` reference), so this one helper covers every read-path query below.
+ */
+function readableSql(alias: string, viewer: Viewer): { sql: string; params: Array<string | null> } {
+  // Always qualify with a real table reference, never a bare "id" — the ACL
+  // fragment below is a correlated subquery against a table that ALSO has its
+  // own `id` column, so an unqualified "id" resolves to acl.id, not nodes.id,
+  // and every grant silently fails to match. Cost a real debugging pass to
+  // find; do not remove the qualifier "to simplify" it back into this trap.
+  const prefix = alias.length > 0 ? `${alias}.` : "nodes.";
+  const vis = visibilitySqlFor(viewer.role, viewer.userId, `${prefix}visibility`, `${prefix}created_by`);
+  const acl = nodeAclSql(`${prefix}id`, viewer.role, viewer.userId, "read");
+  return { sql: `(${vis.sql} OR ${acl.sql})`, params: [...vis.params, ...acl.params] };
+}
 
 // ---------------------------------------------------------------------------
 // Statements
@@ -59,7 +78,7 @@ const insertFtsRow = db.prepare(
 // Reads
 // ---------------------------------------------------------------------------
 
-function rowToSummary(row: NodeRow & { child_count?: number }): NodeSummary {
+export function rowToSummary(row: NodeRow & { child_count?: number }): NodeSummary {
   return {
     id: row.id,
     parentId: row.parent_id,
@@ -81,8 +100,8 @@ function rowToSummary(row: NodeRow & { child_count?: number }): NodeSummary {
  * instant filtering and quick-switching without another round trip.
  */
 export function getTree(worldId: string, viewer: Viewer): NodeSummary[] {
-  const outer = visibilitySqlFor(viewer.role, viewer.userId, "n.visibility", "n.created_by");
-  const inner = visibilitySqlFor(viewer.role, viewer.userId, "c.visibility", "c.created_by");
+  const outer = readableSql("n", viewer);
+  const inner = readableSql("c", viewer);
 
   const sql = `
     SELECT n.*,
@@ -109,18 +128,18 @@ export function getNodeRow(nodeId: string): NodeRow | null {
 export function requireVisibleNode(nodeId: string, viewer: Viewer): NodeRow {
   const row = getNodeRow(nodeId);
   if (row === null) throw notFound("No such node.");
-  const vis = visibilitySqlFor(viewer.role, viewer.userId);
+  const read = readableSql("", viewer);
   const allowed = db
-    .prepare(`SELECT 1 FROM nodes WHERE id = ? AND ${vis.sql}`)
-    .get(nodeId, ...vis.params);
+    .prepare(`SELECT 1 FROM nodes WHERE id = ? AND ${read.sql}`)
+    .get(nodeId, ...read.params);
   if (allowed === undefined) throw notFound("No such node.");
   return row;
 }
 
 export function getNodeDetail(nodeId: string, viewer: Viewer): NodeDetail {
   const row = requireVisibleNode(nodeId, viewer);
-  const outer = visibilitySqlFor(viewer.role, viewer.userId, "n.visibility", "n.created_by");
-  const inner = visibilitySqlFor(viewer.role, viewer.userId, "c.visibility", "c.created_by");
+  const outer = readableSql("n", viewer);
+  const inner = readableSql("c", viewer);
 
   const children = db
     .prepare(
@@ -141,7 +160,7 @@ export function getNodeDetail(nodeId: string, viewer: Viewer): NodeDetail {
     breadcrumb: breadcrumbFor(row),
     children: children.map(rowToSummary),
     backlinks: backlinksFor(nodeId, viewer),
-    canEdit: canEdit(viewer.role, row.created_by, viewer.userId),
+    canEdit: canEditNode(row, viewer),
   };
 }
 
@@ -162,7 +181,7 @@ export function breadcrumbFor(row: NodeRow): Array<{ id: string; title: string; 
 }
 
 export function backlinksFor(nodeId: string, viewer: Viewer): Backlink[] {
-  const vis = visibilitySqlFor(viewer.role, viewer.userId, "n.visibility", "n.created_by");
+  const vis = readableSql("n", viewer);
   const rows = db
     .prepare(
       `SELECT DISTINCT n.id, n.title, n.icon, l.label
@@ -205,7 +224,7 @@ export function searchNodes(
   if (tokens.length === 0) return [];
   const match = tokens.map((t) => `"${t}"*`).join(" ");
 
-  const vis = visibilitySqlFor(viewer.role, viewer.userId, "n.visibility", "n.created_by");
+  const vis = readableSql("n", viewer);
   const rows = db
     .prepare(
       `SELECT f.node_id, n.title, n.icon,
@@ -311,7 +330,7 @@ export function createNode(worldId: string, viewer: Viewer, input: CreateNodeInp
 
 export function updateNode(nodeId: string, viewer: Viewer, input: UpdateNodeInput): NodeRow {
   const existing = requireVisibleNode(nodeId, viewer);
-  if (!canEdit(viewer.role, existing.created_by, viewer.userId)) {
+  if (!canEditNode(existing, viewer)) {
     throw forbidden("You cannot edit this page.");
   }
   // A body edit is a wholesale replace (see input.bodyMd below), so a viewer who
@@ -369,7 +388,7 @@ function wouldCycle(nodeId: string, candidateParent: string | null): boolean {
 
 export function moveNode(nodeId: string, viewer: Viewer, input: MoveNodeInput): NodeRow {
   const node = requireVisibleNode(nodeId, viewer);
-  if (!canEdit(viewer.role, node.created_by, viewer.userId)) {
+  if (!canEditNode(node, viewer)) {
     throw forbidden("You cannot move this page.");
   }
 
@@ -409,7 +428,7 @@ export function moveNode(nodeId: string, viewer: Viewer, input: MoveNodeInput): 
 /** Archive rather than delete; children go with it. */
 export function archiveNode(nodeId: string, viewer: Viewer): void {
   const node = requireVisibleNode(nodeId, viewer);
-  if (!canEdit(viewer.role, node.created_by, viewer.userId)) {
+  if (!canEditNode(node, viewer)) {
     throw forbidden("You cannot archive this page.");
   }
   db.prepare(

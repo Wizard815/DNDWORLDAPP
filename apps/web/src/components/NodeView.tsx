@@ -5,6 +5,7 @@ import type { NodeDetail, NodeSummary, Visibility } from "@dndworldapp/schema";
 import { api } from "../api.ts";
 import { renderMarkdown } from "../lib/markdown.ts";
 import { navigate } from "../lib/nav.ts";
+import { Access } from "./Access.tsx";
 import { IconPicker } from "./IconPicker.tsx";
 import { Posts } from "./Posts.tsx";
 
@@ -25,6 +26,7 @@ export const VISIBILITY_CLASS: Record<Visibility, string> = {
 interface Props {
   node: NodeDetail;
   allNodes: NodeSummary[];
+  isGameMaster: boolean;
   onChanged: () => void;
   onCreateChild: (parentId: string) => void;
   onCreateNamed: (title: string) => void;
@@ -34,6 +36,7 @@ interface Props {
 export function NodeView({
   node,
   allNodes,
+  isGameMaster,
   onChanged,
   onCreateChild,
   onCreateNamed,
@@ -47,6 +50,7 @@ export function NodeView({
   const [suggestions, setSuggestions] = useState<NodeSummary[]>([]);
   const [suggestIndex, setSuggestIndex] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -278,6 +282,18 @@ export function NodeView({
                       >
                         Add a page inside
                       </button>
+                      {isGameMaster && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setAccessOpen(true);
+                          }}
+                          className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                        >
+                          Access…
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -295,6 +311,15 @@ export function NodeView({
               </div>
             )}
           </div>
+
+          {accessOpen && (
+            <Access
+              nodeId={node.id}
+              worldId={node.worldId}
+              nodeTitle={node.title}
+              onClose={() => setAccessOpen(false)}
+            />
+          )}
 
           {editing ? (
             <div className="relative">
