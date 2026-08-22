@@ -101,7 +101,12 @@ Kanka   GET /campaigns/{c}/characters/{id}     ->  GET /api/v1/worlds/{w}/nodes/
 Keep from Kanka: `Authorization: Bearer`, paginated envelopes with `links`/`meta`,
 `?related=1` style expansion, `lastSync` incremental fetch. Drop: one route per type.
 
-## 6. Import plan (P1)
+## 6. Import plan — not currently on the roadmap
+
+**Decided 2026-08-22: no bulk importer will be built.** The owner runs the campaign in
+Kanka day to day and already has a Kanka MCP server; content moves over by hand through
+both MCP servers as it is needed, not as a one-shot migration. This section stays as a
+specification, in case a bulk import is ever wanted after all — it is not scheduled work.
 
 Source: campaign **BloodEarth**, id `376198`, via the Kanka API with a personal token.
 The existing `mcp-kanka` setup proves the credentials and the SSL path already work.

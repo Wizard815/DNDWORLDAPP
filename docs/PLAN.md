@@ -4,13 +4,20 @@ Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
 
-> **Status, 2026-08-22 — P0 and most of P1 are built and running.**
+> **Status, 2026-08-22 — P0 and P1 are built and running. No importer is planned.**
 >
 > | | |
 > |---|---|
 > | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server |
-> | **Next** | P1.4 — the importers. LegendKeeper first: its format is fully specified and it holds the maps and timelines Kanka never had. |
-> | **Then** | P2 visibility (inline secret blocks first) → P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
+> | **Next** | P2 visibility (inline secret blocks first) → P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
+>
+> **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
+> Kanka day to day and will move content over by hand through Kanka's MCP and ours as it
+> is needed, rather than a one-shot bulk import. `docs/kanka-mapping.md` and
+> `docs/legendkeeper-observations.md` stay as reference material — the schema and
+> permission mapping in the former, and the export format in the latter, are still useful
+> background — but neither describes work on the roadmap. If a bulk import is ever wanted
+> after all, both formats are already fully specified there.
 >
 > [HANDOFF.md](HANDOFF.md) is the operating manual for picking this up — what exists,
 > which rules must not be broken, and the environment gotchas. This file is the *why* and
@@ -234,29 +241,21 @@ retrofit: **roles and per-node/per-post visibility** (P2's core), and the flat s
 URL scheme. `npm run smoke` walks the whole surface and asserts the DM/player boundary in
 each of the four places it could leak.
 
-**P1 — API, tokens, MCP, and the imports.**
+**P1 — API, tokens, MCP. ✅ complete.**
 
-- **P1.1 Scoped API tokens ✅** — bearer auth beside the session cookie, hierarchical
+- **P1.1 Scoped API tokens** — bearer auth beside the session cookie, hierarchical
   scopes, optional world pin, a management UI, and the rule that tokens cannot mint
   tokens.
-- **P1.2 OpenAPI ✅** — generated from the Zod schemas, served and written to disk.
-- **P1.3 MCP server ✅** — `apps/mcp` over stdio, verified by driving it as a real client
+- **P1.2 OpenAPI** — generated from the Zod schemas, served and written to disk.
+- **P1.3 MCP server** — `apps/mcp` over stdio, verified by driving it as a real client
   would.
-- **P1.4 The importers — next.** BloodEarth from Kanka (campaign `376198`), and the
-  LegendKeeper world, whose export format is fully specified in
-  [legendkeeper-observations.md](legendkeeper-observations.md) §10.
 
-**Do LegendKeeper first.** Its format is already reverse-engineered, the exports are
-already on disk, and it is the world that actually holds the maps and timelines Kanka
-never had — so it stress-tests the data model harder.
-
-Each import is the migration path *and* an honest test of the data model: if a real
-campaign with nested locations, hidden notes and a homebrew calendar round-trips cleanly,
-the model is sound. If it does not, better to learn that now than at P5.
-
-One hard constraint for both importers: **inline secret blocks must survive the import
-as secrets.** Flattening a LegendKeeper `block-secret` into visible prose would leak the
-DM's material to the players. That is a correctness requirement, not a nicety.
+**No bulk importer.** The owner runs the campaign in Kanka day to day and already has a
+Kanka MCP server; content moves over by hand through both MCP servers as it is needed,
+not as a one-shot migration. `kanka-mapping.md` and `legendkeeper-observations.md` remain
+useful references — the permission-model mapping in the former and the fully
+reverse-engineered export format in the latter — but neither is scheduled work. If a bulk
+import is wanted later, both are specified well enough to build from cold.
 
 **P2 — The rest of visibility.** Roles, node visibility and post visibility already work
 (P0). What remains, **most-used first**:
@@ -296,12 +295,6 @@ nodes, initiative tracker, dice, session-notes flow.
 **P7 — Hardening and extras.** Realtime co-editing (Yjs), Obsidian vault import/export,
 webhooks, backup and restore UI, graph view.
 
-**A LegendKeeper importer belongs alongside the Kanka one in P1**, not here. The export
-format is now fully specified (§10) — `.json`, or `.lk` which is the same JSON gzipped —
-and the owner already has exports of the world that carries the maps and timelines Kanka
-never held. Content is Atlassian Document Format, so an existing ADF→markdown converter
-does most of the work.
-
 ## 9. Repo layout
 
 Built so far:
@@ -328,8 +321,6 @@ Planned, as their phases arrive:
   packages/
     markdown/      wikilink + directive parser/serializer     (P3)
     calendar/      calendar math — pure, heavily unit-tested  (P5)
-    kanka-import/  Kanka API client + mapper                  (P1.4)
-    lk-import/     LegendKeeper .json/.lk reader + ADF mapper (P1.4)
 ```
 
 npm workspaces. No TypeScript project references and no build step for the server — Node

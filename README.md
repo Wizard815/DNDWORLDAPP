@@ -7,7 +7,8 @@ One tree. Anything nests inside anything. A map is a page, a timeline is a page,
 character is a page — type is a filter, not a folder you are forced to live in.
 
 **Status: P0 and P1 done** — the spine, scoped API tokens, a generated OpenAPI spec, and
-an MCP server. Next is the importers, then maps and calendars.
+an MCP server. Next is templates and query views, then maps and calendars. No bulk
+importer is planned; content moves in through the API/MCP as needed.
 
 **Picking this up? Read [docs/HANDOFF.md](docs/HANDOFF.md) first** — it covers what
 exists, the rules that must not be broken, the environment gotchas, and the next tasks in
@@ -108,9 +109,9 @@ drift from what the server actually validates:
 
 ## What does not exist yet
 
-Maps, calendars, timelines, templates and typed fields, query views, boards, statblocks,
-and the importers (Kanka and LegendKeeper). Those are the rest of P1 through P6 in the
-plan, in that order.
+Maps, calendars, timelines, templates and typed fields, query views, boards, statblocks.
+Those are P2 through P6 in the plan, in that order. No bulk importer from Kanka or
+LegendKeeper is planned — content moves over by hand through the API/MCP as needed.
 
 ## Layout
 

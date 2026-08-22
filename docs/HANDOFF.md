@@ -9,7 +9,7 @@ rules must not be broken, and what to build next. The other docs are:
 | File | What it holds |
 |---|---|
 | [PLAN.md](PLAN.md) | The product plan and phase roadmap (P0–P7) |
-| [kanka-mapping.md](kanka-mapping.md) | Kanka's model → ours, and the import plan for the real campaign |
+| [kanka-mapping.md](kanka-mapping.md) | Kanka's model → ours — reference only, no importer is planned (§9.4) |
 | [legendkeeper-observations.md](legendkeeper-observations.md) | Field notes from inspecting a live LegendKeeper project |
 | [openapi.json](openapi.json) | Generated API contract — regenerate with `npm run openapi` |
 | [../README.md](../README.md) | Short version for a newcomer |
@@ -48,8 +48,7 @@ If you are about to add a table called `characters`, or a nav section called
 
 ## 3. Current status
 
-**P0 is complete. P1.1 (tokens), P1.2 (OpenAPI) and P1.3 (the MCP server) are complete.**
-Next up is P1.4: the importers.
+**P0 and P1 are complete.** No bulk importer is planned — see §9.4. Next up is P2.
 
 Verified by:
 - `npm test` — 10 unit tests (fractional indexing, wiki-link parsing). All pass.
@@ -83,7 +82,7 @@ Verified by:
 ### Not started
 
 Maps, calendars, timelines, templates and typed fields, the query/view engine, boards,
-statblocks, initiative, the importers (Kanka and LegendKeeper), realtime.
+statblocks, initiative, realtime. No importer is planned — see §9.4.
 
 ---
 
@@ -396,10 +395,11 @@ every later phase becomes scriptable and testable.
 Migration `0002_api_tokens.sql`, `auth/tokens.ts`, `routes/tokens.ts`, the scope hook in
 `index.ts`, and `components/Tokens.tsx`. 14 smoke checks cover it. Details in §7.1.
 
-### 9.2 OpenAPI
+### 9.2 OpenAPI — DONE
 
-Generate from the Zod schemas in `packages/schema`. The point is that the MCP server and
-any future script have a contract, and that drift is visible.
+Generated from the Zod schemas in `packages/schema`. The point is that the MCP server and
+any future script have a contract, and that drift is visible. See §7.1's sibling note
+where the openapi routes were wired.
 
 ### 9.3 The MCP server — DONE
 
@@ -425,46 +425,24 @@ Two things to preserve when extending it:
 Streamable HTTP transport is not wired up. stdio covers Claude Desktop and Claude Code;
 add HTTP if something needs to reach it over a network.
 
-### 9.4 The Kanka importer (`packages/kanka-import`)
+### 9.4 No bulk importer is planned
 
-Full plan in [kanka-mapping.md](kanka-mapping.md) §6. The order matters:
-campaign → templates → entity shells → re-parent → bodies (HTML→markdown, then rewrite
-Kanka `[entity:12345|Label]` mentions into `[[wikilinks]]` via the id map) → posts **with
-their visibility** → attributes → tags → relations → calendars/events → images → report.
+The owner runs the campaign in Kanka day to day and already has a Kanka MCP server
+connected. Content moves over by hand through both MCP servers as it is needed, not as a
+one-shot migration — **do not build `packages/kanka-import` or `packages/lk-import`
+unless explicitly asked.**
 
-Two things to hold onto:
-- Record `kanka_id` on every imported node so the import is idempotent (re-running
-  updates rather than duplicating).
-- **Treat the importer as the data model's exam.** If a real campaign with nested
-  locations, hidden posts, custom attributes and a homebrew calendar round-trips cleanly,
-  the model is sound. If it does not, better to learn that now than at P5.
-- `TheOpenBin/07_DND/kanka_events.json` on the owner's machine is a ready-made calendar
-  fixture; it already carries `lane` values that match LegendKeeper's timeline "groups".
-
-### 9.4a The LegendKeeper importer (`packages/lk-import`)
-
-Do this **alongside** the Kanka importer. The format is fully specified in
-[legendkeeper-observations.md](legendkeeper-observations.md) §10, and the owner already
-has exports of the world that holds the maps and timelines Kanka never had.
-
-- `.lk` is gzipped JSON in the same schema as `.json` — gunzip, then one parser.
-- An export is a subtree: a resource plus every descendant, with referenced calendars
-  bundled and a sha256 `hash` for integrity.
-- Document content is **Atlassian Document Format**. Use an existing ADF→markdown
-  converter rather than writing a ProseMirror walker.
-- `mention` nodes carry the target's id plus cached display text — map ids through the
-  import id map and emit `[[Name|label]]` when they differ.
-- `bodiedExtension` with `extensionKey: "block-secret"` is a GM-only inline block. It is
-  the single most-used feature in the corpus (70 uses); make sure the importer preserves
-  it rather than flattening it into visible prose. **This is a correctness issue, not a
-  nicety — flattening it would leak the DM's secrets to players.**
-- Media are CDN URLs; download and re-host or the import rots.
+`kanka-mapping.md` and `legendkeeper-observations.md` are kept as reference material, not
+a backlog item: the permission-model mapping in the former and the fully
+reverse-engineered export format in the latter are still useful background if a bulk
+import is ever wanted after all — both formats are specified well enough to build from
+cold. But nothing currently on the roadmap depends on them.
 
 ### 9.5 Then, in order
 
-P2 remaining visibility work (per-node ACL, secret blocks inside a body, guest share
-links, "view as player", invites) → P3 templates + query views → P4 maps → P5 calendars +
-timelines → P6 play mode → P7 hardening. See [PLAN.md](PLAN.md) §8.
+P2 visibility (inline secret blocks first, ACL, guest share links, "view as player",
+invites) → P3 templates + query views → P4 maps → P5 calendars + timelines → P6 play mode
+→ P7 hardening. See [PLAN.md](PLAN.md) §8.
 
 ---
 
@@ -521,7 +499,8 @@ docker compose up -d --build
    visitor on a share link? P0 assumes the former; P2 needs the latter too.
 2. **Multiple worlds.** The schema supports many worlds per server, but the client shows
    only the first. Is a world switcher wanted, or is this a one-world install?
-3. **Kanka cutover.** Is the plan to migrate off Kanka once, or to run both and sync for
-   a while? The importer is idempotent either way, but a sync needs conflict rules.
+3. ~~Kanka cutover.~~ **Answered 2026-08-22:** no bulk migration. The owner keeps running
+   the campaign in Kanka and moves content over by hand through both MCP servers as it is
+   needed. See §9.4.
 4. **Obsidian.** Is a two-way Obsidian vault sync wanted, or is one-time import/export
    enough? Two-way is a much bigger commitment.
