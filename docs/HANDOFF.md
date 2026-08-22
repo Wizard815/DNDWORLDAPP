@@ -416,6 +416,25 @@ Two things to hold onto:
 - `TheOpenBin/07_DND/kanka_events.json` on the owner's machine is a ready-made calendar
   fixture; it already carries `lane` values that match LegendKeeper's timeline "groups".
 
+### 9.4a The LegendKeeper importer (`packages/lk-import`)
+
+Do this **alongside** the Kanka importer. The format is fully specified in
+[legendkeeper-observations.md](legendkeeper-observations.md) §10, and the owner already
+has exports of the world that holds the maps and timelines Kanka never had.
+
+- `.lk` is gzipped JSON in the same schema as `.json` — gunzip, then one parser.
+- An export is a subtree: a resource plus every descendant, with referenced calendars
+  bundled and a sha256 `hash` for integrity.
+- Document content is **Atlassian Document Format**. Use an existing ADF→markdown
+  converter rather than writing a ProseMirror walker.
+- `mention` nodes carry the target's id plus cached display text — map ids through the
+  import id map and emit `[[Name|label]]` when they differ.
+- `bodiedExtension` with `extensionKey: "block-secret"` is a GM-only inline block. It is
+  the single most-used feature in the corpus (70 uses); make sure the importer preserves
+  it rather than flattening it into visible prose. **This is a correctness issue, not a
+  nicety — flattening it would leak the DM's secrets to players.**
+- Media are CDN URLs; download and re-host or the import rots.
+
 ### 9.5 Then, in order
 
 P2 remaining visibility work (per-node ACL, secret blocks inside a body, guest share

@@ -214,9 +214,16 @@ relations, tags, calendar events. The import is the migration path *and* the fir
 test of the data model.
 
 **P2 — The rest of visibility.** Roles, node visibility and post visibility already work
-(P0). What remains: per-node ACL overrides for one-off exceptions, GM-only secret blocks
-*inside* a body, guest share links scoped to a subtree, an explicit "view as player"
-mode, and an invite flow so a DM can add someone who has no account yet.
+(P0). What remains, **most-used first**:
+
+1. **GM-only secret blocks inside a body.** Evidence from a real LegendKeeper world:
+   `block-secret` used **70 times**, against 3 hidden documents and 5 structured
+   properties (see [legendkeeper-observations.md](legendkeeper-observations.md) §10.3).
+   Secrecy happens inline, mid-sentence — not by hiding whole sections. We built the
+   least-used mechanism first; this is the one that earns its keep.
+2. Per-node ACL overrides for one-off exceptions.
+3. Guest share links scoped to a subtree, and an explicit "view as player" mode.
+4. An invite flow so a DM can add someone who has no account yet.
 
 **P3 — Templates and query views.** Template editor, typed fields, then the view engine:
 table, board (kanban), gallery. Views embeddable inside a node body.
@@ -224,15 +231,31 @@ table, board (kanban), gallery. Views embeddable inside a node body.
 **P4 — Maps.** Map nodes, image and tiled layers, pins, pin-to-node targeting, nested
 maps (a pin opens a child map), DM-only markers, polygon regions.
 
+Store the **source image plus pixel bounds and max zoom**, and treat tiling as a derived
+pipeline step — that is how LegendKeeper does it. Make pin **inheritance the default**:
+in a real world 73 of 77 pins store no name, glyph or colour at all and take everything
+from the page they link to (§10.5).
+
 **P5 — Calendars, events, timelines.** Calendar schema editor (months, weekdays, leap
 rules, moons, eras), date fields on any node, timeline view with lanes, per-world
 "current date" with advance and retreat.
+
+Adopt LegendKeeper's calendar schema nearly wholesale (§9.5) — it is complete and
+battle-tested, and ships Harptos / Eberron / Exandria / Greyhawk presets. Copy the
+timeline `detail` field too: a 1–4 zoom threshold per event is how a dense timeline stays
+legible (§10.6).
 
 **P6 — Play mode.** Statblock field type, renderer, SRD and homebrew import, encounter
 nodes, initiative tracker, dice, session-notes flow.
 
 **P7 — Hardening and extras.** Realtime co-editing (Yjs), Obsidian vault import/export,
 webhooks, backup and restore UI, graph view.
+
+**A LegendKeeper importer belongs alongside the Kanka one in P1**, not here. The export
+format is now fully specified (§10) — `.json`, or `.lk` which is the same JSON gzipped —
+and the owner already has exports of the world that carries the maps and timelines Kanka
+never held. Content is Atlassian Document Format, so an existing ADF→markdown converter
+does most of the work.
 
 ## 9. Repo layout
 

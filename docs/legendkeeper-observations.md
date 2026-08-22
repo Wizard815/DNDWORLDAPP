@@ -1,14 +1,17 @@
 # LegendKeeper — observed structure
 
-Two rounds of field notes on the same project (`cm5febnb60s9s13se9k3rbd9f`), the owner's
-own world, inspected in a browser.
+Three rounds of field notes on the same project (`cm5febnb60s9s13se9k3rbd9f`), the owner's
+own world.
 
 - **Sections 1–8** — 2026-08-20, from the *published viewer* (`/p/…`), unauthenticated.
-- **Section 9** — 2026-08-22, from the *editor* (`/a/…`) signed in as owner. This is the
-  authoritative round: it reads the real REST API and the real data shapes. Where the two
-  disagree, section 9 wins.
+- **Section 9** — 2026-08-22, from the *editor* (`/a/…`) signed in as owner: the real REST
+  API and data shapes.
+- **Section 10** — 2026-08-22, from real `.json` / `.lk` exports. This is the importer's
+  specification, and the only round that shows document *content*.
 
-Neither is documentation. It is evidence, gathered read-only from the owner's own account.
+Where rounds disagree, the later one wins. None of this is documentation — it is evidence,
+gathered read-only from the owner's own account and their own exports. The export files
+themselves are deliberately **not** committed: they contain the campaign's actual prose.
 
 ## 1. URLs and identity
 
@@ -369,3 +372,198 @@ a pin can inherit from its target page — it is literally the same data. Our em
 | Icon = glyph + colour + shape | Revisit when maps land at P4, so pins can inherit. |
 | REST for structure, CRDT for prose | The seam to use at P7. Do not try to sync structure through Yjs. |
 | Properties barely used in a real world | Keep the P3 warning: typed fields must be cheaper than typing. |
+
+---
+
+## 10. The export format (2026-08-22, from real `.json` / `.lk` exports)
+
+Five exports of the owner's own world were analysed with scripts (never committed — they
+contain the campaign's actual prose). This section is the importer's specification.
+
+### 10.1 The envelope, and what `.lk` actually is
+
+```jsonc
+{
+  "version": 1,
+  "exportId": "kfp1m4im",
+  "exportedAt": "2026-08-22T14:09:59.500Z",
+  "resources": [ /* the resource and all its descendants */ ],
+  "calendars": [ /* only those referenced */ ],
+  "resourceCount": 72,
+  "hash": "90d1a229…"            // sha256 integrity hash
+}
+```
+
+**`.lk` is just gzipped JSON in this identical schema.** Same envelope, same `hash` field.
+An importer needs one parser and can accept `.lk` by gunzipping first — no separate format.
+
+An export is a **subtree**: the chosen resource plus every descendant, linked by
+`parentId`, with referenced calendars bundled. Exporting the map page pulled in 72
+resources, because its pins link to them.
+
+### 10.2 Document content is Atlassian Document Format
+
+`document.content` is a ProseMirror doc — and specifically **ADF, Atlassian's schema**.
+The tells are conclusive: `bodiedExtension`, `layoutSection` / `layoutColumn`, `taskItem`
+with `state: "TODO" | "DONE"`, `localId` attributes, `isNumberColumnEnabled` and
+`__autoSize` on tables, and `__confluenceMetadata` on link marks. LegendKeeper built its
+editor on Atlassian's editor-core.
+
+That is useful, not trivia: ADF has a published spec and existing open-source
+ADF-to-markdown converters, so the importer does not need a bespoke parser.
+
+Full node vocabulary observed across 229 page documents:
+
+```
+doc  paragraph(9039)  text(14145)  heading(1375)  rule(885)
+bulletList(988)  orderedList(64)  listItem(3301)
+table(253)  tableRow(1366)  tableHeader(838)  tableCell(3673)
+blockquote(54)  codeBlock(11)  hardBreak(452)
+taskList(16)  taskItem(102)
+layoutSection(15)  layoutColumn(32)
+mention(191)  mediaSingle(3)  media(3)
+extension(42)  bodiedExtension(72)
+```
+
+Marks: `strong` (4814), `em` (249), `code` (10), `link` (6).
+
+### 10.3 The headline finding: `block-secret`
+
+```jsonc
+{
+  "type": "bodiedExtension",
+  "attrs": {
+    "extensionType": "com.algorific.legendkeeper.extensions",
+    "extensionKey": "block-secret",
+    "parameters": { "extensionTitle": "Secret" },
+    "layout": "default"
+  },
+  "content": [ /* arbitrary blocks — paragraphs, mentions, anything */ ]
+}
+```
+
+**70 instances.** Compare, in the same corpus:
+
+| mechanism | uses |
+|---|---|
+| `block-secret` inline in prose | **70** |
+| hidden documents (`document.isHidden`) | 3 |
+| structured properties (facts) | 5 |
+| aliases | 0 |
+
+That ratio is the most useful thing in this whole exercise. In a real, heavily-used world,
+**secrecy happens inline, in the middle of prose** — not by hiding a whole section, and
+certainly not through structured fields.
+
+Our model has this backwards. We built per-post visibility first (the thing used 3 times)
+and scheduled inline secret blocks for "P2, later" (the thing used 70 times). **Inline
+secret blocks should be promoted to the front of P2.**
+
+The other extension is `block-subpage-index` (42 uses) — the auto child-index, an
+*insertable block*, not automatic page furniture. Ours renders "Pages inside"
+unconditionally; theirs is placed deliberately, which is why some pages show it and others
+do not.
+
+### 10.4 Mentions are id + cached text
+
+```jsonc
+{ "type": "mention",
+  "attrs": { "id": "wdrnj0aj", "text": "Las Vegra", "alias": "",
+             "accessLevel": "", "userType": "", "documentId": "" } }
+```
+
+Links store the **target's 8-char id** with a **denormalised display string**. Rename-safe
+by construction, at the cost of the cached text going stale unless resynced.
+
+Ours (`[[Title]]` resolved at write time) is the opposite trade: human-readable and
+portable in markdown, but rename has to re-resolve. Worth knowing both trades are
+deliberate; ours suits a markdown store, theirs suits a CRDT store.
+
+For the importer: `mention.attrs.id` maps directly through the resource id map, and
+`attrs.text` is the label — emit `[[Target Name|cached text]]` when they differ.
+
+### 10.5 Maps
+
+The map document carries a `map` field beside its `content`:
+
+```jsonc
+"map": {
+  "locatorId": "https://assets.legendkeeper.com/<uuid>.jpg",
+  "mapId":     "https://assets.legendkeeper.com/<uuid>.jpg",
+  "min_x": 0, "max_x": 4096,
+  "min_y": -3072, "max_y": 0,
+  "max_zoom": 3
+}
+```
+
+The **source image is a plain URL plus pixel bounds** (4096×3072, negative y — the
+Leaflet `CRS.Simple` convention) and a max zoom. Tiles are derived from it, not stored in
+the export. So our `maps` table wants: source asset, bounds, max zoom. Tiling is a
+pipeline step, not the source of truth.
+
+Pins in the export are leaner than the live client state suggested:
+
+```jsonc
+{ "id": "lyv4so44", "pos": [-48.869, 120.436], "rank": "T",
+  "isHidden": false, "updatedAt": 1768150397521,
+  "linkedResourceId": "e9zmkrkt", "uri": "lk://resources/e9zmkrkt",
+  "isSynced": true }
+```
+
+**Of 77 pins, 73 are `isSynced: true` and store no name, glyph, colour or shape at all** —
+they inherit everything from the linked page. Only 4 override, and those add
+`name`, `iconGlyph`, `iconColor`, `iconShape`. Four pins are hidden.
+
+So inheritance is not a nice-to-have toggle: it is the default state of 95% of pins, and
+the reason renaming a page silently updates the map. Build it that way from the start.
+
+Note also `uri: "lk://resources/<id>"` — an internal URI scheme for linking to a resource
+from anywhere (pins, timeline events). Some older rows store a bare id instead, so a
+tolerant parser needs both.
+
+### 10.6 Timelines
+
+```jsonc
+{ "type": "time", "calendarId": "h6t2vscp",
+  "content": {
+    "lanes":  [ { "id", "name", "pos", "size": "sm" | "lg" } ],
+    "events": [ { "id", "laneId", "type": "event", "pos", "layer", "detail",
+                  "start": 341472960, "end": 341475840,
+                  "name", "uri", "iconGlyph", "color",
+                  "imageUrl", "imageFit", "opacity", "isSynced", "data" } ] } }
+```
+
+- `start` / `end` are **absolute minutes** — confirming §9.5. (341472960 min ÷ 60 ÷ 24
+  ≈ 237,134 days ≈ year 650, matching the world's "650 AE".)
+- `lanes` are the timeline groups, with a display `size`.
+- **`detail` (1–4) is a zoom threshold** — how far you must zoom in before the event
+  appears. That is how a dense timeline stays readable, and it is a neat idea we should
+  copy rather than invent.
+- `layer` stacks events vertically within a lane; `pos` is the usual fractional index.
+- `isSynced` again — events inherit from their linked page.
+
+### 10.7 Media
+
+```jsonc
+{ "type": "mediaSingle", "attrs": { "layout": "center" },
+  "content": [ { "type": "media",
+                 "attrs": { "url": "https://assets.legendkeeper.com/<uuid>.png",
+                            "type": "file", "__external": false, "id": "", "collection": "" } } ] }
+```
+
+Plain URLs on their asset CDN, with a `layout` for alignment. An importer must download
+these and re-host them, or the imported world breaks the day the export's links rot.
+
+### 10.8 Net changes to our plan
+
+| Finding | Action |
+|---|---|
+| `block-secret` used 70× vs 3 hidden docs vs 5 properties | **Promote inline secret blocks to the front of P2.** We prioritised the least-used mechanism. |
+| `.lk` is gzipped JSON, same schema | One importer, gunzip first. No second format. |
+| Content is ADF | Reuse an existing ADF→markdown converter rather than writing a ProseMirror walker. |
+| Mentions are id + cached text | Map ids through the import id map; emit `[[Name\|label]]` when the cached text differs. |
+| Map = source image URL + pixel bounds + max zoom | Store the source asset and bounds; treat tiling as a derived pipeline step. |
+| 73 of 77 pins inherit everything | Make pin inheritance the default, not an option. |
+| Timeline `detail` zoom threshold | Copy it — it is how a dense timeline stays legible. |
+| `block-subpage-index` is an insertable block | Consider making our "Pages inside" an insertable block rather than fixed furniture. |
+| Media are CDN URLs | The importer must re-host, or imports rot. |
