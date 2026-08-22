@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import type { MoveNodeInput } from "@dndworldapp/schema";
+import type { MoveNodeInput, NodeDetail } from "@dndworldapp/schema";
 import { ApiError, api } from "./api.ts";
 import { AuthScreen } from "./components/Auth.tsx";
 import { Backlinks, NodeView } from "./components/NodeView.tsx";
@@ -76,6 +76,8 @@ export function App() {
   const refreshTree = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["tree"] });
     void queryClient.invalidateQueries({ queryKey: ["node"] });
+    // Writing a page can satisfy a wanted link, or create new ones.
+    void queryClient.invalidateQueries({ queryKey: ["unresolved"] });
   }, [queryClient]);
 
   const createNode = useMutation({
@@ -92,6 +94,21 @@ export function App() {
       api.moveNode(nodeId, input),
     onSuccess: refreshTree,
   });
+
+  /** Archiving takes the subtree with it, so ask first, then fall back to the parent. */
+  const archiveNode = useCallback(
+    (target: NodeDetail) => {
+      const inside =
+        target.children.length > 0 ? ` and the ${target.children.length} page(s) inside it` : "";
+      if (!window.confirm(`Archive "${target.title}"${inside}?`)) return;
+      void api.archiveNode(target.id).then(() => {
+        const parent = target.breadcrumb.at(-1)?.id ?? world?.rootNodeId ?? null;
+        if (parent !== null) navigate(`/n/${parent}`);
+        refreshTree();
+      });
+    },
+    [refreshTree, world],
+  );
 
   if (session.isLoading) {
     return <div className="p-8 text-sm text-[#7a7d86]">Loading…</div>;
@@ -140,8 +157,14 @@ export function App() {
             onCreateNamed={(title) =>
               createNode.mutate({ parentId: node.data!.node.id, title })
             }
+            onArchive={archiveNode}
           />
-          <Backlinks node={node.data.node} />
+          <Backlinks
+            node={node.data.node}
+            onCreateNamed={(title) =>
+              createNode.mutate({ parentId: node.data!.node.id, title })
+            }
+          />
         </>
       ) : (
         <div className="flex-1 p-8 text-sm text-[#7a7d86]">

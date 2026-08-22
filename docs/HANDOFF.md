@@ -336,6 +336,22 @@ No build step for the server. That means:
 Git Bash is available but PowerShell is the primary shell. Heredocs in the Bash tool
 mangle apostrophes — write files with an editor tool, not `cat <<EOF`.
 
+### 8.4a Do not sync editor state from props
+
+`NodeView` holds `title`/`body` in local state and must **not** have an effect that
+copies them back from `node`. `App` renders it with `key={node.id}`, so navigation
+already remounts it with fresh state. An effect keyed on `node.title`/`node.bodyMd` fires
+on every autosave — it flipped `editing` back to false about a second after the writer
+paused typing, and could clobber keystrokes made while the save was in flight. This was a
+real bug; the comment in the file exists to stop it coming back.
+
+### 8.4b Known gap: archiving and inbound links
+
+Archiving a page does not unresolve links that point at it, so those links still render
+as normal links rather than reappearing under "Wanted pages". Harmless today (there is no
+unarchive UI, and the target 404s cleanly), but worth handling when archive/restore gets
+built out properly.
+
 ### 8.5 Browser-pane automation quirk
 
 When driving this app through the in-app browser, synthetic clicks at viewport
