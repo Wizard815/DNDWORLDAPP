@@ -36,8 +36,10 @@ const ApiError = ref("ApiError", S.apiErrorSchema);
 
 const SetupInput = ref("SetupInput", S.setupInputSchema);
 const LoginInput = ref("LoginInput", S.loginInputSchema);
+const ChangePasswordInput = ref("ChangePasswordInput", S.changePasswordInputSchema);
 const CreateWorldInput = ref("CreateWorldInput", S.createWorldInputSchema);
 const AddMemberInput = ref("AddMemberInput", S.addMemberInputSchema);
+const ResetPasswordInput = ref("ResetPasswordInput", S.resetPasswordInputSchema);
 const CreateNodeInput = ref("CreateNodeInput", S.createNodeInputSchema);
 const UpdateNodeInput = ref("UpdateNodeInput", S.updateNodeInputSchema);
 const MoveNodeInput = ref("MoveNodeInput", S.moveNodeInputSchema);
@@ -125,6 +127,17 @@ const paths: Json = {
       responses: { 200: ok(obj({ user: UserDto }, ["user"])), ...ERRORS },
     },
   },
+  "/auth/change-password": {
+    post: {
+      tags: ["auth"],
+      summary: "Change your own password",
+      description:
+        "Requires the current password. Session only — there is no email to send a reset link to. A DM resetting a member's forgotten password uses POST /worlds/{worldId}/members/{userId}/reset-password instead.",
+      security: [{ sessionCookie: [] }],
+      requestBody: body(ChangePasswordInput),
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
 
   "/worlds": {
     get: {
@@ -198,11 +211,12 @@ const paths: Json = {
     },
     post: {
       tags: ["members"],
-      summary: "Add someone to this world, or change their role",
-      description: "Owner or DM only. Tokens need the `admin` scope.",
+      summary: "Add someone to this world, creating their account if they do not have one yet",
+      description:
+        "Owner or DM only. Tokens need the `admin` scope. If `username` already belongs to an account, `name`/`password` are ignored and that account is simply added with `role`. Otherwise both become required and a brand-new account is created in the same step — there is no email invite; a human always sets the account up directly.",
       parameters: [pathParam("worldId", "World id")],
       requestBody: body(AddMemberInput),
-      responses: { 200: ok(obj({ member: MemberDto }, ["member"])), ...ERRORS },
+      responses: { 201: ok(obj({ member: MemberDto }, ["member"])), ...ERRORS },
     },
   },
   "/worlds/{worldId}/members/{userId}": {
@@ -210,6 +224,17 @@ const paths: Json = {
       tags: ["members"],
       summary: "Remove someone from this world",
       parameters: [pathParam("worldId", "World id"), pathParam("userId", "User id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+  "/worlds/{worldId}/members/{userId}/reset-password": {
+    post: {
+      tags: ["members"],
+      summary: "Reset a member's password",
+      description:
+        "Owner or DM only, and only for members of this world. There is no email to send a reset link to, so this is how a forgotten password gets fixed.",
+      parameters: [pathParam("worldId", "World id"), pathParam("userId", "User id")],
+      requestBody: body(ResetPasswordInput),
       responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
     },
   },

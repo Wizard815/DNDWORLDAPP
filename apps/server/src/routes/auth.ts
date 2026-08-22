@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { loginInputSchema, setupInputSchema } from "@dndworldapp/schema";
+import { changePasswordInputSchema, loginInputSchema, setupInputSchema } from "@dndworldapp/schema";
 import type { UserDto } from "@dndworldapp/schema";
 import { hashPassword, verifyPassword } from "../auth/password.ts";
 import { SESSION_COOKIE, destroySession } from "../auth/session.ts";
@@ -11,16 +11,17 @@ import { requireUser, startSession } from "../http/context.ts";
 import { createWorld } from "../services/worlds.ts";
 
 const countUsers = db.prepare("SELECT COUNT(*) AS n FROM users");
-const findUserByEmail = db.prepare("SELECT * FROM users WHERE lower(email) = lower(?)");
+const findUserByUsername = db.prepare("SELECT * FROM users WHERE lower(username) = lower(?)");
 const insertUser = db.prepare(
-  "INSERT INTO users (id, email, name, password_hash, is_server_admin, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  "INSERT INTO users (id, username, name, password_hash, is_server_admin, created_at) VALUES (?, ?, ?, ?, ?, ?)",
 );
+const updatePasswordHash = db.prepare("UPDATE users SET password_hash = ? WHERE id = ?");
 
 function toDto(user: UserRow): UserDto {
   return {
     id: user.id,
     name: user.name,
-    email: user.email,
+    username: user.username,
     isServerAdmin: user.is_server_admin === 1,
   };
 }
@@ -36,15 +37,24 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
    * First run. Creates the owner account and their first world, then signs in.
    * Deliberately a screen rather than environment variables — a container should
    * not need a redeploy to change who owns it.
+   *
+   * This is the only self-service account creation in the app. Every account
+   * after this one is created by a human — the owner or a DM, via the world's
+   * member panel (see routes/worlds.ts) — never by public signup. There is no
+   * email anywhere in this system: no verification, no reset-by-email, because
+   * a self-hosted homelab app has no mail server and never will.
    */
   app.post("/api/v1/setup", async (request, reply) => {
     if (!needsSetup()) throw conflict("This server has already been set up.");
     const input = setupInputSchema.parse(request.body);
+    if (findUserByUsername.get(input.username) !== undefined) {
+      throw conflict("That username is taken.");
+    }
 
     const userId = longId();
     insertUser.run(
       userId,
-      input.email,
+      input.username,
       input.name,
       await hashPassword(input.password),
       1,
@@ -53,18 +63,18 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const world = createWorld(userId, input.worldName);
     startSession(request, reply, userId);
 
-    return { user: toDto(findUserByEmail.get(input.email) as UserRow), worldId: world.id };
+    return { user: toDto(findUserByUsername.get(input.username) as UserRow), worldId: world.id };
   });
 
   app.post("/api/v1/auth/login", async (request, reply) => {
     const input = loginInputSchema.parse(request.body);
-    const user = findUserByEmail.get(input.email) as UserRow | undefined;
+    const user = findUserByUsername.get(input.username) as UserRow | undefined;
 
-    // Same failure for unknown address and wrong password, and always pay the
+    // Same failure for unknown username and wrong password, and always pay the
     // hashing cost, so timing does not reveal which accounts exist.
     const stored = user?.password_hash ?? "scrypt$00$00";
     const ok = await verifyPassword(input.password, stored);
-    if (user === undefined || !ok) throw unauthorized("Wrong email or password.");
+    if (user === undefined || !ok) throw unauthorized("Wrong username or password.");
 
     startSession(request, reply, user.id);
     return { user: toDto(user) };
@@ -79,22 +89,15 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/api/v1/auth/me", async (request) => ({ user: toDto(requireUser(request)) }));
 
-  /** Invite flow is P2; for now an owner can hand-create an account. */
-  app.post("/api/v1/users", async (request) => {
-    const actor = requireUser(request);
-    if (actor.is_server_admin !== 1) throw badRequest("Only a server admin can add users.");
-    const input = setupInputSchema.omit({ worldName: true }).parse(request.body);
-    if (findUserByEmail.get(input.email) !== undefined) throw conflict("That email is taken.");
-
-    const userId = longId();
-    insertUser.run(
-      userId,
-      input.email,
-      input.name,
-      await hashPassword(input.password),
-      0,
-      Date.now(),
-    );
-    return { user: toDto(findUserByEmail.get(input.email) as UserRow) };
+  /** Self-service password change, requiring the current one. DM-driven resets
+   *  (no current password needed, for when someone forgets theirs) live on the
+   *  world member panel instead — see routes/worlds.ts. */
+  app.post("/api/v1/auth/change-password", async (request) => {
+    const user = requireUser(request);
+    const input = changePasswordInputSchema.parse(request.body);
+    const ok = await verifyPassword(input.currentPassword, user.password_hash);
+    if (!ok) throw badRequest("Current password is wrong.");
+    updatePasswordHash.run(await hashPassword(input.newPassword), user.id);
+    return { ok: true };
   });
 }

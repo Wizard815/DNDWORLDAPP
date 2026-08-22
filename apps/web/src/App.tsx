@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { MoveNodeInput, NodeDetail } from "@dndworldapp/schema";
 import { ApiError, api } from "./api.ts";
 import { AuthScreen } from "./components/Auth.tsx";
+import { Members } from "./components/Members.tsx";
 import { Backlinks, NodeView } from "./components/NodeView.tsx";
 import { QuickSwitcher } from "./components/QuickSwitcher.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
@@ -14,6 +15,7 @@ export function App() {
   const path = usePath();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [tokensOpen, setTokensOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
 
   const session = useQuery({
     queryKey: ["me"],
@@ -141,6 +143,7 @@ export function App() {
         onMove={(nodeId, input) => moveNode.mutate({ nodeId, input })}
         onOpenSwitcher={() => setSwitcherOpen(true)}
         onOpenTokens={() => setTokensOpen(true)}
+        onOpenMembers={() => setMembersOpen(true)}
         onSignOut={() => {
           void api.logout().then(() => queryClient.invalidateQueries());
         }}
@@ -174,6 +177,14 @@ export function App() {
 
       {tokensOpen && (
         <Tokens worldId={world.id} worldName={world.name} onClose={() => setTokensOpen(false)} />
+      )}
+
+      {membersOpen && (
+        <Members
+          worldId={world.id}
+          canManage={world.role === "owner" || world.role === "dm"}
+          onClose={() => setMembersOpen(false)}
+        />
       )}
 
       {switcherOpen && (

@@ -1,6 +1,8 @@
 import type { Role, WorldDto } from "@dndworldapp/schema";
+import { hashPassword } from "../auth/password.ts";
 import { db, transaction } from "../db/index.ts";
 import type { MembershipRow, WorldRow } from "../db/types.ts";
+import { badRequest } from "../lib/errors.ts";
 import { longId, shortId } from "../lib/id.ts";
 import { FIRST_KEY } from "../lib/sortkey.ts";
 import { slugify, uniqueSlug } from "../lib/slug.ts";
@@ -69,18 +71,25 @@ export function addMember(worldId: string, userId: string, role: Role): void {
 }
 
 const selectMembers = db.prepare(`
-  SELECT u.id, u.name, u.email, m.role FROM memberships m
+  SELECT u.id, u.name, u.username, m.role FROM memberships m
   JOIN users u ON u.id = m.user_id
   WHERE m.world_id = ?
   ORDER BY m.created_at
 `);
-const findUserByEmail = db.prepare("SELECT id FROM users WHERE lower(email) = lower(?)");
+const findUserByUsername = db.prepare("SELECT * FROM users WHERE lower(username) = lower(?)");
+const insertUser = db.prepare(
+  "INSERT INTO users (id, username, name, password_hash, is_server_admin, created_at) VALUES (?, ?, ?, ?, 0, ?)",
+);
 const deleteMembership = db.prepare("DELETE FROM memberships WHERE world_id = ? AND user_id = ?");
+const isMemberOf = db.prepare(
+  "SELECT 1 FROM memberships WHERE world_id = ? AND user_id = ?",
+);
+const updatePasswordHash = db.prepare("UPDATE users SET password_hash = ? WHERE id = ?");
 
 export type MemberDto = {
   id: string;
   name: string;
-  email: string;
+  username: string;
   role: Role;
 }
 
@@ -88,21 +97,61 @@ export function listMembers(worldId: string): MemberDto[] {
   return selectMembers.all(worldId) as MemberDto[];
 }
 
-/** Returns null when no account exists for that address — invites land in P2. */
-export function addMemberByEmail(worldId: string, email: string, role: Role): MemberDto | null {
-  const user = findUserByEmail.get(email) as { id: string } | undefined;
-  if (user === undefined) return null;
+/**
+ * The DM's member panel, in one step: add someone who already has an account,
+ * or create a brand-new one for them (this app has no self-service signup and
+ * no email — a human always creates the account). If `username` already
+ * belongs to an account, `name`/`password` are ignored and that account is
+ * simply added with `role`; otherwise both become required.
+ */
+export async function addOrCreateMember(
+  worldId: string,
+  username: string,
+  role: Role,
+  name: string | undefined,
+  password: string | undefined,
+): Promise<MemberDto> {
+  let userId: string;
+  const existing = findUserByUsername.get(username) as { id: string } | undefined;
+
+  if (existing !== undefined) {
+    userId = existing.id;
+  } else {
+    if (name === undefined || password === undefined) {
+      throw badRequest("No account with that username yet — provide a name and password to create one.");
+    }
+    userId = longId();
+    insertUser.run(userId, username, name, await hashPassword(password), Date.now());
+  }
+
   db.prepare(
     "INSERT INTO memberships (world_id, user_id, role, created_at) VALUES (?, ?, ?, ?) " +
       "ON CONFLICT (world_id, user_id) DO UPDATE SET role = excluded.role",
-  ).run(worldId, user.id, role, Date.now());
-  return listMembers(worldId).find((m) => m.id === user.id) ?? null;
+  ).run(worldId, userId, role, Date.now());
+
+  return listMembers(worldId).find((m) => m.id === userId)!;
 }
 
 export function removeMember(worldId: string, userId: string): void {
   const world = getWorld(worldId);
   if (world !== null && world.owner_id === userId) return; // never orphan a world
   deleteMembership.run(worldId, userId);
+}
+
+/**
+ * A DM resetting a member's forgotten password — there is no email to send a
+ * reset link to. Scoped to members of `worldId`, so a DM in one world cannot
+ * reset the password of someone they only happen to know the id of elsewhere.
+ */
+export async function resetMemberPassword(
+  worldId: string,
+  userId: string,
+  newPassword: string,
+): Promise<void> {
+  if (isMemberOf.get(worldId, userId) === undefined) {
+    throw badRequest("That account is not a member of this world.");
+  }
+  updatePasswordHash.run(await hashPassword(newPassword), userId);
 }
 
 export function listWorldsForUser(userId: string): WorldDto[] {

@@ -43,16 +43,18 @@ async function api(method, path, body) {
   return { status: res.status, body: t ? JSON.parse(t) : null };
 }
 
+// Same identity scripts/smoke.mjs sets up, so either script can run first against
+// a shared dev server and this one still finds an owner account to log into.
 const status = await api("GET", "/setup/status");
 if (status.body.needsSetup) {
   await api("POST", "/setup", {
     name: "Wizard",
-    email: "dm@example.com",
+    username: "gm_wizard",
     password: "correct-horse-battery",
     worldName: "BloodEarth",
   });
 } else {
-  await api("POST", "/auth/login", { email: "dm@example.com", password: "correct-horse-battery" });
+  await api("POST", "/auth/login", { username: "gm_wizard", password: "correct-horse-battery" });
 }
 
 const worlds = (await api("GET", "/worlds")).body.worlds;

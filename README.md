@@ -7,9 +7,10 @@ One tree. Anything nests inside anything. A map is a page, a timeline is a page,
 character is a page — type is a filter, not a folder you are forced to live in.
 
 **Status: P0 and P1 done, P2 underway** — the spine, scoped API tokens, a generated
-OpenAPI spec, an MCP server, and inline `:::secret` blocks. Next is the rest of P2, then
-templates and query views. No bulk importer is planned; content moves in through the
-API/MCP as needed.
+OpenAPI spec, an MCP server, inline `:::secret` blocks, and username/password accounts
+with a DM member panel (no email, ever — this is self-hosted with no mail server). Next
+is per-node ACL and anonymous share links, then templates and query views. No bulk
+importer is planned; content moves in through the API/MCP as needed.
 
 **Picking this up? Read [docs/HANDOFF.md](docs/HANDOFF.md) first** — it covers what
 exists, the rules that must not be broken, the environment gotchas, and the next tasks in
@@ -49,7 +50,12 @@ uploaded images. Backup is a copy of that directory.
 
 ## What works today
 
-- **Users, sessions, roles.** Owner / DM / player / guest, per world.
+- **Users, sessions, roles.** Owner / DM / player / guest, per world. Accounts identify
+  by username, not email — there is no self-service signup and no mail server, ever. The
+  owner's account is created at first-run setup; every account after that is created by
+  a DM, from the world's member panel, with a username and a password the DM sets. A DM
+  can also reset a forgotten password outright, and anyone can change their own given
+  the current one.
 - **The tree.** Unrestricted nesting, drag to re-parent, drag between siblings to
   reorder. Ordering uses fractional index keys, so a drag rewrites one row.
 - **Pages.** Markdown body, autosave, emoji icon, live preview.
@@ -148,7 +154,7 @@ docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.js
 
 ```bash
 npm test          # unit: fractional indexing, wiki-link parsing, secret blocks
-npm run smoke     # 64 end-to-end API checks (needs an EMPTY data/ dir + running server)
+npm run smoke     # 75 end-to-end API checks (needs an EMPTY data/ dir + running server)
 npm run test:mcp  # drives the MCP server over stdio (needs a running server)
 npm run typecheck
 ```

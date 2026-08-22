@@ -22,6 +22,7 @@ interface Props {
   onMove: (nodeId: string, input: MoveNodeInput) => void;
   onOpenSwitcher: () => void;
   onOpenTokens: () => void;
+  onOpenMembers: () => void;
   onSignOut: () => void;
 }
 
@@ -59,6 +60,7 @@ export function Sidebar({
   onMove,
   onOpenSwitcher,
   onOpenTokens,
+  onOpenMembers,
   onSignOut,
 }: Props) {
   const [filter, setFilter] = useState("");
@@ -253,6 +255,13 @@ export function Sidebar({
           className="w-full rounded px-2 py-1.5 text-left text-xs text-[#8d9099] hover:bg-[#232529] hover:text-[#d7d8dc]"
         >
           + New top-level page
+        </button>
+        <button
+          type="button"
+          onClick={onOpenMembers}
+          className="w-full rounded px-2 py-1.5 text-left text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+        >
+          Members
         </button>
         <button
           type="button"

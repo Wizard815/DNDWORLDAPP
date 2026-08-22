@@ -8,8 +8,8 @@ packaging step.
 >
 > | | |
 > |---|---|
-> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks |
-> | **Next** | Rest of P2 (per-node ACL, guest share links, invites) → P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere |
+> | **Next** | Rest of P2 (per-node ACL, anonymous share links, "view as player") → P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
 > Kanka day to day and will move content over by hand through Kanka's MCP and ours as it
@@ -133,6 +133,17 @@ simplified. Detail in [kanka-mapping.md](kanka-mapping.md).
 - **World** (Kanka's "campaign") is the permission boundary. One server hosts many.
 - **Roles per world:** `owner`, `dm`, `player`, `guest`. Roles are rows, so custom roles
   stay possible later.
+- **No email, anywhere, ever.** ✅ built. This is self-hosted with no SMTP by design.
+  Accounts identify by **username**, not address. There is no self-service signup: the
+  owner's account is created at first-run setup, and every account after that is created
+  by a DM, from the world's member panel — username, display name and a password the DM
+  sets — in the same action that adds them to the world. A DM can also reset a forgotten
+  password outright (no reset-by-email possible), and anyone can change their own
+  password given the current one. See [HANDOFF.md](HANDOFF.md) §7.3.
+- **Guests, decided 2026-08-22: both mechanisms, not one.** A guest can be a real account
+  (owner/DM creates it the same way as a player, capped at the `guest` role) **and**,
+  separately, an anonymous share link scoped to one page's subtree needs no account at
+  all. The account path is built; the anonymous link is not yet — see P2 below.
 - **Node visibility** (fast path, one column): `public` / `members` / `dm` / `private`.
   A guest on a share link sees only `public`; a logged-in player sees `public` plus
   `members`; the DM sees everything.
@@ -152,7 +163,7 @@ Never in the UI, never per-route.
 ## 6. Schema sketch
 
 ```
-users         id, email, name, password_hash, is_server_admin, created_at
+users         id, username, name, password_hash, is_server_admin, created_at
 worlds        id, name, slug, owner_id, settings (JSON)
 memberships   world_id, user_id, role (owner|dm|player|guest)
 api_tokens    id, user_id, world_id?, name, hash, scopes, last_used_at, revoked_at
@@ -274,9 +285,18 @@ import is wanted later, both are specified well enough to build from cold.
    block is blocked from resaving that body wholesale (400, not a silent delete) —
    asking a DM to edit it instead is safer than either leaking it or losing it. See
    `src/lib/secrets.ts` on both server and client, and HANDOFF.md §7.2.
-2. Per-node ACL overrides for one-off exceptions.
-3. Guest share links scoped to a subtree, and an explicit "view as player" mode.
-4. An invite flow so a DM can add someone who has no account yet.
+2. **Username/password accounts, no email, DM-driven. ✅ built.** Resolved the P0 open
+   question on how a DM adds someone who has no account yet — not an email invite (this
+   is self-hosted with no SMTP, ever), but a member panel where the DM sets a username
+   and password directly, in the same action that adds them to the world. Also a
+   self-service "change my password" (needs the current one) and a DM-driven reset (does
+   not). Migration `0004_username_accounts.sql` — a column rename, not a schema
+   redesign; see HANDOFF.md §7.3.
+3. Per-node ACL overrides for one-off exceptions — including "anyone with role X can
+   edit this specific page," not only "this specific person can."
+4. Anonymous share links, scoped to one page's subtree, needing no account — the second
+   guest mechanism from §5 above — and an explicit "view as player" mode for a DM
+   previewing their own world.
 
 **P3 — Templates and query views.** Template editor, typed fields, then the view engine:
 table, board (kanban), gallery. Views embeddable inside a node body.

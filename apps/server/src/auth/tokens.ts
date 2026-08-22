@@ -46,7 +46,7 @@ const insertToken = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 const selectByHash = db.prepare(`
-  SELECT t.*, u.id AS u_id, u.email, u.name AS u_name, u.password_hash,
+  SELECT t.*, u.id AS u_id, u.username, u.name AS u_name, u.password_hash,
          u.is_server_admin, u.created_at AS u_created_at
   FROM api_tokens t JOIN users u ON u.id = t.user_id
   WHERE t.hash = ?
@@ -103,7 +103,7 @@ export function authenticateToken(secret: string): TokenAuth | null {
   const joined = selectByHash.get(hashToken(secret)) as
     | (ApiTokenRow & {
         u_id: string;
-        email: string;
+        username: string;
         u_name: string;
         password_hash: string;
         is_server_admin: number;
@@ -123,7 +123,7 @@ export function authenticateToken(secret: string): TokenAuth | null {
   return {
     user: {
       id: joined.u_id,
-      email: joined.email,
+      username: joined.username,
       name: joined.u_name,
       password_hash: joined.password_hash,
       is_server_admin: joined.is_server_admin,

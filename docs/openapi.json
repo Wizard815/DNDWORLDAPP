@@ -362,6 +362,92 @@
         }
       }
     },
+    "/auth/change-password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change your own password",
+        "description": "Requires the current password. Session only — there is no email to send a reset link to. A DM resetting a member's forgotten password uses POST /worlds/{worldId}/members/{userId}/reset-password instead.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/worlds": {
       "get": {
         "tags": [
@@ -1033,8 +1119,8 @@
         "tags": [
           "members"
         ],
-        "summary": "Add someone to this world, or change their role",
-        "description": "Owner or DM only. Tokens need the `admin` scope.",
+        "summary": "Add someone to this world, creating their account if they do not have one yet",
+        "description": "Owner or DM only. Tokens need the `admin` scope. If `username` already belongs to an account, `name`/`password` are ignored and that account is simply added with `role`. Otherwise both become required and a brand-new account is created in the same step — there is no email invite; a human always sets the account up directly.",
         "parameters": [
           {
             "name": "worldId",
@@ -1057,7 +1143,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Success",
             "content": {
               "application/json": {
@@ -1154,6 +1240,107 @@
             "description": "User id"
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/worlds/{worldId}/members/{userId}/reset-password": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Reset a member's password",
+        "description": "Owner or DM only, and only for members of this world. There is no email to send a reset link to, so this is how a forgotten password gets fixed.",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "World id"
+          },
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "User id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordInput"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Success",
@@ -2387,7 +2574,7 @@
           "name": {
             "type": "string"
           },
-          "email": {
+          "username": {
             "type": "string"
           },
           "isServerAdmin": {
@@ -2397,7 +2584,7 @@
         "required": [
           "id",
           "name",
-          "email",
+          "username",
           "isServerAdmin"
         ],
         "additionalProperties": false
@@ -2446,7 +2633,7 @@
           "name": {
             "type": "string"
           },
-          "email": {
+          "username": {
             "type": "string"
           },
           "role": {
@@ -2462,7 +2649,7 @@
         "required": [
           "id",
           "name",
-          "email",
+          "username",
           "role"
         ],
         "additionalProperties": false
@@ -2955,10 +3142,11 @@
             "minLength": 1,
             "maxLength": 120
           },
-          "email": {
+          "username": {
             "type": "string",
-            "format": "email",
-            "maxLength": 254
+            "minLength": 3,
+            "maxLength": 32,
+            "pattern": "^[a-zA-Z0-9_.-]+$"
           },
           "password": {
             "type": "string",
@@ -2973,7 +3161,7 @@
         },
         "required": [
           "name",
-          "email",
+          "username",
           "password",
           "worldName"
         ],
@@ -2982,10 +3170,10 @@
       "LoginInput": {
         "type": "object",
         "properties": {
-          "email": {
+          "username": {
             "type": "string",
-            "format": "email",
-            "maxLength": 254
+            "minLength": 1,
+            "maxLength": 32
           },
           "password": {
             "type": "string",
@@ -2994,8 +3182,28 @@
           }
         },
         "required": [
-          "email",
+          "username",
           "password"
+        ],
+        "additionalProperties": false
+      },
+      "ChangePasswordInput": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
         ],
         "additionalProperties": false
       },
@@ -3016,10 +3224,11 @@
       "AddMemberInput": {
         "type": "object",
         "properties": {
-          "email": {
+          "username": {
             "type": "string",
-            "format": "email",
-            "maxLength": 254
+            "minLength": 3,
+            "maxLength": 32,
+            "pattern": "^[a-zA-Z0-9_.-]+$"
           },
           "role": {
             "type": "string",
@@ -3029,11 +3238,35 @@
               "player",
               "guest"
             ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "password": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 512
           }
         },
         "required": [
-          "email",
+          "username",
           "role"
+        ],
+        "additionalProperties": false
+      },
+      "ResetPasswordInput": {
+        "type": "object",
+        "properties": {
+          "newPassword": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "newPassword"
         ],
         "additionalProperties": false
       },

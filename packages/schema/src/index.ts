@@ -49,24 +49,46 @@ export const nodeKindSchema = z.enum(NODE_KINDS);
 // Auth + setup
 // ---------------------------------------------------------------------------
 
+/**
+ * The login identifier. This app is self-hosted with no SMTP, ever — there is no
+ * verification email, no password-reset email, so there was never a reason for
+ * this to look like an address. Accounts are created by a human (the owner at
+ * first-run, a DM for everyone after), never by self-service signup.
+ */
+export const usernameSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(32)
+  .regex(/^[a-zA-Z0-9_.-]+$/, "Letters, numbers, underscore, period and hyphen only.");
+
+/** Shared by every "set this account's password" field. */
+export const passwordSchema = z.string().min(10).max(512);
+
 export const setupInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  email: z.string().trim().email().max(254),
-  password: z.string().min(10).max(512),
+  username: usernameSchema,
+  password: passwordSchema,
   worldName: z.string().trim().min(1).max(120),
 });
 export type SetupInput = z.infer<typeof setupInputSchema>;
 
 export const loginInputSchema = z.object({
-  email: z.string().trim().email().max(254),
+  username: z.string().trim().min(1).max(32),
   password: z.string().min(1).max(512),
 });
 export type LoginInput = z.infer<typeof loginInputSchema>;
 
+export const changePasswordInputSchema = z.object({
+  currentPassword: z.string().min(1).max(512),
+  newPassword: passwordSchema,
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordInputSchema>;
+
 export const userDtoSchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string(),
+  username: z.string(),
   isServerAdmin: z.boolean(),
 });
 export type UserDto = z.infer<typeof userDtoSchema>;
@@ -89,16 +111,30 @@ export const worldDtoSchema = z.object({
 });
 export type WorldDto = z.infer<typeof worldDtoSchema>;
 
+/**
+ * Adds someone to a world. If `username` already belongs to an account, they are
+ * simply added with `role` and `name`/`password` are ignored — this is the
+ * "existing account" path. If it does not, `name` and `password` become
+ * required and a brand-new account is created in the same step: the DM's admin
+ * panel, not an email invite.
+ */
 export const addMemberInputSchema = z.object({
-  email: z.string().trim().email().max(254),
+  username: usernameSchema,
   role: roleSchema,
+  name: z.string().trim().min(1).max(120).optional(),
+  password: passwordSchema.optional(),
 });
 export type AddMemberInput = z.infer<typeof addMemberInputSchema>;
+
+export const resetPasswordInputSchema = z.object({
+  newPassword: passwordSchema,
+});
+export type ResetPasswordInput = z.infer<typeof resetPasswordInputSchema>;
 
 export const memberDtoSchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string(),
+  username: z.string(),
   role: roleSchema,
 });
 export type MemberDto = z.infer<typeof memberDtoSchema>;

@@ -1,14 +1,19 @@
 import type {
+  AddMemberInput,
   AssetDto,
   Backlink,
+  ChangePasswordInput,
   CreateNodeInput,
   CreateTokenInput,
   CreatedTokenDto,
+  LoginInput,
+  MemberDto,
   MoveNodeInput,
   NodeDetail,
   NodeSummary,
   PostDto,
   SearchHit,
+  SetupInput,
   TokenDto,
   UpdateNodeInput,
   UserDto,
@@ -63,15 +68,18 @@ const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 export const api = {
   setupStatus: () => request<{ needsSetup: boolean }>("/setup/status"),
 
-  setup: (input: { name: string; email: string; password: string; worldName: string }) =>
+  setup: (input: SetupInput) =>
     request<{ user: UserDto; worldId: string }>("/setup", { method: "POST", ...json(input) }),
 
-  login: (input: { email: string; password: string }) =>
+  login: (input: LoginInput) =>
     request<{ user: UserDto }>("/auth/login", { method: "POST", ...json(input) }),
 
   logout: () => request<{ ok: true }>("/auth/logout", { method: "POST" }),
 
   me: () => request<{ user: UserDto }>("/auth/me"),
+
+  changePassword: (input: ChangePasswordInput) =>
+    request<{ ok: true }>("/auth/change-password", { method: "POST", ...json(input) }),
 
   worlds: () => request<{ worlds: WorldDto[] }>("/worlds"),
 
@@ -84,6 +92,20 @@ export const api = {
     request<{ links: Array<{ targetText: string; count: number }> }>(
       `/worlds/${worldId}/unresolved-links`,
     ),
+
+  members: (worldId: string) => request<{ members: MemberDto[] }>(`/worlds/${worldId}/members`),
+
+  addMember: (worldId: string, input: AddMemberInput) =>
+    request<{ member: MemberDto }>(`/worlds/${worldId}/members`, { method: "POST", ...json(input) }),
+
+  removeMember: (worldId: string, userId: string) =>
+    request<{ ok: true }>(`/worlds/${worldId}/members/${userId}`, { method: "DELETE" }),
+
+  resetMemberPassword: (worldId: string, userId: string, newPassword: string) =>
+    request<{ ok: true }>(`/worlds/${worldId}/members/${userId}/reset-password`, {
+      method: "POST",
+      ...json({ newPassword }),
+    }),
 
   createNode: (worldId: string, input: CreateNodeInput) =>
     request<{ node: { id: string; title: string; parentId: string | null } }>(
@@ -134,4 +156,14 @@ export const api = {
   },
 };
 
-export type { Backlink, NodeDetail, NodeSummary, PostDto, SearchHit, TokenDto, UserDto, WorldDto };
+export type {
+  Backlink,
+  MemberDto,
+  NodeDetail,
+  NodeSummary,
+  PostDto,
+  SearchHit,
+  TokenDto,
+  UserDto,
+  WorldDto,
+};

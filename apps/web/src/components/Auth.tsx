@@ -7,9 +7,15 @@ const inputClass =
 const buttonClass =
   "w-full rounded-md bg-[#3d5ab5] px-3 py-2 text-sm font-medium text-white hover:bg-[#4867cc] disabled:opacity-50";
 
+/**
+ * There is no self-service signup. This screen either bootstraps the very
+ * first account (first-run setup) or signs an existing one in. Every account
+ * after the first one is created by a DM, from the world's member panel — see
+ * Members.tsx — never from a public form, and never with an email anywhere.
+ */
 export function AuthScreen({ needsSetup, onDone }: { needsSetup: boolean; onDone: () => void }) {
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [worldName, setWorldName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,9 +27,9 @@ export function AuthScreen({ needsSetup, onDone }: { needsSetup: boolean; onDone
     setError(null);
     try {
       if (needsSetup) {
-        await api.setup({ name, email, password, worldName });
+        await api.setup({ name, username, password, worldName });
       } else {
-        await api.login({ email, password });
+        await api.login({ username, password });
       }
       onDone();
     } catch (err) {
@@ -58,10 +64,12 @@ export function AuthScreen({ needsSetup, onDone }: { needsSetup: boolean; onDone
         )}
         <input
           className={inputClass}
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          type="text"
+          autoCapitalize="off"
+          autoCorrect="off"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
           required
         />
         <input

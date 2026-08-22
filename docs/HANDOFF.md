@@ -48,25 +48,40 @@ If you are about to add a table called `characters`, or a nav section called
 
 ## 3. Current status
 
-**P0 and P1 are complete. P2 is underway** — inline secret blocks (the first, most-used
-item) are done; ACL, guest links and invites are not. No bulk importer is planned — see
-§9.4.
+**P0 and P1 are complete. P2 is underway** — inline secret blocks and username/password
+accounts with a DM member panel are done; per-node ACL and anonymous share links are not.
+No bulk importer is planned — see §9.4.
 
 Verified by:
 - `npm test` — 20 unit tests (fractional indexing, wiki-link parsing, secret blocks). All
   pass.
-- `npm run smoke` — 64 end-to-end API checks against a running server. All pass.
+- `npm run smoke` — 75 end-to-end API checks against a running server. All pass.
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All pass.
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
 - Driven by hand in a browser: login → tree → page → posts → rendered wiki links → typed
   a `:::secret` block via the editor toolbar, confirmed it renders with the gold "Secret —
-  DM only" wrapper, and confirmed it survives a page reload.
+  DM only" wrapper, and confirmed it survives a page reload → opened the Members panel,
+  created a brand-new account and added it to the world in one step, reset its password,
+  confirmed the login worked with the new password, and confirmed the add-form and reset
+  buttons are gone (not just disabled) for a signed-in player.
+
+One thing noticed in passing and **not fixed** (flagged as a separate task, out of this
+scope): the client's wikilink regex in `apps/web/src/lib/markdown.ts` does not skip
+inline code spans, so literal example text like `` `[[double brackets]]` `` — which is in
+every new world's home page body — renders garbled. The server's equivalent parser
+(`apps/server/src/lib/wikilinks.ts`) already masks code correctly; the client needs the
+same fix. Small, self-contained, not touched here.
 
 ### Working
 
-- Users, cookie sessions, first-run setup screen, roles per world (owner/dm/player/guest)
-- Worlds, memberships, add/remove member by email
+- Users identify by **username, not email** — this app is self-hosted with no SMTP,
+  ever. Cookie sessions, first-run setup screen, roles per world
+  (owner/dm/player/guest)
+- Worlds, memberships. A DM's member panel adds someone — creating their account on the
+  spot if they do not have one, with a username, name and password the DM sets — or
+  resets a member's password outright. Anyone can change their own password given the
+  current one. See §7.3
 - Nodes: create, read, update, archive, move (re-parent + reorder)
 - Unrestricted nesting; drag-and-drop in the sidebar (drop on a row = make child, drop on
   the top/bottom quarter = reorder before/after)
@@ -84,12 +99,13 @@ Verified by:
   and `npm run openapi` writes `docs/openapi.json` so drift is visible in review
 - **MCP server** (`apps/mcp`) over the public HTTP API
 - **Inline `:::secret` blocks** (P2, first item) in node and post bodies — see §7.2
+- **Username/password accounts, DM-driven, no email** (P2, second item) — see §7.3
 
 ### Not started
 
-The rest of P2 (per-node ACL, guest share links, "view as player", invites), maps,
-calendars, timelines, templates and typed fields, the query/view engine, boards,
-statblocks, initiative, realtime. No importer is planned — see §9.4.
+The rest of P2 (per-node ACL, anonymous share links, "view as player"), maps, calendars,
+timelines, templates and typed fields, the query/view engine, boards, statblocks,
+initiative, realtime. No importer is planned — see §9.4.
 
 ---
 
@@ -100,7 +116,8 @@ apps/server/
   migrations/0001_init.sql   THE SCHEMA SOURCE OF TRUTH. Hand-written SQL.
   migrations/0002_api_tokens.sql
   migrations/0003_secret_blocks.sql  Drops the FTS insert/update triggers — see §7.2
-  scripts/smoke.mjs          64-check end-to-end API test. Needs an empty data dir.
+  migrations/0004_username_accounts.sql  RENAME COLUMN email TO username — see §7.3
+  scripts/smoke.mjs          75-check end-to-end API test. Needs an empty data dir.
   src/
     index.ts                 Fastify app: plugins, error handler, static serving, boot
     env.ts                   Config from env vars; refuses prod boot with the dev secret
@@ -128,8 +145,8 @@ apps/server/
       worlds.ts              Worlds, memberships, world creation (makes the root page)
       assets.ts              Content-addressed uploads
     routes/
-      auth.ts                setup, login, logout, me, users
-      worlds.ts              worlds, tree, search, members, node create, asset upload
+      auth.ts                setup, login, logout, me, self-service change-password
+      worlds.ts              worlds, tree, search, members (add/create/remove/reset-pw), node create, asset upload
       nodes.ts               node detail/update/move/archive, posts
       tokens.ts              mint / list / revoke API tokens (session only)
       openapi.ts             serves the generated spec + a small viewer
@@ -148,6 +165,7 @@ apps/web/
       Posts.tsx              Sections with visibility badges
       QuickSwitcher.tsx      Ctrl+K
       Tokens.tsx             API token management
+      Members.tsx            DM admin panel: add/create accounts, remove, reset passwords
       IconPicker.tsx         Emoji picker on the page title
 
 apps/mcp/
@@ -168,7 +186,9 @@ packages/schema/
 Read `apps/server/migrations/0001_init.sql` — it is short and commented. Summary:
 
 ```
-users        id, email, name, password_hash, is_server_admin, created_at
+users        id, username, name, password_hash, is_server_admin, created_at
+             (renamed from email in 0004 — see §7.3; the column always just meant
+              "login identifier," never actually required an address)
 sessions     id (sha256 of token), user_id, created_at, expires_at, user_agent
 worlds       id, name, slug, owner_id, settings(JSON), timestamps
 memberships  (world_id, user_id) PK, role
@@ -265,10 +285,10 @@ Base `/api/v1`. Auth is a `dwa_session` cookie. Errors are
 ```
 GET    /setup/status                        -> { needsSetup }
 POST   /setup                               first run: owner + first world, signs in
-POST   /auth/login                          { email, password }
+POST   /auth/login                          { username, password }
 POST   /auth/logout
 GET    /auth/me
-POST   /users                               server-admin only; creates an account
+POST   /auth/change-password                { currentPassword, newPassword } (session only)
 
 GET    /worlds                              worlds you are a member of (+ rootNodeId)
 POST   /worlds                              { name }
@@ -277,8 +297,13 @@ GET    /worlds/:worldId/search?q=&limit=    FTS5, ranked, with snippets
 GET    /worlds/:worldId/unresolved-links    wiki links with no destination yet
 POST   /worlds/:worldId/nodes               create a node
 GET    /worlds/:worldId/members
-POST   /worlds/:worldId/members             { email, role }  (owner/dm only)
+POST   /worlds/:worldId/members             { username, role, name?, password? } (owner/dm
+                                            only). name+password required only if that
+                                            username has no account yet — see §7.3
 DELETE /worlds/:worldId/members/:userId     (owner/dm only)
+POST   /worlds/:worldId/members/:userId/reset-password
+                                            { newPassword } (owner/dm only, member of
+                                            that world only)
 POST   /worlds/:worldId/assets              multipart, images only, 25 MB cap
 
 GET    /nodes/:nodeId                       detail + breadcrumb + children + backlinks
@@ -379,6 +404,58 @@ button (`NodeView.tsx` and `Posts.tsx`) that drops in a scaffold and selects the
 placeholder text for immediate typing-over. It uses `onMouseDown={preventDefault}` —
 without it, `Posts.tsx`'s save-on-blur would fire on the button click itself, saving the
 stale body and collapsing out of edit mode before the insertion ever ran.
+
+### 7.3 Accounts: username/password, no email, DM-driven
+
+Decided 2026-08-22: this app is self-hosted with no SMTP, **ever**. There is no
+verification email, no password-reset email, and never will be — so a column that only
+ever held a unique login string had no business being named `email`, let alone validated
+as one. Migration `0004_username_accounts.sql` is `ALTER TABLE users RENAME COLUMN email
+TO username` — verified by hand first that SQLite updates the dependent unique index
+(`users_email_idx`) to reference the new column name automatically, so this is a rename,
+not a schema redesign. `usernameSchema` in `packages/schema` replaces the old
+`.email()` validator: 3–32 chars, `[a-zA-Z0-9_.-]+`.
+
+**There is no self-service signup, anywhere, by design.** Two ways an account comes to
+exist:
+
+1. **First-run setup** (`POST /setup`) — the owner, once, ever. Unchanged from P0 except
+   the field name.
+2. **A DM's member panel** (`POST /worlds/:worldId/members`, `components/Members.tsx`) —
+   every account after that. `addOrCreateMember` in `services/worlds.ts` does both jobs
+   in one call: if `username` already belongs to an account, `name`/`password` are
+   ignored and that account is simply added to the world with `role`; if it does not,
+   both become required and a brand-new account is created in the same step. This
+   replaced what the plan had called an "invite flow" — there is no token, no accept
+   link, no email to send one to. A human sets the password directly, the same way a
+   homelab admin creates any other login.
+
+**Passwords, without email, need two different reset paths**, both built:
+
+- **Self-service** (`POST /auth/change-password`) — requires the *current* password.
+  For someone who still remembers it and just wants to change it.
+- **DM-driven** (`POST /worlds/:worldId/members/:userId/reset-password`) — no current
+  password needed, for someone who forgot it. There is no other way to recover a
+  forgotten password in this app, which is the whole point of not having email. Scoped:
+  `resetMemberPassword` checks the target actually has a membership in `worldId` before
+  touching anything, so a DM in one world cannot reach into an account that only exists
+  in a different one.
+
+**Client-side gating, not just server-side.** `Members.tsx` takes a `canManage` prop
+(`world.role === "owner" || world.role === "dm"`, computed in `App.tsx` from the
+`WorldDto.role` the tree fetch already returns) and hides the add-form and every
+mutating button — not just disables them — when false. Every mutation is independently
+enforced server-side regardless (`isGameMaster(viewer.role)` in `routes/worlds.ts`), so
+the client-side gate is a UX nicety, not the security boundary; verified by hand as a
+signed-in player, not just read from the code.
+
+**A footgun this avoided:** `apps/web/src/api.ts` had been declaring its own inline
+parameter types for `setup`/`login` (`{ email: string; password: string }`) instead of
+importing `SetupInput`/`LoginInput` from `@dndworldapp/schema`. That meant the rename
+compiled clean on both sides while silently sending the wrong field name — TypeScript
+had nothing to check it against. Fixed by importing the shared types; if you add a new
+auth-adjacent call, import its input type from the schema package rather than inlining
+one, or the same drift can happen again undetected.
 
 ---
 
@@ -549,7 +626,9 @@ npm run dev:web        # http://localhost:5173  hot-reloading UI, proxies to :80
 npm run build          # build the client
 npm test               # unit tests
 npm run smoke          # end-to-end API checks; needs an EMPTY data dir + running server
-npm run typecheck      # tsc on server and web
+npm run test:mcp       # drives the MCP server over stdio; needs a running server
+npm run typecheck      # tsc on server, web and mcp
+npm run openapi        # writes docs/openapi.json from the Zod schemas
 docker compose up -d --build
 ```
 
@@ -560,8 +639,13 @@ docker compose up -d --build
 
 ## 12. Open questions for the owner
 
-1. **Guest access shape.** Is a guest a real account with a `guest` role, or an anonymous
-   visitor on a share link? P0 assumes the former; P2 needs the latter too.
+1. ~~Guest access shape.~~ **Answered 2026-08-22:** both, not one. A guest can be a real
+   account (built — a DM creates it the same way as a player, capped at the `guest`
+   role) **and**, separately, an anonymous visitor on a share link scoped to one page's
+   subtree, needing no account at all (**not built yet** — this is P2 item 4, and it is
+   deliberately scoped as its own lightweight read-only endpoint rather than threading
+   guest+subtree scoping through the existing tree/search/detail query surface — see
+   PLAN.md §8 P2).
 2. **Multiple worlds.** The schema supports many worlds per server, but the client shows
    only the first. Is a world switcher wanted, or is this a one-world install?
 3. ~~Kanka cutover.~~ **Answered 2026-08-22:** no bulk migration. The owner keeps running

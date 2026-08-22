@@ -4,7 +4,7 @@ import type { NodeKind, Role, Visibility } from "@dndworldapp/schema";
 
 export type UserRow = {
   id: string;
-  email: string;
+  username: string;
   name: string;
   password_hash: string;
   is_server_admin: number;

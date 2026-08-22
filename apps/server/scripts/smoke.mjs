@@ -52,11 +52,27 @@ check("server reports it needs setup", status.body.needsSetup === true, status.b
 
 const setup = await dm("POST", "/setup", {
   name: "Wizard",
-  email: "dm@example.com",
+  username: "gm_wizard",
   password: "correct-horse-battery",
   worldName: "BloodEarth",
 });
-check("setup created the owner", setup.status === 200 && setup.body.user.email === "dm@example.com", setup.body);
+check("setup created the owner", setup.status === 200 && setup.body.user.username === "gm_wizard", setup.body);
+
+const setupTwice = await dm("POST", "/setup", {
+  name: "Someone Else",
+  username: "intruder",
+  password: "another-long-password",
+  worldName: "Nope",
+});
+check("setup cannot be run a second time", setupTwice.status === 409, setupTwice.body);
+
+const takenUsername = await player("POST", "/setup", {
+  name: "Someone",
+  username: "gm_wizard",
+  password: "another-long-password",
+  worldName: "Nope",
+});
+check("setup rejects an already-set-up server before it even checks the username", takenUsername.status === 409, takenUsername.body);
 
 const worlds = await dm("GET", "/worlds");
 const world = worlds.body.worlds[0];
@@ -129,12 +145,73 @@ const playerPost = await dm("POST", `/nodes/${ciridan.id}/posts`, {
 });
 check("member-visible post created", playerPost.status === 201, playerPost.body);
 
-await dm("POST", "/users", { name: "Player One", email: "player@example.com", password: "another-long-password" });
-const added = await dm("POST", `/worlds/${worldId}/members`, { email: "player@example.com", role: "player" });
-check("player added to the world", added.status === 200 && added.body.member.role === "player", added.body);
+console.log("\n== accounts: no email anywhere, a DM creates them directly ==");
 
-const login = await player("POST", "/auth/login", { email: "player@example.com", password: "another-long-password" });
-check("player can sign in", login.status === 200, login.body);
+const missingPassword = await dm("POST", `/worlds/${worldId}/members`, {
+  username: "ghost",
+  role: "player",
+});
+check(
+  "adding a username with no matching account requires name+password to create one",
+  missingPassword.status === 400,
+  missingPassword.body,
+);
+
+const added = await dm("POST", `/worlds/${worldId}/members`, {
+  username: "player1",
+  role: "player",
+  name: "Player One",
+  password: "another-long-password",
+});
+check(
+  "one call both creates the account and adds membership",
+  added.status === 201 && added.body.member.role === "player" && added.body.member.username === "player1",
+  added.body,
+);
+
+const login = await player("POST", "/auth/login", { username: "player1", password: "another-long-password" });
+check("player can sign in with the username the DM set", login.status === 200, login.body);
+
+const secondWorldForExisting = (await dm("POST", "/worlds", { name: "A Second World" })).body.world;
+const reAdded = await dm("POST", `/worlds/${secondWorldForExisting.id}/members`, {
+  username: "player1",
+  role: "guest",
+});
+check(
+  "adding an EXISTING username to another world needs no password — it just attaches",
+  reAdded.status === 201 && reAdded.body.member.role === "guest",
+  reAdded.body,
+);
+
+const changePwWrongCurrent = await player("POST", "/auth/change-password", {
+  currentPassword: "wrong-password-entirely",
+  newPassword: "a-brand-new-long-password",
+});
+check("self password change rejects the wrong current password", changePwWrongCurrent.status === 400, changePwWrongCurrent.body);
+
+const changePw = await player("POST", "/auth/change-password", {
+  currentPassword: "another-long-password",
+  newPassword: "a-brand-new-long-password",
+});
+check("player can change their own password", changePw.status === 200, changePw.body);
+
+const loginOldPw = await player("POST", "/auth/login", { username: "player1", password: "another-long-password" });
+check("the old password stops working", loginOldPw.status === 401, loginOldPw.status);
+
+const reLogin = await player("POST", "/auth/login", { username: "player1", password: "a-brand-new-long-password" });
+check("the new password works", reLogin.status === 200, reLogin.body);
+
+const dmReset = await dm("POST", `/worlds/${worldId}/members/${added.body.member.id}/reset-password`, {
+  newPassword: "dm-reset-this-password-9",
+});
+check("a DM can reset a member's password without knowing the old one", dmReset.status === 200, dmReset.body);
+const loginAfterDmReset = await player("POST", "/auth/login", { username: "player1", password: "dm-reset-this-password-9" });
+check("the DM-set password works", loginAfterDmReset.status === 200, loginAfterDmReset.body);
+
+const playerCannotReset = await player("POST", `/worlds/${worldId}/members/${added.body.member.id}/reset-password`, {
+  newPassword: "should-not-be-allowed-1",
+});
+check("a player cannot reset anyone's password, including their own, this way", playerCannotReset.status === 403, playerCannotReset.body);
 
 const playerTree = (await player("GET", `/worlds/${worldId}/tree`)).body.nodes;
 check("player does not see the DM-only page in the tree", !playerTree.some((n) => n.id === secret.id), playerTree.map((n) => n.title));
@@ -208,7 +285,7 @@ const writeRead = await writeApi("GET", `/nodes/${scratch.id}`);
 check("world:write implies world:read", writeRead.status === 200, writeRead.status);
 
 const tokenMembers = await writeApi("POST", `/worlds/${worldId}/members`, {
-  email: "player@example.com",
+  username: "player1",
   role: "dm",
 });
 check("token without admin scope cannot change membership", tokenMembers.status === 403, tokenMembers.body);

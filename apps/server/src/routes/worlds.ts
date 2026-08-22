@@ -1,28 +1,24 @@
 import type { FastifyInstance } from "fastify";
 import {
+  addMemberInputSchema,
   createNodeInputSchema,
   createWorldInputSchema,
-  roleSchema,
+  resetPasswordInputSchema,
   searchQuerySchema,
 } from "@dndworldapp/schema";
-import { z } from "zod";
 import { canCreate, isGameMaster } from "../auth/policy.ts";
 import { badRequest, forbidden } from "../lib/errors.ts";
 import { requireUser, viewerForWorld } from "../http/context.ts";
 import { storeAsset } from "../services/assets.ts";
 import { createNode, getTree, searchNodes, unresolvedLinks } from "../services/nodes.ts";
 import {
-  addMemberByEmail,
+  addOrCreateMember,
   createWorld,
   listMembers,
   listWorldsForUser,
   removeMember,
+  resetMemberPassword,
 } from "../services/worlds.ts";
-
-const addMemberInputSchema = z.object({
-  email: z.string().trim().email().max(254),
-  role: roleSchema,
-});
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
@@ -73,13 +69,24 @@ export async function worldRoutes(app: FastifyInstance): Promise<void> {
     return { members: listMembers(request.params.worldId) };
   });
 
-  /** Owners and DMs decide who sits at the table. */
-  app.post<{ Params: WorldParams }>("/api/v1/worlds/:worldId/members", async (request) => {
+  /**
+   * The DM's member panel: add someone who already has an account, or create a
+   * brand-new one for them in the same step. There is no invite email — this
+   * app is self-hosted with no mail server, so a human always sets the account
+   * up directly, the same way a homelab admin creates a login for anyone else.
+   */
+  app.post<{ Params: WorldParams }>("/api/v1/worlds/:worldId/members", async (request, reply) => {
     const viewer = viewerForWorld(request, request.params.worldId);
     if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can add members.");
     const input = addMemberInputSchema.parse(request.body);
-    const member = addMemberByEmail(request.params.worldId, input.email, input.role);
-    if (member === null) throw badRequest("No account with that email address yet.");
+    const member = await addOrCreateMember(
+      request.params.worldId,
+      input.username,
+      input.role,
+      input.name,
+      input.password,
+    );
+    reply.code(201);
     return { member };
   });
 
@@ -89,6 +96,18 @@ export async function worldRoutes(app: FastifyInstance): Promise<void> {
       const viewer = viewerForWorld(request, request.params.worldId);
       if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can remove members.");
       removeMember(request.params.worldId, request.params.userId);
+      return { ok: true };
+    },
+  );
+
+  /** A DM resetting a member's forgotten password — there is no email to send a link to. */
+  app.post<{ Params: WorldParams & { userId: string } }>(
+    "/api/v1/worlds/:worldId/members/:userId/reset-password",
+    async (request) => {
+      const viewer = viewerForWorld(request, request.params.worldId);
+      if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can reset passwords.");
+      const input = resetPasswordInputSchema.parse(request.body);
+      await resetMemberPassword(request.params.worldId, request.params.userId, input.newPassword);
       return { ok: true };
     },
   );
