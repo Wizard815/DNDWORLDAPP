@@ -33,7 +33,12 @@ export function AuthScreen({ needsSetup, onDone }: { needsSetup: boolean; onDone
       }
       onDone();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        console.error(err);
+        setError("Something went wrong.");
+      }
     } finally {
       setBusy(false);
     }

@@ -106,11 +106,19 @@ to fix it; it just stopped being true once the renderer changed.
 - **Anonymous share links** (P2, fourth item) — a no-account guest mechanism, a
   URL-bearing token that reveals one page's subtree — see §7.5
 - **A live TipTap document editor** (P2.4) — replaced the P0 textarea + Edit/Preview
-  toggle. Always editable in place; `/` slash commands; `@`/`[[` page linking; native
-  GM-only secret blocks; inline `/section`/`/dm-notes` embedded posts (retiring the old
-  stacked "+ Add a section" list); `/layout` two-column blocks; hover-to-link auto-detect
-  of existing page names in plain prose; a "View source" raw-markdown toggle. Needed zero
-  server changes — see §7.6
+  toggle. Always editable in place, nothing here has an Edit button; `/` slash commands;
+  `@`/`[[` page linking; native GM-only secret blocks with a "Reveal" button that
+  permanently un-hides one in place; `/section` embeds a player-visible post inline
+  (retiring the old stacked "+ Add a section" list); `/dm-notes` is the same secret-block
+  mechanism as `/secret`, not a separate post; `/layout` two-column blocks;
+  hover-to-link auto-detect of existing page names in plain prose; a "View source"
+  raw-markdown toggle. Needed zero server changes — see §7.6
+- **Network failures surface a real message, not "Something went wrong."** — a
+  `fetch()` that never reaches the server (down, unreachable, connection refused) used to
+  throw a raw `TypeError` that every `catch (err) { err instanceof ApiError ? ... }` call
+  site fell through to its own generic fallback text, indistinguishable from a real
+  validation error. `api.ts`'s `request()`/`uploadAsset()` now wrap the `fetch()` call
+  itself, not just non-OK responses, so this is fixed at the one shared choke point.
 
 ### Not started
 
@@ -188,8 +196,10 @@ apps/web/
         WikiLinkSuggestion.ts  `@` (existing only) and `[[` (existing-or-create) —
                               one factory, two configured instances
         SlashCommand.ts / SlashCommandList.tsx   `/` menu
-        SecretBlock.ts / SecretBlockView.tsx     `:::secret:::` as a native block
-        Section.ts / SectionView.tsx    `/section` `/dm-notes` — an atom referencing a
+        SecretBlock.ts / SecretBlockView.tsx     `:::secret:::` as a native block, with
+                              a "Reveal" button — `/secret` AND `/dm-notes` both insert
+                              this same node, see §7.6
+        Section.ts / SectionView.tsx    `/section` only — an atom referencing a
                               `posts` row, reuses Posts.tsx's PostCard
         Columns.ts / Column.ts          `/layout` — two side-by-side columns
         AutoLink.ts / AutoLinkPopover.tsx   hover-to-link decoration over plain prose
@@ -661,17 +671,38 @@ behavior; trust the source, not the doc comment, if they ever diverge again.)
    (150 ms) delay before actually clearing hover state, cancelled if the popover's own
    `onMouseEnter` fires first. See `HOVER_HIDE_DELAY_MS` in `Editor.tsx`.
 
-**Section/DM-notes embedding, specifically.** `posts` (the `Posts.tsx` DM-notes feature)
-did **not** change shape at all — `/section`/`/dm-notes` still call `api.createPost()`,
-still store title/body/visibility exactly as before. The only new thing is a
-`:::post {postId="..."} :::` marker in the page's own `body_md`, marking *where* in the
-document that post renders — `editor/extensions/Section.ts`'s node view fetches it from
-the same `["posts", nodeId]` React Query cache `Posts.tsx` already uses, so there is
-exactly one source of truth, not two. **Backward compatibility for posts that predate
-this feature**: `Posts.tsx` still renders, but only as a fallback for posts with no
-inline reference anywhere in the current body (`lib/postRefs.ts` computes the referenced
-id set with a regex over `bodyMd`) — nothing a DM already wrote disappeared, but new
-sections are created via slash command only; the static add-buttons are gone.
+**`/section` embedding.** `posts` (the `Posts.tsx` feature) did **not** change shape at
+all — `/section` still calls `api.createPost()`, still stores title/body/visibility
+exactly as before. The only new thing is a `:::post {postId="..."} :::` marker in the
+page's own `body_md`, marking *where* in the document that post renders —
+`editor/extensions/Section.ts`'s node view fetches it from the same `["posts", nodeId]`
+React Query cache `Posts.tsx` already uses, so there is exactly one source of truth, not
+two. **Backward compatibility for posts that predate this feature**: `Posts.tsx` still
+renders, but only as a fallback for posts with no inline reference anywhere in the
+current body (`lib/postRefs.ts` computes the referenced id set with a regex over
+`bodyMd`) — nothing a DM already wrote disappeared, but new player-visible sections are
+created via slash command only; the static add-button is gone.
+
+**`/dm-notes` is not backed by a post at all — it's the same mechanism as `/secret`,
+just a second menu entry for it.** First cut had it call `api.createPost()` the same way
+`/section` does, with a `postSection` reference node and its own visibility dropdown —
+then direct feedback: it should have no Edit button (nothing here should — see the P2.4
+mission statement above), should be a plain fenced block in the markdown like a secret
+already is, and should be freely editable in place like the rest of the document. Since
+"hidden from non-DM, editable inline, no separate table" is *exactly* what `SecretBlock`
+already does, `/dm-notes` was rewired to insert a `secretBlock` node directly — same
+node type, same `:::secret ... :::` fence, same "🔒 Secret — DM only" rendering as
+`/secret`. There is no stored attribute distinguishing "this was a DM note" from "this
+was a secret" — after a reload they're genuinely the same thing, which is correct: they
+always were.
+
+**Reveal** (`SecretBlockView.tsx`) is the one new capability this added, and it applies
+to every secret block regardless of which slash command created it: it un-hides the
+block permanently by deleting the node and re-inserting its own content (`node.content
+.toJSON()`) at the same position via `editor.chain().insertContentAt({from, to},
+content)` — the fence is gone, the prose becomes normal, visible body text. One-way, the
+same as changing a page's visibility, just at the paragraph level. No partial/temporary
+reveal exists or is planned; a DM who wants it hidden again types `/secret` around it.
 
 **Bridging into a non-React plugin lifecycle.** TipTap extension `options` are captured
 once at construction and are not reactive; several things (`allNodes`, image upload,

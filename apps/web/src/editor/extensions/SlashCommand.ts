@@ -16,8 +16,13 @@ export interface SlashCommandItem {
 export interface SlashCommandBridge {
   /** Opens the hidden file input Editor.tsx renders, wired to the same upload path as before. */
   triggerImageUpload: () => void;
-  /** Creates a post (same api.createPost() as the old "+ Add a section" button) and returns its id. */
-  createSection: (visibility: "members" | "dm") => Promise<string>;
+  /**
+   * Creates a player-visible post (same api.createPost() as the old
+   * "+ Add a section" button) and returns its id. DM notes don't go through
+   * this any more — see the "DM Notes" item below, which inserts a
+   * secretBlock directly instead.
+   */
+  createSection: () => Promise<string>;
 }
 
 const SlashCommandPluginKey = new PluginKey("slashCommand");
@@ -68,7 +73,7 @@ function createItems(bridge: SlashCommandBridge): SlashCommandItem[] {
     icon: "📝",
     searchTerms: ["post", "notes"],
     command: async (editor) => {
-      const postId = await bridge.createSection("members");
+      const postId = await bridge.createSection();
       editor.chain().focus().insertContent({ type: "postSection", attrs: { postId } }).run();
     },
   },
@@ -76,10 +81,16 @@ function createItems(bridge: SlashCommandBridge): SlashCommandItem[] {
     title: "DM Notes",
     description: "Hidden from everyone but the owner/DM",
     icon: "🗒️",
-    searchTerms: ["post", "hidden", "secret"],
-    command: async (editor) => {
-      const postId = await bridge.createSection("dm");
-      editor.chain().focus().insertContent({ type: "postSection", attrs: { postId } }).run();
+    searchTerms: ["post", "hidden"],
+    // The exact same mechanism as "Secret" — no separate post, no Edit
+    // button, live inline like the rest of the document. Two menu entries
+    // for the one thing people actually reach for (see SecretBlock.ts).
+    command: (editor) => {
+      editor
+        .chain()
+        .focus()
+        .insertContent({ type: "secretBlock", content: [{ type: "paragraph" }] })
+        .run();
     },
   },
   {

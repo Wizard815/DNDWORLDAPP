@@ -54,8 +54,25 @@ export function isViewingAsPlayer(): boolean {
   return viewAsPlayer;
 }
 
+/**
+ * `fetch()` itself throws (not a rejected HTTP response — the request never
+ * reached a server at all: it's down, unreachable, or the connection was
+ * refused) as a plain `TypeError`, which callers checking `err instanceof
+ * ApiError` never catch, so every one of them fell through to a generic
+ * "something went wrong" with no way to tell "your input was bad" apart from
+ * "the server isn't there." Wrapping it here fixes that for every call site
+ * at once, rather than needing every catch block to special-case it.
+ */
+async function fetchOrThrowApiError(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new ApiError(0, "network_error", "Could not reach the server. Check that it's running, then try again.");
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await fetchOrThrowApiError(`/api/v1${path}`, {
     ...init,
     headers: {
       ...(init?.body !== undefined ? { "content-type": "application/json" } : {}),
@@ -188,7 +205,7 @@ export const api = {
   uploadAsset: async (worldId: string, file: File): Promise<AssetDto> => {
     const form = new FormData();
     form.append("file", file);
-    const response = await fetch(`/api/v1/worlds/${worldId}/assets`, {
+    const response = await fetchOrThrowApiError(`/api/v1/worlds/${worldId}/assets`, {
       method: "POST",
       body: form,
       headers: viewAsPlayer ? { "x-view-as": "player" } : undefined,

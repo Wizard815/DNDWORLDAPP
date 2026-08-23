@@ -68,13 +68,14 @@ uploaded images. Backup is a copy of that directory.
   panel, and a list of links pointing at pages that do not exist yet. Plain prose that
   happens to match an existing page title gets a dotted underline and a "Link" popup on
   hover — confirm to link it, nothing links itself silently.
-- **DM notes.** `/section` or `/dm-notes` drops a section in wherever the cursor is,
-  each with its own visibility. A player-facing location can carry a DM-only briefing
-  inline, and the hidden text never leaves the server.
-- **Inline secrets.** Type `/secret` (or wrap `:::secret ... :::` by hand) for a block
-  that hides just that part from everyone but the owner/DM — mid-sentence, not a whole
-  hidden section. Stripped server-side, excluded from search, and a viewer who cannot see
-  an existing secret is blocked from resaving the body over it.
+- **Sections.** `/section` drops a player-visible, named block in wherever the cursor
+  is — the old "+ Add a section" button, without the button.
+- **Inline secrets and DM notes.** Type `/secret` or `/dm-notes` (or wrap
+  `:::secret ... :::` by hand) for a block that hides just that part from everyone but
+  the owner/DM — mid-sentence, not a whole hidden section, and editable in place like
+  everything else, no separate save button. Stripped server-side, excluded from search,
+  and a "Reveal" button un-hides one permanently, turning it into normal visible text.
+  A viewer who cannot see an existing secret is blocked from resaving the body over it.
 - **Search.** SQLite FTS5, prefix matching, ranked snippets, Ctrl+K quick switcher.
 - **Images.** Content-addressed uploads.
 - **One API.** The client uses only `/api/v1` — no private routes — which is what keeps

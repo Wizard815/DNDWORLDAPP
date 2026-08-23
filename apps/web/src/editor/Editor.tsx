@@ -4,7 +4,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import { useEffect, useRef, useState } from "react";
-import type { NodeSummary, Visibility } from "@dndworldapp/schema";
+import type { NodeSummary } from "@dndworldapp/schema";
 import { api } from "../api.ts";
 import { EditorPageProvider } from "./context.tsx";
 import { AutoLink } from "./extensions/AutoLink.ts";
@@ -63,12 +63,8 @@ export function Editor({ nodeId, worldId, bodyMd, allNodes, editable, onCreateNa
 
   const slashCommandBridge = useRef<SlashCommandBridge>({
     triggerImageUpload: () => fileInputRef.current?.click(),
-    createSection: async (visibility: Visibility) => {
-      const result = await api.createPost(nodeId, {
-        title: visibility === "dm" ? "DM Notes" : "Notes",
-        bodyMd: "",
-        visibility,
-      });
+    createSection: async () => {
+      const result = await api.createPost(nodeId, { title: "Notes", bodyMd: "", visibility: "members" });
       return result.post.id;
     },
   }).current;
