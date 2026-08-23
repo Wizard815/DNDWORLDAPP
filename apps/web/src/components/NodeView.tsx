@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ClipboardEvent, DragEvent, MouseEvent as ReactMouseEvent } from "react";
+import { useState } from "react";
 import type { NodeDetail, NodeSummary, Visibility } from "@dndworldapp/schema";
 import { api } from "../api.ts";
-import { renderMarkdown } from "../lib/markdown.ts";
+import { Editor } from "../editor/Editor.tsx";
 import { navigate } from "../lib/nav.ts";
 import { Access } from "./Access.tsx";
 import { IconPicker } from "./IconPicker.tsx";
@@ -43,155 +42,30 @@ export function NodeView({
   onArchive,
 }: Props) {
   const [title, setTitle] = useState(node.title);
-  const [body, setBody] = useState(node.bodyMd);
-  const [editing, setEditing] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [suggestions, setSuggestions] = useState<NodeSummary[]>([]);
-  const [suggestIndex, setSuggestIndex] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [sourceOpen, setSourceOpen] = useState(false);
 
   // NOTE: there is deliberately no effect syncing local state back from `node`.
   // App renders this component with key={node.id}, so navigating remounts it with
-  // fresh state. An effect keyed on node.title/node.bodyMd would fire on every
-  // autosave — throwing the writer out of the editor a second after they pause.
+  // fresh state. An effect keyed on node.title would fire on every autosave —
+  // throwing the writer out of the title field a second after they pause.
 
-  const dirty = title !== node.title || body !== node.bodyMd;
-
-  const save = useCallback(async () => {
-    if (!dirty) return;
+  async function patch(input: Parameters<typeof api.updateNode>[1]): Promise<void> {
     setSaveState("saving");
-    await api.updateNode(node.id, { title, bodyMd: body });
+    await api.updateNode(node.id, input);
     setSaveState("saved");
     onChanged();
     window.setTimeout(() => setSaveState("idle"), 1200);
-  }, [dirty, node.id, title, body, onChanged]);
-
-  // Autosave: quiet for 800ms means "done typing".
-  useEffect(() => {
-    if (!dirty) return;
-    const handle = window.setTimeout(() => {
-      void save();
-    }, 800);
-    return () => window.clearTimeout(handle);
-  }, [dirty, save]);
-
-  const html = useMemo(() => renderMarkdown(body, allNodes), [body, allNodes]);
-
-  /** Intercept wiki links so they navigate in-app, and offer to create missing pages. */
-  function onBodyClick(event: ReactMouseEvent<HTMLDivElement>): void {
-    const target = (event.target as HTMLElement).closest("a");
-    if (target === null) return;
-    const nodeId = target.getAttribute("data-node");
-    const missing = target.getAttribute("data-missing");
-    if (nodeId !== null) {
-      event.preventDefault();
-      navigate(`/n/${nodeId}`);
-    } else if (missing !== null) {
-      event.preventDefault();
-      onCreateNamed(missing);
-    }
   }
 
-  function insertAtCursor(text: string): void {
-    const textarea = textareaRef.current;
-    const caret = textarea?.selectionStart ?? body.length;
-    const next = `${body.slice(0, caret)}${text}${body.slice(caret)}`;
-    setBody(next);
-    requestAnimationFrame(() => {
-      const position = caret + text.length;
-      textarea?.focus();
-      textarea?.setSelectionRange(position, position);
-    });
+  function saveTitleIfChanged(): void {
+    if (title !== node.title) void patch({ title });
   }
 
-  /** Inserts a `:::secret` scaffold and selects the placeholder so typing replaces it. */
-  function insertSecretBlock(): void {
-    const textarea = textareaRef.current;
-    const caret = textarea?.selectionStart ?? body.length;
-    const placeholder = "Secret text.";
-    const scaffold = `\n:::secret\n${placeholder}\n:::\n`;
-    const next = `${body.slice(0, caret)}${scaffold}${body.slice(caret)}`;
-    setBody(next);
-    requestAnimationFrame(() => {
-      const selStart = caret + scaffold.indexOf(placeholder);
-      textarea?.focus();
-      textarea?.setSelectionRange(selStart, selStart + placeholder.length);
-    });
-  }
-
-  async function uploadAndInsert(file: File): Promise<void> {
-    setUploading(true);
-    setUploadError(null);
-    try {
-      const asset = await api.uploadAsset(node.worldId, file);
-      insertAtCursor(`\n![${asset.origName}](${asset.url})\n`);
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : "Upload failed.");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  /** Pasting or dropping an image uploads it and drops in the markdown. */
-  function onPaste(event: ClipboardEvent<HTMLTextAreaElement>): void {
-    const file = [...event.clipboardData.files].find((f) => f.type.startsWith("image/"));
-    if (file === undefined) return;
-    event.preventDefault();
-    void uploadAndInsert(file);
-  }
-
-  function onDropFile(event: DragEvent<HTMLTextAreaElement>): void {
-    const file = [...event.dataTransfer.files].find((f) => f.type.startsWith("image/"));
-    if (file === undefined) return;
-    event.preventDefault();
-    void uploadAndInsert(file);
-  }
-
-  /** `[[` autocomplete over every page in the world. */
-  function refreshSuggestions(value: string, caret: number): void {
-    const before = value.slice(0, caret);
-    const open = before.lastIndexOf("[[");
-    if (open === -1 || before.slice(open).includes("]]")) {
-      setSuggestions([]);
-      return;
-    }
-    const query = before.slice(open + 2).toLowerCase();
-    if (query.includes("\n")) {
-      setSuggestions([]);
-      return;
-    }
-    const matches = allNodes
-      .filter((n) => n.id !== node.id && n.title.toLowerCase().includes(query))
-      .slice(0, 8);
-    setSuggestions(matches);
-    setSuggestIndex(0);
-  }
-
-  function applySuggestion(chosen: NodeSummary): void {
-    const textarea = textareaRef.current;
-    if (textarea === null) return;
-    const caret = textarea.selectionStart;
-    const before = body.slice(0, caret);
-    const open = before.lastIndexOf("[[");
-    if (open === -1) return;
-    const next = `${body.slice(0, open)}[[${chosen.title}]]${body.slice(caret)}`;
-    setBody(next);
-    setSuggestions([]);
-    requestAnimationFrame(() => {
-      const position = open + chosen.title.length + 4;
-      textarea.focus();
-      textarea.setSelectionRange(position, position);
-    });
-  }
-
-  async function patch(input: Parameters<typeof api.updateNode>[1]): Promise<void> {
-    await api.updateNode(node.id, input);
-    onChanged();
+  function saveBody(bodyMd: string): void {
+    if (bodyMd !== node.bodyMd) void patch({ bodyMd });
   }
 
   return (
@@ -225,7 +99,7 @@ export function NodeView({
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => void save()}
+              onBlur={saveTitleIfChanged}
               disabled={!node.canEdit}
               className="min-w-0 flex-1 bg-transparent text-2xl font-semibold text-[#f0f1f4] outline-none disabled:opacity-80"
             />
@@ -242,18 +116,6 @@ export function NodeView({
                 </option>
               ))}
             </select>
-            {node.canEdit && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (editing) void save();
-                  setEditing(!editing);
-                }}
-                className="rounded border border-[#33363d] px-2 py-1 text-xs text-[#8d9099] hover:text-[#d7d8dc]"
-              >
-                {editing ? "Preview" : "Edit"}
-              </button>
-            )}
             <span className="w-12 text-right text-[10px] text-[#6b6e77]">
               {saveState === "saving" ? "saving…" : saveState === "saved" ? "saved" : ""}
             </span>
@@ -298,6 +160,16 @@ export function NodeView({
                         type="button"
                         onClick={() => {
                           setMenuOpen(false);
+                          setSourceOpen(true);
+                        }}
+                        className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                      >
+                        View source…
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
                           onArchive(node);
                         }}
                         className="block w-full px-3 py-2 text-left text-xs text-[#c98b8b] hover:bg-[#2b2e35]"
@@ -321,105 +193,44 @@ export function NodeView({
             />
           )}
 
-          {editing ? (
-            <div className="relative">
-              <div className="mb-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                  className="rounded border border-[#33363d] px-2 py-1 text-xs text-[#8d9099] hover:text-[#d7d8dc] disabled:opacity-50"
-                >
-                  {uploading ? "Uploading…" : "Insert image"}
-                </button>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={insertSecretBlock}
-                  className="rounded border border-[#5c5023] px-2 py-1 text-xs text-[#c9a227] hover:bg-[#221f14]"
-                  title="Only the owner or a DM ever sees this — hidden from everyone else, even in search."
-                >
-                  🔒 Insert secret
-                </button>
-                <span className="text-[10px] text-[#6b6e77]">
-                  or paste / drop an image straight into the editor
-                </span>
-                {uploadError !== null && (
-                  <span className="text-[10px] text-[#e0888a]">{uploadError}</span>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file !== undefined) void uploadAndInsert(file);
-                  e.target.value = "";
-                }}
-              />
-              <textarea
-                ref={textareaRef}
-                value={body}
-                onPaste={onPaste}
-                onDrop={onDropFile}
-                onChange={(e) => {
-                  setBody(e.target.value);
-                  refreshSuggestions(e.target.value, e.target.selectionStart);
-                }}
-                onKeyDown={(e) => {
-                  if (suggestions.length === 0) return;
-                  if (e.key === "ArrowDown") {
-                    e.preventDefault();
-                    setSuggestIndex((i) => (i + 1) % suggestions.length);
-                  } else if (e.key === "ArrowUp") {
-                    e.preventDefault();
-                    setSuggestIndex((i) => (i - 1 + suggestions.length) % suggestions.length);
-                  } else if (e.key === "Enter" || e.key === "Tab") {
-                    const chosen = suggestions[suggestIndex];
-                    if (chosen !== undefined) {
-                      e.preventDefault();
-                      applySuggestion(chosen);
-                    }
-                  } else if (e.key === "Escape") {
-                    setSuggestions([]);
-                  }
-                }}
-                placeholder="Write in Markdown. Link to another page with [[double brackets]]."
-                className="min-h-[50vh] w-full resize-none rounded-md border border-[#2c2f36] bg-[#1b1d21] p-4 font-mono text-sm leading-relaxed outline-none focus:border-[#3f434b]"
-              />
-              {suggestions.length > 0 && (
-                <ul className="absolute right-2 top-12 z-10 w-64 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg">
-                  {suggestions.map((s, index) => (
-                    <li key={s.id}>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          applySuggestion(s);
-                        }}
-                        className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs ${
-                          index === suggestIndex ? "bg-[#2f333b] text-[#f0f1f4]" : "text-[#b6b8bf]"
-                        }`}
-                      >
-                        <span>{s.icon ?? "📄"}</span>
-                        <span className="truncate">{s.title}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ) : (
+          {sourceOpen && (
             <div
-              className="prose-body text-[15px]"
-              onClick={onBodyClick}
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
+              className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[8vh]"
+              onClick={() => setSourceOpen(false)}
+            >
+              <div
+                className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-[#33363d] bg-[#1d1f23] p-6 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mb-3 flex items-center">
+                  <h2 className="text-base font-semibold text-[#f0f1f4]">Source — {node.title}</h2>
+                  <button
+                    type="button"
+                    onClick={() => setSourceOpen(false)}
+                    className="ml-auto text-sm text-[#7a7d86] hover:text-[#d7d8dc]"
+                  >
+                    Close
+                  </button>
+                </div>
+                <pre className="whitespace-pre-wrap rounded-md border border-[#2c2f36] bg-[#17181b] p-4 font-mono text-xs text-[#b6b8bf]">
+                  {node.bodyMd.length > 0 ? node.bodyMd : "(empty)"}
+                </pre>
+              </div>
+            </div>
           )}
 
-          <Posts nodeId={node.id} canEdit={node.canEdit} allNodes={allNodes} />
+          <Editor
+            key={node.id}
+            nodeId={node.id}
+            worldId={node.worldId}
+            bodyMd={node.bodyMd}
+            allNodes={allNodes}
+            editable={node.canEdit}
+            onCreateNamed={onCreateNamed}
+            onChange={saveBody}
+          />
+
+          <Posts nodeId={node.id} bodyMd={node.bodyMd} canEdit={node.canEdit} allNodes={allNodes} />
 
           {node.children.length > 0 && (
             <section className="mt-10">

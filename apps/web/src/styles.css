@@ -132,6 +132,52 @@ body {
   margin-bottom: 0;
 }
 
+/* The live editor's own content root (see editor/Editor.tsx). */
+.tiptap-editor .ProseMirror {
+  outline: none;
+}
+.tiptap-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: #5c5f67;
+  pointer-events: none;
+}
+
+/* Auto-link: prose matching an existing page title, not yet linked. Distinct
+   from .wikilink-missing (a real link to a page that doesn't exist yet) —
+   this is the opposite case, a page that exists but isn't linked yet. */
+.autolink-candidate {
+  border-bottom: 1px dotted rgb(157 184 255 / 45%);
+  cursor: pointer;
+}
+
+/* /layout columns. A visible border regardless of content, not just when
+   empty — otherwise there is nothing to show a writer where a column is. */
+[data-columns] {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+  margin: 1em 0;
+}
+[data-column] {
+  border: 1px dashed #2c2f36;
+  border-radius: 8px;
+  padding: 0.75em 1em;
+  min-height: 2.5em;
+}
+[data-column] > *:first-child {
+  margin-top: 0;
+}
+[data-column] > *:last-child {
+  margin-bottom: 0;
+}
+@media (max-width: 640px) {
+  [data-columns] {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Drop indicators while dragging a page in the tree. */
 .drop-into {
   background: rgb(157 184 255 / 12%);

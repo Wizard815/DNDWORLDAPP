@@ -1,8 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import type { NodeSummary, PostDto, Visibility } from "@dndworldapp/schema";
 import { api } from "../api.ts";
 import { renderMarkdown } from "../lib/markdown.ts";
+import { referencedPostIds } from "../lib/postRefs.ts";
 
 const VISIBILITY_LABEL: Record<Visibility, string> = {
   public: "Public",
@@ -22,13 +23,21 @@ const badgeClass: Record<Visibility, string> = {
  * Sections on a page, each with its own visibility — Kanka's entity posts.
  * A player-facing location page carries its DM briefing here, and the hidden
  * ones are filtered out server-side, so a player's browser never receives them.
+ *
+ * New sections are created inline via the `/section` and `/dm-notes` slash
+ * commands now (see editor/extensions/Section.ts) — this component only
+ * renders the fallback: any post that has no inline reference in the current
+ * body, which is exactly the posts created before that existed. Nothing a DM
+ * already wrote disappears just because the editor changed.
  */
 export function Posts({
   nodeId,
+  bodyMd,
   canEdit,
   allNodes,
 }: {
   nodeId: string;
+  bodyMd: string;
   canEdit: boolean;
   allNodes: NodeSummary[];
 }) {
@@ -40,13 +49,10 @@ export function Posts({
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["posts", nodeId] });
 
-  const add = useMutation({
-    mutationFn: (visibility: Visibility) =>
-      api.createPost(nodeId, { title: visibility === "dm" ? "DM Notes" : "Notes", bodyMd: "", visibility }),
-    onSuccess: invalidate,
-  });
+  const referenced = referencedPostIds(bodyMd);
+  const posts = (data?.posts ?? []).filter((post) => !referenced.has(post.id));
 
-  const posts = data?.posts ?? [];
+  if (posts.length === 0) return null;
 
   return (
     <section className="mt-10 space-y-3">
@@ -59,30 +65,11 @@ export function Posts({
           onChanged={invalidate}
         />
       ))}
-
-      {canEdit && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => add.mutate("members")}
-            className="rounded px-2 py-1.5 text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
-          >
-            + Add a section
-          </button>
-          <button
-            type="button"
-            onClick={() => add.mutate("dm")}
-            className="rounded px-2 py-1.5 text-xs text-[#8a7527] hover:bg-[#232529] hover:text-[#c9a227]"
-          >
-            + Add DM notes
-          </button>
-        </div>
-      )}
     </section>
   );
 }
 
-function PostCard({
+export function PostCard({
   post,
   canEdit,
   allNodes,

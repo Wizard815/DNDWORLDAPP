@@ -6,11 +6,13 @@ A self-hosted worldbuilding and campaign app: **LegendKeeper's freeform structur
 One tree. Anything nests inside anything. A map is a page, a timeline is a page, a
 character is a page — type is a filter, not a folder you are forced to live in.
 
-**Status: P0, P1 and P2 done** — the spine, scoped API tokens, a generated OpenAPI spec,
-an MCP server, inline `:::secret` blocks, username/password accounts with a DM member
-panel (no email, ever — this is self-hosted with no mail server), per-node ACL overrides,
-anonymous share links, and "view as a player." Next is templates and query views. No
-bulk importer is planned; content moves in through the API/MCP as needed.
+**Status: P0, P1 and P2 done, plus a P2.4 editor rewrite** — the spine, scoped API
+tokens, a generated OpenAPI spec, an MCP server, inline `:::secret` blocks,
+username/password accounts with a DM member panel (no email, ever — this is self-hosted
+with no mail server), per-node ACL overrides, anonymous share links, "view as a player,"
+and a live TipTap document editor (slash commands, page linking, inline DM-notes
+sections, columns, hover-to-link). Next is templates and query views. No bulk importer
+is planned; content moves in through the API/MCP as needed.
 
 **Picking this up? Read [docs/HANDOFF.md](docs/HANDOFF.md) first** — it covers what
 exists, the rules that must not be broken, the environment gotchas, and the next tasks in
@@ -58,15 +60,21 @@ uploaded images. Backup is a copy of that directory.
   the current one.
 - **The tree.** Unrestricted nesting, drag to re-parent, drag between siblings to
   reorder. Ordering uses fractional index keys, so a drag rewrites one row.
-- **Pages.** Markdown body, autosave, emoji icon, live preview.
-- **Wiki links.** `[[Page]]` and `[[Page|label]]`, with `[[` autocomplete, a backlinks
-  panel, and a list of links pointing at pages that do not exist yet.
-- **DM notes.** Sections on a page, each with its own visibility. A player-facing
-  location can carry a DM-only briefing, and the hidden text never leaves the server.
-- **Inline secrets.** Wrap `:::secret ... :::` around a line or two inside any page or
-  section to hide just that part from everyone but the owner/DM — mid-sentence, not a
-  whole hidden section. Stripped server-side, excluded from search, and a viewer who
-  cannot see an existing secret is blocked from resaving the body over it.
+- **Pages.** A live TipTap document — always editable in place, no Edit/Preview toggle —
+  with autosave and an emoji icon. Type `/` for a command menu: headings, lists, quote,
+  code, an image upload, a secret block, a two-column layout, or a page link.
+- **Wiki links.** `[[Page]]` and `[[Page|label]]`, or `@Page` for existing pages only,
+  both autocompleting from the world's tree with no network round trip. A backlinks
+  panel, and a list of links pointing at pages that do not exist yet. Plain prose that
+  happens to match an existing page title gets a dotted underline and a "Link" popup on
+  hover — confirm to link it, nothing links itself silently.
+- **DM notes.** `/section` or `/dm-notes` drops a section in wherever the cursor is,
+  each with its own visibility. A player-facing location can carry a DM-only briefing
+  inline, and the hidden text never leaves the server.
+- **Inline secrets.** Type `/secret` (or wrap `:::secret ... :::` by hand) for a block
+  that hides just that part from everyone but the owner/DM — mid-sentence, not a whole
+  hidden section. Stripped server-side, excluded from search, and a viewer who cannot see
+  an existing secret is blocked from resaving the body over it.
 - **Search.** SQLite FTS5, prefix matching, ranked snippets, Ctrl+K quick switcher.
 - **Images.** Content-addressed uploads.
 - **One API.** The client uses only `/api/v1` — no private routes — which is what keeps
@@ -157,8 +165,9 @@ docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.js
 - **Visibility is enforced in one place** (`auth/policy.ts`), in SQL, on every read path.
   Hidden rows are never sent and then hidden — they are never sent. A DM-only page
   answers 404, not 403, so ids cannot be probed.
-- **P0's editor is a markdown textarea**, not TipTap. The storage format is already
-  final, so swapping the editor later touches one component.
+- **The editor is TipTap now** (P2.4, replacing P0's textarea) — because the storage
+  format was already final markdown, the swap touched one component and needed zero
+  server changes.
 
 ## Tests
 

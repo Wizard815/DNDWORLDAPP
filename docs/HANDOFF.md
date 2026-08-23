@@ -48,28 +48,30 @@ If you are about to add a table called `characters`, or a nav section called
 
 ## 3. Current status
 
-**P0, P1 and P2 are complete.** No bulk importer is planned — see §9.4.
+**P0, P1 and P2 are complete, plus a P2.4 editor rewrite.** No bulk importer is planned —
+see §9.4.
 
 Verified by:
 - `npm test` — 20 unit tests (fractional indexing, wiki-link parsing, secret blocks). All
   pass.
-- `npm run smoke` — 112 end-to-end API checks against a running server. All pass.
+- `npm run smoke` — 112 end-to-end API checks against a running server. All pass —
+  unchanged by the P2.4 editor rewrite, which needed zero server changes (see §7.6).
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All pass.
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
-- Driven by hand in a browser: login → tree → page → posts → rendered wiki links → typed
-  a `:::secret` block via the editor toolbar, confirmed it renders with the gold "Secret —
-  DM only" wrapper, and confirmed it survives a page reload → opened the Members panel,
-  created a brand-new account and added it to the world in one step, reset its password,
-  confirmed the login worked with the new password, and confirmed the add-form and reset
-  buttons are gone (not just disabled) for a signed-in player.
+- Driven by hand in a browser: login → tree → page → posts → rendered wiki links →
+  opened the Members panel, created a brand-new account and added it to the world in one
+  step, reset its password, confirmed the login worked with the new password, and
+  confirmed the add-form and reset buttons are gone (not just disabled) for a signed-in
+  player. The P2.4 editor itself (slash commands, `@`/`[[` linking, secret blocks, DM-notes
+  sections, columns, auto-link) was verified separately and thoroughly — see §7.6.
 
-One thing noticed in passing and **not fixed** (flagged as a separate task, out of this
-scope): the client's wikilink regex in `apps/web/src/lib/markdown.ts` does not skip
-inline code spans, so literal example text like `` `[[double brackets]]` `` — which is in
-every new world's home page body — renders garbled. The server's equivalent parser
-(`apps/server/src/lib/wikilinks.ts`) already masks code correctly; the client needs the
-same fix. Small, self-contained, not touched here.
+A bug mentioned in a previous version of this doc as "found but not fixed" — the
+client's old wikilink regex not skipping inline code spans, so `` `[[double brackets]]` ``
+rendered garbled — **is now fixed, as a side effect of the P2.4 editor rewrite**: the new
+editor tokenizes markdown through `marked` (via `@tiptap/markdown`), which already
+protects code spans before any wikilink tokenizer runs. Nothing was deliberately touched
+to fix it; it just stopped being true once the renderer changed.
 
 ### Working
 
@@ -103,6 +105,12 @@ same fix. Small, self-contained, not touched here.
   single sidebar entry point for all of it — see §7.4
 - **Anonymous share links** (P2, fourth item) — a no-account guest mechanism, a
   URL-bearing token that reveals one page's subtree — see §7.5
+- **A live TipTap document editor** (P2.4) — replaced the P0 textarea + Edit/Preview
+  toggle. Always editable in place; `/` slash commands; `@`/`[[` page linking; native
+  GM-only secret blocks; inline `/section`/`/dm-notes` embedded posts (retiring the old
+  stacked "+ Add a section" list); `/layout` two-column blocks; hover-to-link auto-detect
+  of existing page names in plain prose; a "View source" raw-markdown toggle. Needed zero
+  server changes — see §7.6
 
 ### Not started
 
@@ -164,13 +172,36 @@ apps/web/
     api.ts                   The ONLY place the client talks to the server
     App.tsx                  Shell: auth gate, queries, layout, Ctrl+K
     lib/nav.ts               Hand-rolled routing over /n/:nodeId
-    lib/markdown.ts          Segments out :::secret blocks, then wikilinks → marked → DOMPurify
+    lib/markdown.ts          Renders POSTS' bodies (marked → DOMPurify) — the page body
+                              itself renders through the TipTap editor now, see editor/
     lib/secrets.ts           Client mirror of the server's secret-block splitter
+    lib/postRefs.ts          Finds `:::post {postId=...}:::` markers — see editor/extensions/Section.ts
+    editor/                  The live document editor (P2.4) — see §7.6
+      context.tsx            EditorPageContext: nodeId/allNodes/canEdit/onCreateNamed,
+                              read by every node view below via React context, not
+                              TipTap options (which aren't reactive)
+      Editor.tsx              Assembles every extension, autosave, image upload/paste/drop,
+                              the auto-link hover popover
+      extensions/
+        WikiLink.ts / WikiLinkView.tsx    `[[Target]]` / `[[Target|Label]]` inline atom —
+                              byte-compatible with wikilinks.ts's regex
+        WikiLinkSuggestion.ts  `@` (existing only) and `[[` (existing-or-create) —
+                              one factory, two configured instances
+        SlashCommand.ts / SlashCommandList.tsx   `/` menu
+        SecretBlock.ts / SecretBlockView.tsx     `:::secret:::` as a native block
+        Section.ts / SectionView.tsx    `/section` `/dm-notes` — an atom referencing a
+                              `posts` row, reuses Posts.tsx's PostCard
+        Columns.ts / Column.ts          `/layout` — two side-by-side columns
+        AutoLink.ts / AutoLinkPopover.tsx   hover-to-link decoration over plain prose
+                              matching an existing title
+        suggestionPopup.tsx   shared `@tiptap/suggestion` render() factory (floating-ui
+                              positioning via `props.mount`)
     components/
       Auth.tsx               Setup + login
       Sidebar.tsx            Tree, filter, drag-and-drop
-      NodeView.tsx           Breadcrumb, title, editor, children, + Backlinks rail
-      Posts.tsx              Sections with visibility badges
+      NodeView.tsx           Breadcrumb, title, mounts <Editor>, children, + Backlinks rail
+      Posts.tsx              Fallback list: posts with no inline `:::post:::` reference
+                              (pre-P2.4 sections); PostCard is reused by SectionView
       QuickSwitcher.tsx      Ctrl+K
       Tokens.tsx             API token management
       Members.tsx            DM admin panel: add/create accounts, remove, reset passwords
@@ -580,6 +611,86 @@ own dashboard, because `world?.rootNodeId` resolved once their session/worlds qu
 came back. Fixed by gating that effect on `shareToken === null` too. If you add another
 early-return branch to `App.tsx`, check whether the effects declared above it need the
 same guard — a hook does not know which branch below it will render.
+
+### 7.6 The live document editor (P2.4)
+
+Replaced the P0 textarea + Edit/Preview toggle with TipTap (ProseMirror). Driven by
+direct feedback: the toggle "doesn't feel like a real document," and the separate
+"+ Add a section"/"+ Add DM notes" buttons should be discovered inline via `/` commands,
+not sit as permanent chrome. Ported the *architecture* (not the code — see the licensing
+note below) from Kanka's own TipTap editor
+(`resources/js/editors/tiptap/` in the local clone, `C:\Users\Wizard\Documents\DNDAPPREF\kanka`):
+the `@tiptap/suggestion` + floating popup pattern for both `/` and `@`/`[[` triggers.
+
+**The load-bearing design decision: none of this needed a server change.** Every custom
+node either serializes to the exact syntax the server already parses (`[[Title]]`,
+`:::secret ... :::`), or to markdown the server was never parsing in the first place
+(`:::post {postId=...} :::`, `:::columns:::`/`:::column:::`) — opaque body text either
+way. `npm run smoke`'s 112 checks passed unmodified once the editor was built, which is
+the whole point: confirmed byte-for-byte compatibility, not just "looks the same."
+
+**Markdown pipeline: `@tiptap/markdown`, not the (unmaintained) community
+`tiptap-markdown` package.** TipTap v3.30 ships this as a first-party package
+(`marked`-based tokenizing, MIT), with `createBlockMarkdownSpec`/`createAtomBlockMarkdownSpec`
+helpers built for exactly this "Pandoc-style `:::name:::` fence" shape — used directly for
+`SecretBlock`, `Section`, `Columns`, `Column`. `WikiLink` needed a fully hand-written
+`markdownTokenizer`/`parseMarkdown`/`renderMarkdown` instead, since `[[Target|Label]]`
+doesn't match either helper's built-in syntax (Pandoc fences or `[name attr]...[/name]`
+shortcodes) — see `editor/extensions/WikiLink.ts`. `editor.getMarkdown()` /
+`editor.commands.setContent(md, {contentType: 'markdown'})` are the load/save API; these
+top-level fields (`parseMarkdown`, `renderMarkdown`, `markdownTokenizer`) go directly on
+`Node.create({...})`'s config object, **not** nested under a `markdown:` key — the
+`MarkdownManager` reads them via `getExtensionField(extension, 'parseMarkdown')` etc.,
+which resolves top-level config fields only. (A JSDoc comment inside `@tiptap/core`
+itself shows the nested-key form — that comment does not match the actual runtime
+behavior; trust the source, not the doc comment, if they ever diverge again.)
+
+**Two real bugs found in verification, both worth remembering:**
+1. **A `?` in a slash-command or `@`/`[[` query silently exits the suggestion.**
+   `@tiptap/suggestion`'s `allowSpaces` option defaults to `false`, so typing a space
+   after `/dm` (aiming for "DM Notes") or after `@Player` (aiming for a multi-word page
+   title) ended the suggestion match early and inserted the literal text instead of
+   opening the menu. Fixed by setting `allowSpaces: true` on all three
+   (`SlashCommand.ts`, both configured instances of `WikiLinkSuggestion.ts`). If you add
+   a fourth trigger, it needs this too, or any multi-word title/command silently breaks.
+2. **The auto-link hover popover would close before a mouse could reach its own "Link"
+   button.** The ProseMirror plugin reports `hover: null` the instant the cursor leaves
+   the decorated span — including when it's moving *toward* the popover, which renders
+   outside the ProseMirror DOM entirely (in `Editor.tsx`'s own tree), so `mouseout`'s
+   `relatedTarget` is never a descendant of the candidate span. Fixed with a short
+   (150 ms) delay before actually clearing hover state, cancelled if the popover's own
+   `onMouseEnter` fires first. See `HOVER_HIDE_DELAY_MS` in `Editor.tsx`.
+
+**Section/DM-notes embedding, specifically.** `posts` (the `Posts.tsx` DM-notes feature)
+did **not** change shape at all — `/section`/`/dm-notes` still call `api.createPost()`,
+still store title/body/visibility exactly as before. The only new thing is a
+`:::post {postId="..."} :::` marker in the page's own `body_md`, marking *where* in the
+document that post renders — `editor/extensions/Section.ts`'s node view fetches it from
+the same `["posts", nodeId]` React Query cache `Posts.tsx` already uses, so there is
+exactly one source of truth, not two. **Backward compatibility for posts that predate
+this feature**: `Posts.tsx` still renders, but only as a fallback for posts with no
+inline reference anywhere in the current body (`lib/postRefs.ts` computes the referenced
+id set with a regex over `bodyMd`) — nothing a DM already wrote disappeared, but new
+sections are created via slash command only; the static add-buttons are gone.
+
+**Bridging into a non-React plugin lifecycle.** TipTap extension `options` are captured
+once at construction and are not reactive; several things (`allNodes`, image upload,
+section creation, auto-link hover) need to reach live React state or call `api.ts`/React
+Query from inside a `Suggestion`/ProseMirror plugin that isn't a component. The pattern
+used throughout (`WikiLinkBridge`, `SlashCommandBridge`, `AutoLinkBridge`): a plain object
+built once via `useRef(...).current`, whose methods close over *other* refs
+(`allNodesRef.current = allNodes` on every render) so the bridge object itself stays
+referentially stable while the data it reads is always current. Click handling inside a
+node's own rendered view (`WikiLinkView`, `SectionView`) uses React context
+(`editor/context.tsx`) instead, since those genuinely are React components.
+
+**Kanka licensing, since its editor is what this was modeled on:** Kanka's repo
+(`C:\Users\Wizard\Documents\DNDAPPREF\kanka`) is `"license": "proprietary"` with a
+Commons Clause condition on top (bars selling it or any hosting/consulting service whose
+value derives substantially from it) — no open-source grant at all, stricter than even
+the GPL repos surveyed for later phases. Only the *architecture* was read and
+independently re-implemented against TipTap's own public APIs; nothing was copied. Keep
+it that way if this file is ever revisited for another feature Kanka already has.
 
 ---
 

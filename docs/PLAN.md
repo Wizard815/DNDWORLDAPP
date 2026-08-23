@@ -4,11 +4,12 @@ Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
 
-> **Status, 2026-08-22 — P0, P1 and P2 are built and running. No importer is planned.**
+> **Status, 2026-08-22 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite.
+> No importer is planned.**
 >
 > | | |
 > |---|---|
-> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar |
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands, page linking, inline DM-notes sections, columns, hover-to-link) |
 > | **Next** | P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
@@ -111,10 +112,13 @@ ever becomes real, the Drizzle schema ports to Postgres without touching app cod
   map tiling at P4.
 - **Client:** React + Vite + TanStack Query, Tailwind. URL state is hand-rolled while
   there is exactly one route shape; a real router lands when there are real routes.
-- **Editor:** a markdown textarea with `[[` autocomplete in P0. TipTap (ProseMirror) with
-  custom nodes for wikilinks, embeds, statblocks, GM-only secret blocks and inline query
-  views replaces it later — the storage format is already final, so that swap touches one
-  component.
+- **Editor:** a markdown textarea with `[[` autocomplete in P0; replaced in P2.4 by
+  TipTap (ProseMirror) — a live, always-editable document (no Edit/Preview toggle), `/`
+  slash commands, `@`/`[[` page linking, native GM-only secret blocks, inline DM-notes
+  sections, `/layout` columns, and hover-to-link auto-detection of existing page names.
+  Custom nodes for embeds, statblocks and inline query views land with P3/P4. The storage
+  format was already final, so the swap touched one component and needed zero server
+  changes — see docs/HANDOFF.md §7.6.
 - **Maps:** Leaflet with `CRS.Simple` over pre-cut tiles — the same approach
   obsidian-leaflet uses and, as it turns out, the same one LegendKeeper uses.
 - **Auth:** cookie sessions for the browser; scoped bearer tokens for API and MCP.
