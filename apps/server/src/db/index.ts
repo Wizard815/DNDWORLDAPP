@@ -10,6 +10,7 @@ import { runMigrations } from "./migrate.ts";
  */
 
 fs.mkdirSync(paths.assets, { recursive: true });
+fs.mkdirSync(paths.tiles, { recursive: true });
 
 export const db = new DatabaseSync(paths.db);
 

@@ -3,7 +3,10 @@
 //   npm run smoke
 // It walks the whole P0 surface, and asserts the DM/player boundary in every place
 // it could leak: tree, direct fetch by id, posts, and search.
-const BASE = "http://localhost:8080/api/v1";
+import sharp from "sharp";
+
+const BASE = process.env.SMOKE_BASE ?? "http://localhost:8080/api/v1";
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let failures = 0;
 function check(label, condition, extra) {
@@ -18,14 +21,15 @@ function check(label, condition, extra) {
 function makeSession() {
   const jar = new Map();
   return async function call(method, path, body, extraHeaders) {
+    const isFormData = body instanceof FormData;
     const headers = { ...extraHeaders };
-    if (body !== undefined) headers["content-type"] = "application/json";
+    if (body !== undefined && !isFormData) headers["content-type"] = "application/json";
     if (jar.size > 0) headers.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
 
     const res = await fetch(`${BASE}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
     });
     for (const raw of res.headers.getSetCookie?.() ?? []) {
       const [pair] = raw.split(";");
@@ -603,6 +607,370 @@ const anonAfterRevoke = await anon("GET", `/share/${token}/tree`);
 check("the revoked token no longer works", anonAfterRevoke.status === 404, anonAfterRevoke.body);
 const revokeAgain = await dm("DELETE", `/nodes/${shareSource.id}/share-links/${created.body.shareLink.id}`);
 check("revoking an already-revoked link 404s", revokeAgain.status === 404, revokeAgain.body);
+
+console.log("\n== templates & typed fields ==");
+
+const npcTemplate = await dm("POST", `/worlds/${worldId}/templates`, {
+  name: "NPC",
+  icon: "🧑",
+  fieldSchema: [
+    { key: "role", type: "text", label: "Role", visibility: "members" },
+    { key: "notes", type: "longtext", label: "Notes", visibility: "members" },
+    { key: "age", type: "number", label: "Age", visibility: "members" },
+    { key: "alive", type: "checkbox", label: "Alive", visibility: "members" },
+    { key: "faction", type: "select", label: "Faction", options: ["Crown", "Veil", "Neutral"], visibility: "members" },
+    { key: "birthday", type: "date", label: "Birthday", visibility: "members" },
+    { key: "true_loyalty", type: "text", label: "True loyalty", visibility: "dm" },
+    { key: "basics", type: "section", label: "Basics", visibility: "members" },
+  ],
+  defaultBodyMd: "",
+});
+check(
+  "DM creates a template with one of each field type",
+  npcTemplate.status === 201 && npcTemplate.body.template.fieldSchema.length === 8,
+  npcTemplate.body,
+);
+const templateId = npcTemplate.body.template.id;
+
+const playerListsTemplates = await player("GET", `/worlds/${worldId}/templates`);
+check("a player can list templates", playerListsTemplates.status === 200, playerListsTemplates.body);
+const playerCreatesTemplate = await player("POST", `/worlds/${worldId}/templates`, { name: "Nope", fieldSchema: [] });
+check("a player cannot create a template", playerCreatesTemplate.status === 403, playerCreatesTemplate.body);
+
+const dupeKeys = await dm("POST", `/worlds/${worldId}/templates`, {
+  name: "Dupe",
+  fieldSchema: [
+    { key: "x", type: "text", label: "X", visibility: "members" },
+    { key: "x", type: "text", label: "X again", visibility: "members" },
+  ],
+});
+check("duplicate keys within a template are rejected", dupeKeys.status === 400, dupeKeys.body);
+
+const emptySelect = await dm("POST", `/worlds/${worldId}/templates`, {
+  name: "Bad select",
+  fieldSchema: [{ key: "s", type: "select", label: "S", visibility: "members" }],
+});
+check("a select field with no options is rejected", emptySelect.status === 400, emptySelect.body);
+
+const crossWorldTemplate = await dm("POST", `/worlds/${secondWorld.id}/templates`, { name: "Other world", fieldSchema: [] });
+const otherWorldNode = (await dm("POST", `/worlds/${secondWorld.id}/nodes`, { title: "Elsewhere" })).body.node;
+const npc1 = (
+  await dm("POST", `/worlds/${worldId}/nodes`, { title: "Garrick", parentId: rootId, templateId: crossWorldTemplate.body.template.id })
+);
+check(
+  "a templateId from a different world is rejected on create (404, same as any id the caller cannot reach in this world)",
+  npc1.status === 404,
+  npc1.body,
+);
+
+const npc = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Garrick", parentId: rootId, templateId })).body.node;
+const npcFields = (await dm("GET", `/nodes/${npc.id}/fields`)).body.fields;
+check(
+  "creating a node with a templateId instantiates every field, in schema order",
+  npcFields.length === 8 && npcFields.map((f) => f.key).join(",") === "role,notes,age,alive,faction,birthday,true_loyalty,basics",
+  npcFields.map((f) => f.key),
+);
+check("a checkbox field round-trips as a real boolean, not a string", npcFields.find((f) => f.key === "alive").value === false, npcFields.find((f) => f.key === "alive"));
+check("a number field round-trips as a real number", npcFields.find((f) => f.key === "age").value === null, npcFields.find((f) => f.key === "age"));
+check("a section field carries its label but no value", npcFields.find((f) => f.key === "basics").value === null, npcFields.find((f) => f.key === "basics"));
+
+const playerFieldsOnNpc = (await player("GET", `/nodes/${npc.id}/fields`)).body.fields;
+check(
+  "a player never sees the dm-visibility field",
+  !playerFieldsOnNpc.some((f) => f.key === "true_loyalty"),
+  playerFieldsOnNpc.map((f) => f.key),
+);
+check(
+  "but does see the members-visibility fields",
+  playerFieldsOnNpc.some((f) => f.key === "role"),
+  playerFieldsOnNpc.map((f) => f.key),
+);
+
+const setAge = await dm("PATCH", `/nodes/${npc.id}/fields/${npcFields.find((f) => f.key === "age").id}`, { value: 41 });
+check("a number field accepts and returns a real number", setAge.status === 200 && setAge.body.field.value === 41, setAge.body);
+
+const setAlive = await dm("PATCH", `/nodes/${npc.id}/fields/${npcFields.find((f) => f.key === "alive").id}`, { value: true });
+check("a checkbox field accepts and returns a real boolean", setAlive.status === 200 && setAlive.body.field.value === true, setAlive.body);
+
+const linkField = await dm("POST", `/nodes/${npc.id}/fields`, { key: "rival", type: "link", value: ciridan.id, visibility: "members" });
+check("an ad hoc link field resolves refNode.title", linkField.status === 201 && linkField.body.field.refNode?.title === "Ciridan", linkField.body);
+
+const crossWorldLink = await dm("POST", `/nodes/${npc.id}/fields`, { key: "bad_rival", type: "link", value: otherWorldNode.id, visibility: "members" });
+check("a link field pointing at a node in another world is rejected", crossWorldLink.status === 400, crossWorldLink.body);
+
+const adHocSameKey = await dm("POST", `/nodes/${npc.id}/fields`, { key: "role", type: "text", value: "duplicate", visibility: "members" });
+check("an ad hoc field cannot collide with an existing key on the same node", adHocSameKey.status === 400, adHocSameKey.body);
+
+const adHocSelectRejected = await dm("POST", `/nodes/${npc.id}/fields`, { key: "cannot_select", type: "select", visibility: "members" });
+check("an ad hoc select field is rejected — options only ever come from a template", adHocSelectRejected.status === 400, adHocSelectRejected.body);
+
+const playerEditFieldOnDmPage = await player("PATCH", `/nodes/${npc.id}/fields/${npcFields.find((f) => f.key === "role").id}`, { value: "hijacked" });
+check("a player cannot edit a field on a page they cannot edit", playerEditFieldOnDmPage.status === 403, playerEditFieldOnDmPage.body);
+
+// Editing a node does not imply seeing everything on it: a player granted edit rights on
+// npc (but not DM/owner) must still not be able to read or destroy a dm-visibility field
+// on it just by knowing its id — the same "hidden means 404" rule listFields() enforces.
+const npcEditGrant = await dm("POST", `/nodes/${npc.id}/acl`, { subjectType: "user", subjectId: player1Id, canRead: true, canEdit: true });
+check("DM grants the player edit rights on npc, for the next check", npcEditGrant.status === 201, npcEditGrant.body);
+const trueLoyaltyField = npcFields.find((f) => f.key === "true_loyalty");
+const playerEditDmField = await player("PATCH", `/nodes/${npc.id}/fields/${trueLoyaltyField.id}`, { value: "hijacked" });
+check(
+  "a player with edit rights on the node still cannot edit a dm-visibility field on it (404, not 200)",
+  playerEditDmField.status === 404,
+  playerEditDmField.body,
+);
+const playerDeleteDmField = await player("DELETE", `/nodes/${npc.id}/fields/${trueLoyaltyField.id}`);
+check(
+  "nor delete it",
+  playerDeleteDmField.status === 404,
+  playerDeleteDmField.body,
+);
+const trueLoyaltyStillThere = (await dm("GET", `/nodes/${npc.id}/fields`)).body.fields;
+check(
+  "the dm-visibility field survives both attempts",
+  trueLoyaltyStillThere.some((f) => f.key === "true_loyalty"),
+  trueLoyaltyStillThere.map((f) => f.key),
+);
+await dm("DELETE", `/nodes/${npc.id}/acl/${npcEditGrant.body.entry.id}`);
+
+// Assigning a template must not clobber an ad hoc field already sitting under a colliding key.
+const withAdHoc = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Priya", parentId: rootId })).body.node;
+const preExisting = await dm("POST", `/nodes/${withAdHoc.id}/fields`, { key: "role", type: "text", value: "Already set by hand", visibility: "members" });
+check("ad hoc field created before template assignment", preExisting.status === 201, preExisting.body);
+await dm("PATCH", `/nodes/${withAdHoc.id}`, { templateId });
+const afterAssign = (await dm("GET", `/nodes/${withAdHoc.id}/fields`)).body.fields;
+check(
+  "assigning a template afterward does not clobber the pre-existing ad hoc field under the same key",
+  afterAssign.find((f) => f.key === "role").value === "Already set by hand",
+  afterAssign.find((f) => f.key === "role"),
+);
+check("the template's other fields were still instantiated", afterAssign.some((f) => f.key === "notes"), afterAssign.map((f) => f.key));
+
+const templateOnOtherWorld = await dm("PATCH", `/nodes/${npc.id}`, { templateId: crossWorldTemplate.body.template.id });
+check("changing to a templateId from a different world is rejected on update (404)", templateOnOtherWorld.status === 404, templateOnOtherWorld.body);
+
+// Editing a template's schema never retroactively touches nodes that already instantiated fields from it.
+const updatedTemplate = await dm("PATCH", `/worlds/${worldId}/templates/${templateId}`, {
+  name: "NPC",
+  icon: "🧑",
+  fieldSchema: [
+    ...npcTemplate.body.template.fieldSchema,
+    { key: "backstory", type: "longtext", label: "Backstory", visibility: "members" },
+  ],
+  defaultBodyMd: "",
+});
+check("template schema updated", updatedTemplate.status === 200, updatedTemplate.body);
+const npcFieldsAfterSchemaEdit = (await dm("GET", `/nodes/${npc.id}/fields`)).body.fields;
+check(
+  "editing the template's schema does not retroactively add the new field to a node that already instantiated fields",
+  !npcFieldsAfterSchemaEdit.some((f) => f.key === "backstory"),
+  npcFieldsAfterSchemaEdit.map((f) => f.key),
+);
+
+const applyBackfill = await dm("POST", `/nodes/${npc.id}/apply-template`);
+check("explicit apply-template backfills the new field", applyBackfill.status === 200 && applyBackfill.body.fields.some((f) => f.key === "backstory"), applyBackfill.body);
+const npcAgeStillSet = applyBackfill.body.fields.find((f) => f.key === "age");
+check("apply-template does not disturb a value already set", npcAgeStillSet.value === 41, npcAgeStillSet);
+
+const nodeWithNoTemplate = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "No Template Here", parentId: rootId })).body.node;
+const applyWithNoTemplate = await dm("POST", `/nodes/${nodeWithNoTemplate.id}/apply-template`);
+check("apply-template on a page with no template is rejected", applyWithNoTemplate.status === 400, applyWithNoTemplate.body);
+
+// moveField: reordering two fields must not disturb a third field's sort key.
+const fieldsForMove = (await dm("GET", `/nodes/${npc.id}/fields`)).body.fields;
+const roleField = fieldsForMove.find((f) => f.key === "role");
+const notesField = fieldsForMove.find((f) => f.key === "notes");
+const ageFieldRow = fieldsForMove.find((f) => f.key === "age");
+const ageSortKeyBefore = ageFieldRow.sortKey;
+const moveFieldRes = await dm("POST", `/nodes/${npc.id}/fields/${notesField.id}/move`, { beforeId: roleField.id });
+check("moveField succeeds", moveFieldRes.status === 200, moveFieldRes.body);
+const fieldsAfterMove = (await dm("GET", `/nodes/${npc.id}/fields`)).body.fields;
+check(
+  "a third field's sort key is untouched by reordering its neighbours",
+  fieldsAfterMove.find((f) => f.key === "age").sortKey === ageSortKeyBefore,
+  { before: ageSortKeyBefore, after: fieldsAfterMove.find((f) => f.key === "age").sortKey },
+);
+check(
+  "the moved field now sorts before its target",
+  fieldsAfterMove.find((f) => f.key === "notes").sortKey < fieldsAfterMove.find((f) => f.key === "role").sortKey,
+  fieldsAfterMove.map((f) => [f.key, f.sortKey]),
+);
+
+const deleteFieldRes = await dm("DELETE", `/nodes/${npc.id}/fields/${linkField.body.field.id}`);
+check("a field can be deleted", deleteFieldRes.status === 200, deleteFieldRes.body);
+
+// Deleting a template nulls a node's templateId but leaves its already-instantiated values intact.
+const deleteTemplateRes = await dm("DELETE", `/worlds/${worldId}/templates/${templateId}`);
+check("a player cannot delete a template", (await player("DELETE", `/worlds/${worldId}/templates/${templateId}`)).status === 403);
+check("DM deletes the template", deleteTemplateRes.status === 200, deleteTemplateRes.body);
+const npcAfterTemplateDelete = (await dm("GET", `/nodes/${npc.id}`)).body.node;
+check("deleting the template nulls the node's templateId", npcAfterTemplateDelete.templateId === null, npcAfterTemplateDelete);
+const npcFieldsAfterTemplateDelete = (await dm("GET", `/nodes/${npc.id}/fields`)).body.fields;
+check(
+  "the node's already-instantiated field values survive the template's deletion",
+  npcFieldsAfterTemplateDelete.find((f) => f.key === "age")?.value === 41,
+  npcFieldsAfterTemplateDelete.find((f) => f.key === "age"),
+);
+
+console.log("\n== maps ==");
+
+// A minimal valid 1x1 transparent PNG — small enough to embed inline, real enough for sharp to read.
+const TINY_PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+async function uploadPng(session, uploadWorldId) {
+  const bytes = Buffer.from(TINY_PNG_B64, "base64");
+  const form = new FormData();
+  form.append("file", new Blob([bytes], { type: "image/png" }), "tiny.png");
+  const res = await session("POST", `/worlds/${uploadWorldId}/assets`, form);
+  return res;
+}
+
+const mapNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Ciridan (region map)", parentId: rootId, kind: "map" })).body.node;
+
+const mapBeforeImage = await dm("GET", `/nodes/${mapNode.id}/map`);
+check("a map node with no image set 404s on GET .../map", mapBeforeImage.status === 404, mapBeforeImage.body);
+
+const mapAsset = await uploadPng(dm, worldId);
+check("DM uploads the map's source image", mapAsset.status === 200 && typeof mapAsset.body.asset.id === "string", mapAsset.body);
+
+const playerSetImage = await player("PUT", `/nodes/${mapNode.id}/map`, { assetId: mapAsset.body.asset.id });
+check("a player cannot set the map image on a page they cannot edit", playerSetImage.status === 403, playerSetImage.body);
+
+const setImage = await dm("PUT", `/nodes/${mapNode.id}/map`, { assetId: mapAsset.body.asset.id });
+check(
+  "DM sets the map image, and pixel dimensions are backfilled from the file",
+  setImage.status === 200 && setImage.body.map.width === 1 && setImage.body.map.height === 1,
+  setImage.body,
+);
+check("an untiled map gets a plain default zoom range", setImage.body.map.tilingStatus === "none" && setImage.body.map.minZoom === 0, setImage.body.map);
+
+const otherWorldAsset = await uploadPng(dm, secondWorld.id);
+const crossWorldImage = await dm("PUT", `/nodes/${mapNode.id}/map`, { assetId: otherWorldAsset.body.asset.id });
+check("an asset from a different world is rejected as the map's image", crossWorldImage.status === 400, crossWorldImage.body);
+
+// Tiling: a large image should tile in the background (no queue — an in-process async
+// job) without blocking the PUT response, and the client polls until it's ready.
+const bigMapNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Continent (big map)", parentId: rootId, kind: "map" })).body.node;
+const bigPngBuffer = await sharp({ create: { width: 2200, height: 2100, channels: 3, background: { r: 80, g: 120, b: 160 } } }).png().toBuffer();
+const bigForm = new FormData();
+bigForm.append("file", new Blob([bigPngBuffer], { type: "image/png" }), "continent.png");
+const bigAsset = await dm("POST", `/worlds/${worldId}/assets`, bigForm);
+check("DM uploads a large map image", bigAsset.status === 200, bigAsset.body);
+
+const bigSetImage = await dm("PUT", `/nodes/${bigMapNode.id}/map`, { assetId: bigAsset.body.asset.id });
+check(
+  "setting a large image returns immediately, tiling not finished yet",
+  bigSetImage.status === 200 && (bigSetImage.body.map.tilingStatus === "pending" || bigSetImage.body.map.tilingStatus === "running"),
+  bigSetImage.body,
+);
+
+let tiledMap = null;
+for (let attempt = 0; attempt < 30; attempt++) {
+  const polled = (await dm("GET", `/nodes/${bigMapNode.id}/map`)).body.map;
+  if (polled.tilingStatus === "ready" || polled.tilingStatus === "error") {
+    tiledMap = polled;
+    break;
+  }
+  await sleep(500);
+}
+check("tiling finishes within the poll window", tiledMap !== null && tiledMap.tilingStatus === "ready", tiledMap);
+check(
+  "the real zoom range replaces the untiled defaults",
+  tiledMap !== null && tiledMap.maxZoom > 2,
+  tiledMap,
+);
+
+const tileFetch = await fetch(`${BASE.replace("/api/v1", "")}/tiles/${bigMapNode.id}/${tiledMap.minZoom}/0/0.webp`);
+check("the lowest zoom level's first tile is actually servable", tileFetch.status === 200, tileFetch.status);
+
+const smallAgainImage = await dm("PUT", `/nodes/${bigMapNode.id}/map`, { assetId: mapAsset.body.asset.id });
+check(
+  "replacing a tiled map with a small image resets tiling status back to untiled",
+  smallAgainImage.status === 200 && smallAgainImage.body.map.tilingStatus === "none" && smallAgainImage.body.map.minZoom === 0,
+  smallAgainImage.body,
+);
+
+const pin = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "pin",
+  x: 100,
+  y: 200,
+  targetNodeId: ciridan.id,
+  visibility: "members",
+});
+check("a pin linked to a page inherits its title/icon with no override", pin.status === 201 && pin.body.marker.label === "Ciridan", pin.body);
+
+const overriddenPin = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "pin",
+  x: 50,
+  y: 50,
+  targetNodeId: ciridan.id,
+  label: "The Old Town",
+  visibility: "members",
+});
+check("an explicit label override wins over the linked page's title", overriddenPin.body.marker.label === "The Old Town", overriddenPin.body.marker);
+
+const dmOnlyMarker = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "label",
+  x: 10,
+  y: 10,
+  label: "True Vault Entrance (secret)",
+  visibility: "dm",
+});
+check("a DM-only marker is created", dmOnlyMarker.status === 201, dmOnlyMarker.body);
+
+const circleMarker = await dm("POST", `/nodes/${mapNode.id}/map/markers`, { shape: "circle", x: 300, y: 300, color: "#c9a227", visibility: "members" });
+check("a circle marker can be created with its own color", circleMarker.status === 201 && circleMarker.body.marker.color === "#c9a227", circleMarker.body);
+
+const playerMarkers = (await player("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers;
+check("a player never sees the dm-visibility marker", !playerMarkers.some((m) => m.id === dmOnlyMarker.body.marker.id), playerMarkers.map((m) => m.id));
+check("but does see the members-visibility markers", playerMarkers.some((m) => m.id === pin.body.marker.id), playerMarkers.map((m) => m.id));
+
+const playerCreateMarker = await player("POST", `/nodes/${mapNode.id}/map/markers`, { shape: "pin", x: 0, y: 0, visibility: "members" });
+check("a player cannot create a marker on a map they cannot edit", playerCreateMarker.status === 403, playerCreateMarker.body);
+
+const badTarget = await dm("POST", `/nodes/${mapNode.id}/map/markers`, { shape: "pin", x: 0, y: 0, targetNodeId: otherWorldNode.id, visibility: "members" });
+check("a marker cannot link to a page in a different world", badTarget.status === 400, badTarget.body);
+
+const movedMarker = await dm("PATCH", `/markers/${pin.body.marker.id}`, { x: 999, y: 888 });
+check("a marker's position can be updated", movedMarker.status === 200 && movedMarker.body.marker.x === 999, movedMarker.body);
+
+const clearedLabel = await dm("PATCH", `/markers/${overriddenPin.body.marker.id}`, { label: null });
+check("clearing a label override falls back to the linked page's title again", clearedLabel.body.marker.label === "Ciridan", clearedLabel.body.marker);
+
+const deletedMarker = await dm("DELETE", `/markers/${circleMarker.body.marker.id}`);
+check("a marker can be deleted", deletedMarker.status === 200, deletedMarker.body);
+const markersAfterDelete = (await dm("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers;
+check("the deleted marker is gone", !markersAfterDelete.some((m) => m.id === circleMarker.body.marker.id), markersAfterDelete.map((m) => m.id));
+
+const playerDeleteMarker = await player("DELETE", `/markers/${pin.body.marker.id}`);
+check("a player cannot delete a marker on a map they cannot edit", playerDeleteMarker.status === 403, playerDeleteMarker.body);
+
+// Editing a map node does not imply seeing everything on it: a player granted edit
+// rights on the map (but not DM/owner) must still not be able to read or destroy a
+// dm-visibility marker on it just by knowing its id — same "hidden means 404" rule
+// listMarkers() enforces.
+const mapEditGrant = await dm("POST", `/nodes/${mapNode.id}/acl`, { subjectType: "user", subjectId: player1Id, canRead: true, canEdit: true });
+check("DM grants the player edit rights on the map, for the next check", mapEditGrant.status === 201, mapEditGrant.body);
+const playerEditDmMarker = await player("PATCH", `/markers/${dmOnlyMarker.body.marker.id}`, { label: "hijacked" });
+check(
+  "a player with edit rights on the map still cannot edit a dm-visibility marker on it (404, not 200)",
+  playerEditDmMarker.status === 404,
+  playerEditDmMarker.body,
+);
+const playerDeleteDmMarker = await player("DELETE", `/markers/${dmOnlyMarker.body.marker.id}`);
+check(
+  "nor delete it",
+  playerDeleteDmMarker.status === 404,
+  playerDeleteDmMarker.body,
+);
+const dmMarkerStillThere = (await dm("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers;
+check(
+  "the dm-visibility marker survives both attempts",
+  dmMarkerStillThere.some((m) => m.id === dmOnlyMarker.body.marker.id),
+  dmMarkerStillThere.map((m) => m.id),
+);
+await dm("DELETE", `/nodes/${mapNode.id}/acl/${mapEditGrant.body.entry.id}`);
 
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);

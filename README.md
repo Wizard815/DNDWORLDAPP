@@ -6,13 +6,19 @@ A self-hosted worldbuilding and campaign app: **LegendKeeper's freeform structur
 One tree. Anything nests inside anything. A map is a page, a timeline is a page, a
 character is a page — type is a filter, not a folder you are forced to live in.
 
-**Status: P0, P1 and P2 done, plus a P2.4 editor rewrite** — the spine, scoped API
-tokens, a generated OpenAPI spec, an MCP server, inline `:::secret` blocks,
-username/password accounts with a DM member panel (no email, ever — this is self-hosted
-with no mail server), per-node ACL overrides, anonymous share links, "view as a player,"
-and a live TipTap document editor (slash commands, page linking, inline DM-notes
-sections, columns, hover-to-link). Next is templates and query views. No bulk importer
-is planned; content moves in through the API/MCP as needed.
+**Status: P0, P1 and P2 done, plus a P2.4 editor rewrite, P3's templates/typed fields,
+and P4.1+P4.2 of maps** — the spine, scoped API tokens, a generated OpenAPI spec, an MCP
+server, inline `:::secret` blocks, username/password accounts with a DM member panel (no
+email, ever — this is self-hosted with no mail server), per-node ACL overrides,
+anonymous share links, "view as a player," a live TipTap document editor (slash
+commands, page linking, inline DM-notes sections, columns, hover-to-link),
+field-definition templates with typed per-node fields, map nodes (Leaflet `CRS.Simple`,
+a source image with background tiling for large ones, and typed markers that inherit a
+linked page's title/icon), a sidebar right-click/⋯ row menu, a "+ New" tile chooser
+(Lore/Map/saved templates), and manually pinned pages.
+Next: region/zone polygons, fog of war, and party/army tokens (P4.3–P4.5), then query
+views (table/board/gallery). No bulk importer is planned; content moves in through the
+API/MCP as needed.
 
 **Picking this up? Read [docs/HANDOFF.md](docs/HANDOFF.md) first** — it covers what
 exists, the rules that must not be broken, the environment gotchas, and the next tasks in
@@ -93,6 +99,22 @@ uploaded images. Backup is a copy of that directory.
   silently exposes what's hidden inside it.
 - **"View as a player."** An owner/DM can preview their own world exactly as a player
   would see it, one click from the DM Menu, without signing out.
+- **Field-definition templates and typed fields.** DM Menu → Templates to author a named,
+  ordered list of typed fields (text, number, checkbox, select, date, link, section);
+  assign it to a page via its "⋯" menu to instantiate blank/default values there, editable
+  inline like everything else. Editing a template later never rewrites pages that already
+  used it — an explicit "Re-apply template" backfills new fields onto them by hand.
+- **Maps.** The "+ New" chooser's Map tile creates a page that renders through Leaflet
+  instead of the document editor: upload a source image, then drop pins/labels/circles.
+  A marker linked to another page shows that page's title and icon automatically unless
+  you override them — and if the linked page is itself a map, clicking the pin opens it,
+  giving you nested maps for free. Images over 2000px tile automatically in the
+  background (no page reload needed once ready). Region/zone polygons, fog of war, and
+  party/army tokens are next.
+- **A sidebar row menu, reachable by right-click or its own "⋯" button** — add a page
+  inside, rename in place, pin, or archive, without first opening the page.
+- **Manually pinned pages** — a strip of quick-access chips at the top of the app,
+  toggled from the sidebar row menu or a page's own "⋯" menu.
 
 ## Driving it from an AI assistant (MCP)
 
@@ -120,10 +142,12 @@ token's owner can, no more.
 }
 ```
 
-Tools: `list_worlds`, `get_tree`, `find_nodes`, `get_node`, `list_unresolved_links`,
-`create_node`, `update_node`, `move_node`, `archive_node`, `create_post`, `update_post`.
-`place_marker`, `add_event` and `advance_calendar` are registered but report that they are
-not built yet, so the eventual shape is visible.
+Tools: `list_worlds`, `get_tree`, `get_subtree`, `find_nodes`, `get_node`,
+`list_unresolved_links`, `create_node`, `update_node`, `move_node`, `archive_node`,
+`create_post`, `update_post`, `list_templates`, `set_node_template`, `set_field`,
+`delete_field`, `apply_template`, `get_map`, `place_marker`, `update_marker`,
+`delete_marker`. `add_event` and `advance_calendar` are registered but report that they
+are not built yet, so the eventual shape is visible.
 
 Because it goes through the API, a **read-only token cannot write through MCP** — the
 scope check is the same one the browser hits.
@@ -139,9 +163,10 @@ drift from what the server actually validates:
 
 ## What does not exist yet
 
-Maps, calendars, timelines, templates and typed fields, query views, boards, statblocks.
-Those are P3 through P6 in the plan, in that order. No bulk importer from Kanka or
-LegendKeeper is planned — content moves over by hand through the API/MCP as needed.
+Map tiling, region/zone polygons, fog of war, party/army tokens, map layers, calendars,
+timelines, query views, boards, statblocks. Those are the rest of P4 through P6 in the
+plan, in that order. No bulk importer from Kanka or LegendKeeper is planned — content
+moves over by hand through the API/MCP as needed.
 
 ## Layout
 
@@ -174,7 +199,7 @@ docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.js
 
 ```bash
 npm test          # unit: fractional indexing, wiki-link parsing, secret blocks
-npm run smoke     # 75 end-to-end API checks (needs an EMPTY data/ dir + running server)
+npm run smoke     # 167 end-to-end API checks (needs an EMPTY data/ dir + running server)
 npm run test:mcp  # drives the MCP server over stdio (needs a running server)
 npm run typecheck
 ```

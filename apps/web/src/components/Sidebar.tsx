@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MoveNodeInput, NodeSummary } from "@dndworldapp/schema";
+import { api } from "../api.ts";
 import { navigate } from "../lib/nav.ts";
 
 const KIND_GLYPH: Record<string, string> = {
@@ -18,11 +19,15 @@ interface Props {
   worldName: string;
   nodes: NodeSummary[];
   activeId: string | null;
-  onCreate: (parentId: string | null) => void;
+  onOpenCreateChooser: (parentId: string | null) => void;
   onMove: (nodeId: string, input: MoveNodeInput) => void;
+  onChanged: () => void;
+  pinnedIds: Set<string>;
+  onTogglePin: (nodeId: string) => void;
   onOpenSwitcher: () => void;
   onOpenTokens: () => void;
   onOpenMembers: () => void;
+  onOpenTemplates: () => void;
   onSignOut: () => void;
   isGameMaster: boolean;
   viewAsPlayer: boolean;
@@ -59,11 +64,15 @@ export function Sidebar({
   worldName,
   nodes,
   activeId,
-  onCreate,
+  onOpenCreateChooser,
   onMove,
+  onChanged,
+  pinnedIds,
+  onTogglePin,
   onOpenSwitcher,
   onOpenTokens,
   onOpenMembers,
+  onOpenTemplates,
   onSignOut,
   isGameMaster,
   viewAsPlayer,
@@ -74,6 +83,9 @@ export function Sidebar({
   const { expanded, toggle, setExpanded } = useExpanded(worldName);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; mode: DropMode } | null>(null);
+  const [menuForId, setMenuForId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const byParent = useMemo(() => {
     const map = new Map<string | null, NodeSummary[]>();
@@ -149,17 +161,52 @@ export function Sidebar({
     }
   }
 
+  function startRename(node: NodeSummary): void {
+    setMenuForId(null);
+    setRenamingId(node.id);
+    setRenameValue(node.title);
+  }
+
+  async function commitRename(node: NodeSummary): Promise<void> {
+    const title = renameValue.trim();
+    setRenamingId(null);
+    if (title.length === 0 || title === node.title) return;
+    try {
+      await api.updateNode(node.id, { title });
+      onChanged();
+    } catch {
+      // No toast system yet — a rename a viewer isn't allowed to make (rare: the
+      // "Rename" item shows for everyone, same as every other mutation here, and
+      // the server is the real gate) just silently reverts to the original title.
+    }
+  }
+
+  /** Archiving takes the subtree with it, so confirm first using childCount alone (no need to fetch full detail). */
+  function requestArchive(node: NodeSummary): void {
+    setMenuForId(null);
+    const inside = node.childCount > 0 ? ` and the ${node.childCount} page(s) inside it` : "";
+    if (!window.confirm(`Archive "${node.title}"${inside}?`)) return;
+    void api.archiveNode(node.id).then(
+      onChanged,
+      () => {
+        /* server rejected it (not this viewer's to archive) — nothing to undo client-side */
+      },
+    );
+  }
+
   function renderRow(node: NodeSummary, depth: number) {
     if (visible !== null && !visible.has(node.id)) return null;
     const children = byParent.get(node.id) ?? [];
     const isOpen = expanded.has(node.id);
     const isActive = node.id === activeId;
     const drop = dropTarget?.id === node.id ? dropTarget.mode : null;
+    const isRenaming = renamingId === node.id;
+    const isPinned = pinnedIds.has(node.id);
 
     return (
       <div key={node.id}>
         <div
-          draggable
+          draggable={!isRenaming}
           onDragStart={(e) => {
             setDragId(node.id);
             e.dataTransfer.effectAllowed = "move";
@@ -180,9 +227,13 @@ export function Sidebar({
             e.preventDefault();
             handleDrop(node, drop ?? "into");
           }}
-          onClick={() => navigate(`/n/${node.id}`)}
+          onClick={() => !isRenaming && navigate(`/n/${node.id}`)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenuForId(node.id);
+          }}
           className={[
-            "group flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-sm",
+            "group relative flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-sm",
             isActive ? "bg-[#2c2f36] text-[#f0f1f4]" : "text-[#b6b8bf] hover:bg-[#232529]",
             drop === "into" ? "drop-into" : "",
             drop === "before" ? "drop-before" : "",
@@ -202,7 +253,27 @@ export function Sidebar({
             {isOpen ? "▾" : "▸"}
           </button>
           <span className="shrink-0 text-xs">{node.icon ?? KIND_GLYPH[node.kind] ?? "📄"}</span>
-          <span className="truncate">{node.title}</span>
+          {isRenaming ? (
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={() => void commitRename(node)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void commitRename(node);
+                if (e.key === "Escape") setRenamingId(null);
+              }}
+              className="min-w-0 flex-1 rounded border border-[#4a4d55] bg-[#17181b] px-1 text-[#f0f1f4] outline-none"
+            />
+          ) : (
+            <span className="truncate">{node.title}</span>
+          )}
+          {isPinned && (
+            <span className="shrink-0 text-[10px] text-[#c9a227]" title="Pinned">
+              ★
+            </span>
+          )}
           {node.visibility === "dm" && (
             <span className="ml-auto shrink-0 text-[10px] text-[#c9a227]" title="DM only">
               ●
@@ -212,13 +283,68 @@ export function Sidebar({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onCreate(node.id);
+              setMenuForId(node.id);
             }}
             className="ml-1 hidden shrink-0 px-1 text-[#7a7d86] hover:text-[#d7d8dc] group-hover:block"
-            title="New child page"
+            title="Page actions"
           >
-            +
+            ⋯
           </button>
+          {menuForId === node.id && (
+            <>
+              <div
+                className="fixed inset-0 z-30"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuForId(null);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMenuForId(null);
+                }}
+              />
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute left-full top-0 z-40 ml-1 w-48 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuForId(null);
+                    onOpenCreateChooser(node.id);
+                  }}
+                  className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                >
+                  Add a page inside…
+                </button>
+                <button
+                  type="button"
+                  onClick={() => startRename(node)}
+                  className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuForId(null);
+                    onTogglePin(node.id);
+                  }}
+                  className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                >
+                  {isPinned ? "Unpin" : "Pin"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => requestArchive(node)}
+                  className="block w-full px-3 py-2 text-left text-xs text-[#c98b8b] hover:bg-[#2b2e35]"
+                >
+                  Archive{node.childCount > 0 && ` (+${node.childCount})`}
+                </button>
+              </div>
+            </>
+          )}
         </div>
         {isOpen && children.map((child) => renderRow(child, depth + 1))}
       </div>
@@ -228,7 +354,7 @@ export function Sidebar({
   const roots = byParent.get(null) ?? [];
 
   return (
-    <aside className="flex h-screen w-[290px] shrink-0 flex-col border-r border-[#26282d] bg-[#1a1c20]">
+    <aside className="flex h-full w-[290px] shrink-0 flex-col border-r border-[#26282d] bg-[#1a1c20]">
       <div className="flex items-center gap-2 px-3 py-3">
         <span className="truncate text-sm font-semibold text-[#f0f1f4]">{worldName}</span>
         <button
@@ -258,10 +384,10 @@ export function Sidebar({
       <div className="border-t border-[#26282d] p-2">
         <button
           type="button"
-          onClick={() => onCreate(null)}
+          onClick={() => onOpenCreateChooser(null)}
           className="w-full rounded px-2 py-1.5 text-left text-xs text-[#8d9099] hover:bg-[#232529] hover:text-[#d7d8dc]"
         >
-          + New top-level page
+          + New
         </button>
         <div className="relative">
           {viewAsPlayer && (
@@ -300,6 +426,18 @@ export function Sidebar({
                 >
                   API tokens
                 </button>
+                {isGameMaster && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDmMenuOpen(false);
+                      onOpenTemplates();
+                    }}
+                    className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                  >
+                    Templates
+                  </button>
+                )}
                 {isGameMaster && (
                   <button
                     type="button"

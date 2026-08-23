@@ -1,12 +1,20 @@
 import type {
+  CreateFieldInput,
+  CreateMarkerInput,
   CreateNodeInput,
   CreatePostInput,
+  FieldDto,
+  MapDto,
+  MapMarkerDto,
   MoveNodeInput,
   NodeDetail,
   NodeSummary,
   PostDto,
   SearchHit,
+  TemplateDto,
   UnresolvedLink,
+  UpdateFieldInput,
+  UpdateMarkerInput,
   UpdateNodeInput,
   UpdatePostInput,
   WorldDto,
@@ -147,5 +155,49 @@ export class WorldClient {
 
   updatePost(postId: string, input: UpdatePostInput) {
     return this.request<{ post: PostDto }>("PATCH", `/posts/${postId}`, input);
+  }
+
+  templates(worldId: string) {
+    return this.request<{ templates: TemplateDto[] }>("GET", `/worlds/${worldId}/templates`);
+  }
+
+  fields(nodeId: string) {
+    return this.request<{ fields: FieldDto[] }>("GET", `/nodes/${nodeId}/fields`);
+  }
+
+  createField(nodeId: string, input: CreateFieldInput) {
+    return this.request<{ field: FieldDto }>("POST", `/nodes/${nodeId}/fields`, input);
+  }
+
+  updateField(nodeId: string, fieldId: string, input: UpdateFieldInput) {
+    return this.request<{ field: FieldDto }>("PATCH", `/nodes/${nodeId}/fields/${fieldId}`, input);
+  }
+
+  deleteField(nodeId: string, fieldId: string) {
+    return this.request<{ ok: true }>("DELETE", `/nodes/${nodeId}/fields/${fieldId}`);
+  }
+
+  applyTemplate(nodeId: string) {
+    return this.request<{ fields: FieldDto[] }>("POST", `/nodes/${nodeId}/apply-template`);
+  }
+
+  map(nodeId: string) {
+    return this.request<{ map: MapDto }>("GET", `/nodes/${nodeId}/map`);
+  }
+
+  mapMarkers(nodeId: string) {
+    return this.request<{ markers: MapMarkerDto[] }>("GET", `/nodes/${nodeId}/map/markers`);
+  }
+
+  createMarker(nodeId: string, input: CreateMarkerInput) {
+    return this.request<{ marker: MapMarkerDto }>("POST", `/nodes/${nodeId}/map/markers`, input);
+  }
+
+  updateMarker(markerId: string, input: UpdateMarkerInput) {
+    return this.request<{ marker: MapMarkerDto }>("PATCH", `/markers/${markerId}`, input);
+  }
+
+  deleteMarker(markerId: string) {
+    return this.request<{ ok: true }>("DELETE", `/markers/${markerId}`);
   }
 }

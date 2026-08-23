@@ -48,14 +48,17 @@ If you are about to add a table called `characters`, or a nav section called
 
 ## 3. Current status
 
-**P0, P1 and P2 are complete, plus a P2.4 editor rewrite.** No bulk importer is planned —
-see §9.4.
+**P0, P1 and P2 are complete, plus a P2.4 editor rewrite, P3's templates/typed fields, and
+P4.1's maps (source image + typed markers with inheritance — the first sub-phase of P4;
+tiling/regions/fog/tokens/layers are not built yet).** No bulk importer is planned — see
+§9.4.
 
 Verified by:
 - `npm test` — 20 unit tests (fractional indexing, wiki-link parsing, secret blocks). All
   pass.
-- `npm run smoke` — 112 end-to-end API checks against a running server. All pass —
-  unchanged by the P2.4 editor rewrite, which needed zero server changes (see §7.6).
+- `npm run smoke` — 167 end-to-end API checks against a running server, run against an
+  empty data dir. All pass — includes the `== templates & typed fields ==` section added
+  for P3 (see §7.7) and the `== maps ==` section added for P4.1 (see §7.8).
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All pass.
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
@@ -119,11 +122,21 @@ to fix it; it just stopped being true once the renderer changed.
   site fell through to its own generic fallback text, indistinguishable from a real
   validation error. `api.ts`'s `request()`/`uploadAsset()` now wrap the `fetch()` call
   itself, not just non-OK responses, so this is fixed at the one shared choke point.
+- **Field-definition templates and typed per-node fields** (P3, first item) — a
+  world-scoped `Template` (named, ordered field definitions) instantiates per-node
+  `fields` rows when assigned; DM Menu → Templates to author one, a node's "⋯" menu to
+  assign/re-apply. Fields render inline with no Edit/Save toggle, same as everything
+  else. See §7.7.
+- **Maps: source image + typed, inheriting markers** (P4, sub-phase 1) — a `kind="map"`
+  node renders through Leaflet `CRS.Simple`; `pin`/`label`/`circle` markers can link to
+  any node and inherit its title/icon unless overridden. "+ New map" in the sidebar,
+  "Add a map inside" in a node's "⋯" menu. See §7.8.
 
 ### Not started
 
-Maps, calendars, timelines, templates and typed fields, the query/view engine, boards,
-statblocks, initiative, realtime. No importer is planned — see §9.4.
+Map tiling/region polygons/fog of war/party tokens/layers (P4.2–P4.6), calendars,
+timelines, the query/view engine (table/board/gallery), statblocks, initiative, realtime.
+No importer is planned — see §9.4.
 
 ---
 
@@ -137,7 +150,9 @@ apps/server/
   migrations/0004_username_accounts.sql  RENAME COLUMN email TO username — see §7.3
   migrations/0005_acl.sql    Per-node ACL overrides — see §7.4
   migrations/0006_share_links.sql  Anonymous share links — see §7.5
-  scripts/smoke.mjs          112-check end-to-end API test. Needs an empty data dir.
+  migrations/0007_fields_unique_key.sql  UNIQUE(node_id, key) on fields — see §7.7
+  migrations/0008_maps.sql   maps, map_markers, map_layers, assets.width/height — §7.8
+  scripts/smoke.mjs          167-check end-to-end API test. Needs an empty data dir.
   src/
     index.ts                 Fastify app: plugins, error handler, static serving, boot
     env.ts                   Config from env vars; refuses prod boot with the dev secret
@@ -167,10 +182,17 @@ apps/server/
       assets.ts              Content-addressed uploads
       acl.ts                 Per-node access grants — see §7.4
       shareLinks.ts          Anonymous share links — see §7.5
+      templates.ts           Field-definition templates + instantiation — see §7.7
+      fields.ts              Typed per-node field values — see §7.7
+      maps.ts                Map image + typed markers, inheritance resolved at read
+                              time — see §7.8
     routes/
       auth.ts                setup, login, logout, me, self-service change-password
-      worlds.ts              worlds, tree, search, members (add/create/remove/reset-pw), node create, asset upload
-      nodes.ts               node detail/update/move/archive, posts, acl, share-links
+      worlds.ts              worlds, tree, search, members (add/create/remove/reset-pw),
+                              node create, asset upload, templates (CRUD)
+      nodes.ts               node detail/update/move/archive, posts, acl, share-links,
+                              fields (CRUD/move/apply-template)
+      maps.ts                map image (GET/PUT), markers (CRUD) — see §7.8
       share.ts               the anonymous half of a share link — no auth at all
       tokens.ts              mint / list / revoke API tokens (session only)
       openapi.ts             serves the generated spec + a small viewer
@@ -208,8 +230,15 @@ apps/web/
                               positioning via `props.mount`)
     components/
       Auth.tsx               Setup + login
-      Sidebar.tsx            Tree, filter, drag-and-drop
-      NodeView.tsx           Breadcrumb, title, mounts <Editor>, children, + Backlinks rail
+      Sidebar.tsx            Tree, filter, drag-and-drop, DM Menu (incl. Templates entry),
+                              "+ New map" — see §7.8
+      NodeView.tsx           Breadcrumb, title, mounts <Editor> OR <MapView> by
+                              node.kind (the first-ever kind dispatch — see §7.8),
+                              children, "⋯" menu (incl. Template picker/re-apply, "Add a
+                              map inside"); exports Backlinks, which also renders
+                              FieldsPanel — see §7.7
+      Templates.tsx          DM Menu → Templates: the template field-schema editor — §7.7
+      MapView.tsx            Leaflet CRS.Simple map + typed marker CRUD — see §7.8
       Posts.tsx              Fallback list: posts with no inline `:::post:::` reference
                               (pre-P2.4 sections); PostCard is reused by SectionView
       QuickSwitcher.tsx      Ctrl+K
@@ -217,12 +246,14 @@ apps/web/
       Members.tsx            DM admin panel: add/create accounts, remove, reset passwords
       Access.tsx             Per-node ACL grants + share link management — see §7.4/§7.5
       ShareView.tsx          The anonymous half of a share link — no session, read-only
-      IconPicker.tsx         Emoji picker on the page title
+      IconPicker.tsx         Emoji picker on the page title (also reused by Templates.tsx)
 
 apps/mcp/
   src/index.ts               Entry: reads env, builds the client, stdio transport
   src/client.ts              Typed HTTP client — the ONLY way it reaches the app
-  src/tools.ts               Tool definitions
+  src/tools.ts               Tool definitions, incl. list_templates/set_node_template/
+                              set_field/apply_template (§7.7), get_map/place_marker/
+                              update_marker/delete_marker (§7.8)
   scripts/integration-test.mjs  Drives the server over stdio like a real client
 
 packages/schema/
@@ -243,13 +274,14 @@ users        id, username, name, password_hash, is_server_admin, created_at
 sessions     id (sha256 of token), user_id, created_at, expires_at, user_agent
 worlds       id, name, slug, owner_id, settings(JSON), timestamps
 memberships  (world_id, user_id) PK, role
-assets       id, world_id, sha256, mime, bytes, orig_name, created_by, created_at
-templates    id, world_id, name, icon, field_schema(JSON), default_body_md   [unused in P0]
+assets       id, world_id, sha256, mime, bytes, orig_name, width, height, created_by,
+             created_at  — width/height added 0008, nullable, lazily backfilled — §7.8
+templates    id, world_id, name, icon, field_schema(JSON), default_body_md   — see §7.7
 nodes        id, world_id, parent_id, template_id, kind, title, slug, body_md, icon,
              cover_asset_id, sort_key, visibility, is_archived, created_by, timestamps
 posts        id, node_id, title, body_md, visibility, sort_key, created_by, timestamps
 fields       id, node_id, key, type, value_text, value_num, value_ref, sort_key,
-             visibility                                                    [unused in P0]
+             visibility, UNIQUE(node_id, key) from 0007                    — see §7.7
 links        id, world_id, src_node_id, dst_node_id(NULL = unresolved), target_text,
              label, kind, created_at
 node_tags    (node_id, tag_node_id) PK
@@ -258,6 +290,13 @@ acl          id, node_id, subject_type(user|role), subject_id, can_read, can_edi
              created_by, created_at                                    — see §7.4
 share_links  id, node_id, hash(sha256), prefix, created_by, created_at, revoked_at
                                                                         — see §7.5
+maps         node_id (PK), asset_id, min_zoom, max_zoom, tiling_status, tiling_error,
+             fog_enabled, fog_mask_updated_at, timestamps               — see §7.8
+map_markers  id, map_node_id, layer_id, target_node_id, parent_marker_id, shape, x, y,
+             points, label, icon, color, members, revealed, visibility, created_by,
+             timestamps                                                — see §7.8
+map_layers   id, map_node_id, name, asset_id, is_overlay, opacity, sort_key, is_default,
+             created_at  — table exists, unused until P4.6              — see §7.8
 ```
 
 Notes that matter:
@@ -272,8 +311,10 @@ Notes that matter:
 - **`links.dst_node_id` may be NULL.** That is an unresolved wiki link, tracked on
   purpose. `resettleLinksFor()` adopts pending links when a matching page is created or
   renamed, and releases them when it stops matching.
-- `templates` and `fields` exist but are **unused in P0**. They are the P3 foundation;
-  the tables are there so that phase needs no migration for the basics.
+- `templates` and `fields` sat unused since P0 — they are now in use as of P3; see §7.7.
+- `map_markers` is **one typed table with a `shape` discriminator**
+  (pin/label/circle/polygon/path/token), not a table per shape — same reasoning as
+  `fields` covering every field type in one table. See §7.8.
 - **SQLite booleans are 0/1 integers.** `is_archived === 1`, not `=== true`.
 
 ---
@@ -360,6 +401,12 @@ POST   /worlds/:worldId/members/:userId/reset-password
                                             { newPassword } (owner/dm only, member of
                                             that world only)
 POST   /worlds/:worldId/assets              multipart, images only, 25 MB cap
+GET    /worlds/:worldId/templates           any member — see §7.7
+POST   /worlds/:worldId/templates           { name, icon?, fieldSchema, defaultBodyMd } (owner/dm only)
+PATCH  /worlds/:worldId/templates/:id       (owner/dm only) — never touches nodes already
+                                            instantiated from this template, see §7.7
+DELETE /worlds/:worldId/templates/:id       (owner/dm only) — nulls nodes.templateId,
+                                            leaves their fields' values intact
 
 GET    /nodes/:nodeId                       detail + breadcrumb + children + backlinks
                                             (bodyMd has :::secret blocks stripped unless
@@ -381,6 +428,27 @@ DELETE /nodes/:nodeId/acl/:aclId            revoke a grant
 GET    /nodes/:nodeId/share-links           share links on this page (owner/dm only) — §7.5
 POST   /nodes/:nodeId/share-links           -> { shareLink, token } — token shown once
 DELETE /nodes/:nodeId/share-links/:id       revoke a link
+
+GET    /nodes/:nodeId/fields                typed field values, visibility-filtered — §7.7
+POST   /nodes/:nodeId/fields                { key, type, value?, visibility } — ad hoc only,
+                                            rejects type "select" (options come from a
+                                            template only)
+PATCH  /nodes/:nodeId/fields/:fieldId       { value?, visibility? } — key/type are fixed
+DELETE /nodes/:nodeId/fields/:fieldId
+POST   /nodes/:nodeId/fields/:fieldId/move  { afterId?, beforeId? }
+POST   /nodes/:nodeId/apply-template        backfills missing template fields onto this
+                                            node without disturbing values already set;
+                                            400 if the node has no template
+
+GET    /nodes/:nodeId/map                   map detail (source image, pixel bounds,
+                                            tiling status) — §7.8. 404 if none set
+PUT    /nodes/:nodeId/map                   { assetId } — set/replace the map's source
+                                            image (canEditNode gate)
+GET    /nodes/:nodeId/map/markers           visibility-filtered — §7.8
+POST   /nodes/:nodeId/map/markers           { shape, x, y, targetNodeId?, label?, icon?,
+                                            color?, members?, visibility }
+PATCH  /markers/:markerId                   (canEditNode on the owning map node)
+DELETE /markers/:markerId
 
 GET    /share/:token/tree                   NO AUTH — the shared subtree, for a visitor
 GET    /share/:token/nodes/:nodeId          NO AUTH — one page within that subtree
@@ -723,6 +791,212 @@ the GPL repos surveyed for later phases. Only the *architecture* was read and
 independently re-implemented against TipTap's own public APIs; nothing was copied. Keep
 it that way if this file is ever revisited for another feature Kanka already has.
 
+### 7.7 Templates and typed fields (P3, first item)
+
+**The schema was already there and unused.** `apps/server/migrations/0001_init.sql`
+already had `templates` and `fields` tables, and `nodes.template_id` as an inert
+passthrough nobody validated or acted on. This phase is almost entirely new
+services/routes/schema/UI on top of tables that sat there since P0 — the only new
+migration is `0007_fields_unique_key.sql`, a single `UNIQUE(node_id, key)` index that
+makes "instantiate a template field if the node doesn't already have one under that key"
+race-safe via `ON CONFLICT DO NOTHING` instead of check-then-insert.
+
+**A Template is field *definitions*; `fields` rows are field *values*.** Assigning a
+template to a node (`nodes.template_id`, set through the same `updateNode`/`createNode`
+path as everything else — no separate endpoint) copies each definition the node doesn't
+already have, by key, as a blank/default `fields` row
+(`services/templates.ts::assignTemplateFields`). This is deliberately **one-way and
+non-retroactive**: editing a template's `field_schema` later never reaches back and
+touches nodes that already instantiated fields from it — that would silently mutate
+content nobody asked to change. A DM who wants new fields backfilled onto existing pages
+uses the explicit "Re-apply template" action (`POST /nodes/:nodeId/apply-template`, also
+the `apply_template` MCP tool) — the same instantiation call, just invoked by hand. The
+node/template relationship is intentionally loose after that point: a node can diverge
+from its template freely (extra ad hoc fields, edited values, even a field with the same
+key as a template def that's since changed type — the row is the node's own).
+
+**Two things forced by the existing schema, not by choice:**
+- `fields` has no `label` or `created_by` column. A field's display `label` and (for
+  `select`) its `options` are resolved at **read time** by looking up the node's
+  `template_id` → the template's `field_schema` → matching by `key`
+  (`services/fields.ts::defsByKey`/`toDto`). An ad hoc field, or a field whose template
+  was since deleted or edited to drop that key, just shows its own `key` as typed — this
+  is why a field can silently lose its nice label/options if the template disappears;
+  that's accepted, not a bug (see the manual verification note below).
+- Field visibility is a 3-value subset — `public | members | dm`, no `private` — since
+  there's no creator column to key a "private to whoever made it" rule off of. Filtered
+  with `readableLevels(role).filter(l => l !== "private")`, not the `visibilitySqlFor()`
+  helper nodes/posts use.
+
+**`select` can only ever come from a template.** Its `options` list lives only in the
+template's `field_schema`, never on the `fields` row itself, so an ad hoc field (no
+template backing it) has nowhere to store options — `createFieldInputSchema` excludes
+`select` from the type enum accordingly, both server-side and in the "+ Add a field"
+form's type list.
+
+**Client: no Edit/Save toggle, same house style as everything else in this app.** The
+Fields panel (`NodeView.tsx`'s `FieldsPanel`, in the right rail above the existing
+Kind/Visibility/Updated block) autosaves per field — `onBlur` for text/longtext/number,
+`onChange` for checkbox/select/date/link — with a small gold dot marking a `dm`-visibility
+field, reusing the same gold treatment `Sidebar.tsx` already uses for a DM-only page. The
+Templates editor itself (DM Menu → Templates) is the one exception with an explicit Save
+button, deliberately: a template's field list is edited as one whole document (add/
+reorder/remove several fields, then commit), the same reasoning that makes ACL's
+individual grants separate rows but a template's field schema a single
+`PATCH`/`updateTemplate` call.
+
+**Verified by hand in the browser, beyond the smoke/MCP suites**: built an "NPC" template
+(text/select/checkbox/date/section fields) from the DM Menu, assigned it to a node via
+"⋯" → Template…, confirmed the Fields panel populated in schema order with working
+per-type inputs (including a `select`'s options resolving correctly), toggled "View as a
+player" and confirmed a `dm`-visibility field disappeared while `members` ones stayed,
+and confirmed "Re-apply template" only appears once a template is actually assigned. Also
+observed firsthand the read-time label/options resolution's consequence noted above: a
+node whose template had since been deleted (by an earlier smoke-test run against the same
+data directory) showed its fields with bare keys as labels and an empty `select` options
+list — exactly as designed, not a regression.
+
+### 7.8 Maps (P4)
+
+Unlike P3, there was **no pre-built schema** to wire up — `nodes.kind` already reserved
+`"map"` as a valid enum value, but nothing else existed: no `maps`/`map_markers` tables,
+no client-side dispatch by `kind` at all, no image-processing dependency, no map library.
+This grew into a large enough feature that it's split into sub-phases (P4.1–P4.6); **only
+P4.1 is built**. See the approved plan at the time (`purrfect-growing-catmull.md` in
+`.claude/plans/`, if still present) for the full design across all sub-phases, or
+`docs/PLAN.md` §8's P4 entry for the condensed version.
+
+**Reference material, used for architecture only** — Kanka is Commons Clause (no code
+copied), ttrpg-maps and DungeonBoard are MIT but still only read for ideas:
+`C:\Users\Wizard\Documents\DNDAPPREF\kanka` (tiling pipeline shape, marker
+null-coalesce-to-linked-entity inheritance, `maps`/`map_layers`/`map_markers` migration
+history), `ttrpg-maps` (matthttam — zoom-gated layer visibility, marker shapes, pixel-space
+coordinates), `DungeonBoard` (McAJBen — the "paint to reveal" fog mechanic P4.4 will be
+modeled on). `loreweave` and `ttrpg-tools-time`, two other reference repos added the same
+session, were checked and are **not map-related** — good material for P5 instead.
+
+**P4.1, built**: a `kind="map"` node gets at most one `maps` row (source image + pixel
+bounds) via `migrations/0008_maps.sql`, plus any number of `map_markers` rows. Markers are
+**one typed table with a `shape` discriminator** (`pin | label | circle | polygon | path |
+token` — only `pin`/`label`/`circle` have UI in P4.1, the rest are reserved for
+P4.3/P4.5) rather than a table per shape, matching how `fields` already covers every field
+type in one table. A marker's `target_node_id` makes it link to any node; if its own
+`label`/`icon` are unset, they resolve from that node's title/icon **at read time**
+(`services/maps.ts::toMarkerDto` / `targetNodeFor`) — the same "resolve from the source,
+don't duplicate" pattern `services/fields.ts` already uses for template-seeded labels.
+**Nested maps need no special code at all**: a marker linking to another `kind="map"` node
+just navigates there via the existing `navigate()`, same as any other link — landing on
+that node mounts `MapView` again.
+
+**New server dependency: `sharp`.** Used today only for `services/assets.ts`'s
+`ensureAssetDimensions()` — reads the file, calls `sharp(path).metadata()`, backfills
+`assets.width`/`height` (both nullable, lazily populated; not computed at upload time, so
+ordinary editor-image uploads never pay this cost). P4.2 will extend `sharp`'s usage to
+actual tile generation.
+
+**New client dependencies: `leaflet` + `react-leaflet@4.2.1`** (pinned below the current
+`5.x`, which requires React 19 — this app is still on React 18). `MapView.tsx` renders
+`<MapContainer crs={L.CRS.Simple} bounds={[[0,0],[map.height,map.width]]}>` — pixel-space,
+y-down, the convention both Kanka and LegendKeeper use — with an `<ImageOverlay>` (P4.2
+swaps this for a `<TileLayer>` once tiling exists). Markers use a hand-built `L.divIcon`
+(`iconFor()` in `MapView.tsx`) rather than Leaflet's stock marker image, deliberately —
+Leaflet's default icon assets don't resolve correctly under Vite without extra config, and
+a `divIcon` showing the node's actual emoji icon is more useful here anyway.
+
+**Client wiring, since no kind-dispatch mechanism existed before this**: `NodeView.tsx`
+now has the first-ever `node.kind === "map"` branch (mounting `MapView` instead of
+`<Editor>`, inside a fixed `h-[75vh]` wrapper — Leaflet needs its container to resolve to
+a real pixel height, and the surrounding layout is `overflow-y-auto`/flex in a way that
+doesn't hand a percentage-height child a real size otherwise; **`MapView`'s own root div
+must be `h-full`, not `flex-1`**, since its immediate parent isn't a flex container — this
+tripped verification once already, symptom was a real `<div class="leaflet-container">`
+in the DOM with `height: 0`, silently swallowing every click). There was previously no UI
+to create a node with `kind !== "document"` at all (the server always accepted `kind` in
+`createNodeInputSchema`, the client just never sent it) — added a targeted **"+ New map"**
+button in `Sidebar.tsx` and **"Add a map inside"** in `NodeView.tsx`'s "⋯" menu, both
+calling `api.createNode(worldId, { title, parentId, kind: "map" })`, rather than building
+a generic kind-picker for kinds nothing renders yet (board/timeline/calendar).
+
+**Verified**: `npm run smoke`'s `== maps ==` section (upload → set image → dimension
+backfill → cross-world asset rejection → marker CRUD → inheritance → override →
+DM-visibility filtering → edit-permission gating); `npm run test:mcp`'s `== maps ==`
+section (`place_marker` → `get_map` shows it → `update_marker` → `delete_marker`); by hand
+in the browser — uploaded a real image via a synthesized `File`/`DataTransfer` (this
+session's browser automation couldn't drive a real OS file picker), dropped two pins,
+linked one to an existing page and confirmed it inherited that page's title with no
+override set, clicked "Open page →" and confirmed real navigation, then set a marker to
+`dm` visibility and confirmed it disappeared from `GET .../map/markers` under "View as a
+player" while a `members` marker stayed visible.
+
+**P4.2, tiling, built and verified**: `services/maps.ts::startTiling()` runs
+`sharp(sourcePath).webp({...}).tile({layout:"google", depth:"onetile", ...}).toFile(...)`
+in the background (fire-and-forget, not awaited by the route handler — same
+no-queue precedent as `index.ts`'s session-purge interval) whenever `setMapImage` sees
+an image over `TILING_THRESHOLD_PX` (2000px on either axis). **Two things worth knowing
+if you touch this again:**
+1. **`sharp`'s tile-layout options must be set *before* `.tile()` is called in the
+   chain**, not after — `sharp(buf).tile({...}).webp(...)` silently produces a single
+   whole-image file instead of a tile directory, no error thrown. Discovered by testing
+   directly against a synthetic image; `sharp(buf).webp(...).tile({...})` is the order
+   that actually works. If tiling ever silently stops producing a directory, check this
+   first.
+2. **Missing-static-file requests used to 200 with the SPA shell instead of 404ing** —
+   `index.ts`'s `setNotFoundHandler` only special-cased `/api/` paths as JSON 404 and
+   sent `index.html` for literally everything else, including a genuinely-missing
+   `/tiles/...` or `/media/...` path. Harmless for Leaflet (a broken `<img>` either way)
+   but a real bug for anything that checks content-type or just `.ok` — fixed by also
+   404-ing `/media/` and `/tiles/` in that handler. Caught by hand in the browser, not
+   by any automated test — a case for occasionally poking at edge-of-viewport tile
+   requests, not just the happy path, in future map work.
+
+Verified: `smoke.mjs`'s tiling checks (upload a large synthetic image, confirm the PUT
+response returns before tiling finishes, poll until `tilingStatus` reaches `ready`,
+confirm `maxZoom` replaced the untiled default, fetch a real tile and confirm it's
+genuinely servable, confirm replacing a tiled map with a small image resets
+`tilingStatus` back to `none`); by hand in the browser (canvas-drawn 2200×2100 test
+image, watched the network log show `ImageOverlay` swap to a live `TileLayer` with no
+reload, confirmed via `img.leaflet-tile` elements in the DOM).
+
+### 7.9 Sidebar right-click menu, the "+ New" chooser, and pinned pages
+
+Three additions the owner asked for after comparing this app to a LegendKeeper trial:
+
+- **Sidebar rows now have their own action menu** (`Sidebar.tsx`'s `menuForId` state),
+  reachable by right-click (`onContextMenu`) or the row's own hover-revealed "⋯"
+  button — previously a sidebar row had *no* actions at all beyond click-to-navigate,
+  drag-to-reorder, and the "+" child-page shortcut; every rename/archive/etc. required
+  first opening the page and using its own header menu. The menu shows "Add a page
+  inside…", "Rename" (inline — turns the row's title into a text input, no popup, same
+  house style as the title field everywhere else), "Pin"/"Unpin", and "Archive". A real
+  bug caught during manual verification: the overlay `<div>` that's supposed to close
+  the menu on an outside click was written with `onClick={(e) => e.stopPropagation()}`
+  instead of also calling `setMenuForId(null)` — it silently ate the click instead of
+  closing anything, so the menu stayed open across unrelated interactions. Fixed;
+  the working pattern (see `dmMenuOpen`'s own overlay a few lines below) is
+  `onClick={() => setX(false)}`, not just `stopPropagation`.
+- **No per-row `canEdit`.** Unlike the page-detail view (which has full `NodeDetail`
+  including `canEdit`), a sidebar row only has `NodeSummary`. Rather than fetch full
+  detail per row just to gate a menu item, Rename/Archive are shown to everyone and the
+  server is the real gate (matching how every other mutation in this app already works)
+  — a rejected PATCH/DELETE just silently reverts the optimistic UI (no toast system
+  exists yet to show a real error for this rare case).
+- **"+ New" replaces the separate "+ New top-level page"/"+ New map" buttons** with one
+  chooser (`CreateChooser.tsx`) — tiles for Lore/Map (Board/Timeline shown disabled,
+  "Soon" — same "declare the shape before it's built" idea as the MCP server's
+  placeholder tools) plus, if the world has any, a list of saved templates to start
+  from. Creating from a template is `api.createNode(worldId, {..., templateId})` —
+  already fully supported server-side since P3 (`createNodeInputSchema` always accepted
+  `templateId`; the client just never had a UI path to send one until now), so this
+  needed zero server changes.
+- **Pinned pages** (`usePinned()` in `App.tsx`, `PinnedStrip.tsx`) — a manually toggled
+  set of node ids, persisted to `localStorage` keyed by world id, same reasoning as
+  `Sidebar.tsx`'s own expand/collapse state: a personal view preference, not campaign
+  content, so it needs no server round-trip and no schema. Rendered as a full-width
+  strip above the sidebar+content row (App.tsx's top-level layout gained a `flex-col`
+  wrapper for this — `Sidebar`'s own root had to change from `h-screen` to `h-full` to
+  fit inside it correctly). Toggled from both the sidebar row menu and the page's own
+  "⋯" menu, so pinning is reachable from wherever you already are.
+
 ---
 
 ## 8. Environment notes and gotchas
@@ -784,6 +1058,16 @@ coordinates land in the wrong place (the pane's screenshot scale disagrees with 
 viewport). A real DOM `.click()` on the same element works instantly. This is a tooling
 artifact, **not an app bug** — do not go hunting for a UI problem that is not there.
 
+In one P4 session, `computer{action:"screenshot"}` also returned a blank frame
+repeatedly even though `read_page`/`get_page_text` confirmed real content was rendered —
+`getBoundingClientRect()` on a real element showed a genuine 0-height viewport at the
+time. Re-verify with `read_page`/`get_page_text`/`javascript_tool` (DOM-level) rather than
+trusting a screenshot alone if a page looks suspiciously blank; only trust "the app is
+actually broken" once a DOM query itself confirms zero/wrong layout, not just an odd
+screenshot. Uploading a real file also isn't possible through this browser pane (no OS
+file picker) — simulate it with a synthesized `File`/`DataTransfer` dispatched onto the
+hidden `<input type="file">`, same as `MapView.tsx`'s upload control uses.
+
 ### 8.6 The dev database
 
 `data/` is gitignored. `npm run smoke` needs an **empty** data directory (it calls
@@ -815,11 +1099,16 @@ where the openapi routes were wired.
 6.2 rots. stdio transport. Configure with `DNDWORLDAPP_URL`, `DNDWORLDAPP_TOKEN` and
 optionally `DNDWORLDAPP_WORLD`.
 
-Registered: `list_worlds`, `get_tree`, `find_nodes`, `get_node`,
-`list_unresolved_links`, `create_node`, `update_node`, `move_node`, `archive_node`,
-`create_post`, `update_post`. Plus `place_marker`, `add_event` and `advance_calendar`,
-which report that they are not built yet — declared on purpose so the eventual shape is
-visible.
+Registered: `list_worlds`, `get_tree`, `get_subtree`, `find_nodes`, `get_node`,
+`list_templates`, `list_unresolved_links`, `create_node`, `update_node`, `move_node`,
+`archive_node`, `create_post`, `update_post`, `set_node_template`, `set_field`,
+`delete_field`, `apply_template` (see §7.7), `get_map`, `place_marker`, `update_marker`,
+`delete_marker` (see §7.8). `get_subtree` renders just one page's descendant hierarchy as
+an indented outline (client-side filter over the same `GET .../tree` payload `get_tree`
+already uses — no new server route), for "find the family/faction/region node, then see
+what's nested under it" without pulling in the whole world. Plus `add_event` and
+`advance_calendar`, which report that they are not built yet — declared on purpose so the
+eventual shape is visible.
 
 Two things to preserve when extending it:
 
@@ -849,9 +1138,11 @@ cold. But nothing currently on the roadmap depends on them.
 ### 9.5 Then, in order
 
 P2 is done (inline secret blocks, DM-driven accounts, per-node ACL, anonymous share
-links, "view as a player," the DM Menu — see §7.2–§7.5). Next: P3 templates + query views
-→ P4 maps → P5 calendars + timelines → P6 play mode → P7 hardening. See
-[PLAN.md](PLAN.md) §8.
+links, "view as a player," the DM Menu — see §7.2–§7.5). P3's templates and typed fields
+are done too (see §7.7), and so is P4's first sub-phase — maps with a source image and
+typed, inheriting markers (see §7.8). Next: P4.2 tiling → P4.3 region/zone polygons →
+P4.4 fog of war → P4.5 party/army tokens → P3's query views → P5 calendars + timelines →
+P6 play mode → P7 hardening. See [PLAN.md](PLAN.md) §8.
 
 ---
 
@@ -868,6 +1159,8 @@ links, "view as a player," the DM Menu — see §7.2–§7.5). Next: P3 template
 | 404 for hidden nodes | 403 would let you enumerate DM content by probing ids. |
 | Whole tree in one request | At campaign scale it beats lazy-loading per level, and it makes filtering and Ctrl+K instant. |
 | Docker-first | It is the actual deploy target, not a packaging afterthought. |
+| Template assignment is one-way, non-retroactive | Editing a template must never silently rewrite content on nodes that already instantiated fields from it. "Re-apply template" is the explicit, by-hand alternative. |
+| Field label/options resolved at read time, not stored per-row | `fields` has no `label` column; storing it would let it drift from the template or need a migration to add. The cost: a deleted/edited template can leave a field showing its bare key. Accepted — see §7.7. |
 
 Things worth stealing from LegendKeeper that are **not built yet** (details in
 [legendkeeper-observations.md](legendkeeper-observations.md)):

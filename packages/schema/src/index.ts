@@ -225,6 +225,218 @@ export const unresolvedLinkSchema = z.object({
 export type UnresolvedLink = z.infer<typeof unresolvedLinkSchema>;
 
 // ---------------------------------------------------------------------------
+// Templates and typed fields (P3) — a Template is a world-scoped, named,
+// ordered list of field DEFINITIONS; assigning one to a node instantiates
+// per-node field VALUES the DM can then edit freely, including diverging
+// from the template (add extra ad hoc fields, skip some). Editing a
+// template's field_schema later never retroactively touches nodes that
+// already instantiated fields from it — see services/templates.ts.
+// ---------------------------------------------------------------------------
+
+export const FIELD_TYPES = [
+  "text",
+  "longtext",
+  "number",
+  "checkbox",
+  "select",
+  "date",
+  "link",
+  "section",
+] as const;
+export type FieldType = (typeof FIELD_TYPES)[number];
+export const fieldTypeSchema = z.enum(FIELD_TYPES);
+
+/** Fields have no creator column, so there is no meaningful 'private' level here. */
+export const FIELD_VISIBILITIES = ["public", "members", "dm"] as const;
+export type FieldVisibility = (typeof FIELD_VISIBILITIES)[number];
+export const fieldVisibilitySchema = z.enum(FIELD_VISIBILITIES);
+
+/**
+ * One field definition inside a template's field_schema array. `key` is the
+ * label the DM actually types and sees — free text, not a machine slug
+ * (matches Kanka's attribute "name"). Array order is field order; there is
+ * no separate sort key at the template level.
+ */
+export const templateFieldDefSchema = z
+  .object({
+    key: z.string().trim().min(1).max(120),
+    type: fieldTypeSchema,
+    label: z.string().trim().min(1).max(120),
+    options: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+    defaultValue: z.union([z.string(), z.number(), z.boolean()]).nullable().optional(),
+    visibility: fieldVisibilitySchema.default("members"),
+  })
+  .refine((f) => f.type !== "select" || (f.options?.length ?? 0) > 0, {
+    message: "A select field needs at least one option.",
+    path: ["options"],
+  });
+export type TemplateFieldDef = z.infer<typeof templateFieldDefSchema>;
+
+const fieldSchemaArray = z
+  .array(templateFieldDefSchema)
+  .max(200)
+  .refine((defs) => new Set(defs.map((d) => d.key)).size === defs.length, {
+    message: "Field keys must be unique within a template.",
+  });
+
+export const createTemplateInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  icon: z.string().max(60).nullable().optional(),
+  fieldSchema: fieldSchemaArray.default([]),
+  defaultBodyMd: z.string().max(2_000_000).default(""),
+});
+export type CreateTemplateInput = z.infer<typeof createTemplateInputSchema>;
+
+export const updateTemplateInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    icon: z.string().max(60).nullable(),
+    fieldSchema: fieldSchemaArray,
+    defaultBodyMd: z.string().max(2_000_000),
+  })
+  .partial();
+export type UpdateTemplateInput = z.infer<typeof updateTemplateInputSchema>;
+
+export const templateDtoSchema = z.object({
+  id: z.string(),
+  worldId: z.string(),
+  name: z.string(),
+  icon: z.string().nullable(),
+  fieldSchema: z.array(templateFieldDefSchema),
+  defaultBodyMd: z.string(),
+  createdAt: z.number().int(),
+  updatedAt: z.number().int(),
+});
+export type TemplateDto = z.infer<typeof templateDtoSchema>;
+
+export const fieldValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+/**
+ * A field VALUE on one node. `label`/`options` are resolved server-side by
+ * matching `key` against the node's assigned template's field_schema (if
+ * any) — the fields table itself has no label column, on purpose: editing a
+ * template later must not retroactively rewrite values already on nodes.
+ */
+export const fieldDtoSchema = z.object({
+  id: z.string(),
+  nodeId: z.string(),
+  key: z.string(),
+  type: fieldTypeSchema,
+  value: fieldValueSchema,
+  /** Present only for type 'link': the referenced node, for display. */
+  refNode: z.object({ id: z.string(), title: z.string(), icon: z.string().nullable() }).nullable().optional(),
+  label: z.string(),
+  options: z.array(z.string()).nullable(),
+  visibility: fieldVisibilitySchema,
+  sortKey: z.string(),
+});
+export type FieldDto = z.infer<typeof fieldDtoSchema>;
+
+/** Ad hoc field creation — only through a template can a field be type 'select'. */
+export const createFieldInputSchema = z.object({
+  key: z.string().trim().min(1).max(120),
+  type: fieldTypeSchema.exclude(["select"]),
+  value: fieldValueSchema.optional(),
+  visibility: fieldVisibilitySchema.default("members"),
+});
+export type CreateFieldInput = z.infer<typeof createFieldInputSchema>;
+
+/** key/type are immutable after creation — only the value and visibility change. */
+export const updateFieldInputSchema = z
+  .object({ value: fieldValueSchema, visibility: fieldVisibilitySchema })
+  .partial();
+export type UpdateFieldInput = z.infer<typeof updateFieldInputSchema>;
+
+export const moveFieldInputSchema = z.object({
+  afterId: z.string().nullable().optional(),
+  beforeId: z.string().nullable().optional(),
+});
+export type MoveFieldInput = z.infer<typeof moveFieldInputSchema>;
+
+// ---------------------------------------------------------------------------
+// Maps (P4) — a map node has at most one `Map` (its source image + pixel bounds)
+// and any number of `MapMarker`s. Markers are one typed table with a `shape`
+// discriminator (pin/label/circle/polygon/path/token) rather than one table per
+// shape, matching how `fields` covers every field type in one table. A marker
+// linked to a node (`targetNodeId`) inherits that node's title/icon unless it sets
+// its own override — resolved at read time in services/maps.ts, the same
+// "don't duplicate, resolve from the source" pattern services/fields.ts already
+// uses for template-seeded labels.
+// ---------------------------------------------------------------------------
+
+export const MARKER_SHAPES = ["pin", "label", "circle", "polygon", "path", "token"] as const;
+export type MarkerShape = (typeof MARKER_SHAPES)[number];
+export const markerShapeSchema = z.enum(MARKER_SHAPES);
+
+export const mapDtoSchema = z.object({
+  nodeId: z.string(),
+  assetUrl: z.string(),
+  width: z.number().int(),
+  height: z.number().int(),
+  minZoom: z.number().int(),
+  maxZoom: z.number().int(),
+  tilingStatus: z.enum(["none", "pending", "running", "ready", "error"]),
+  fogEnabled: z.boolean(),
+});
+export type MapDto = z.infer<typeof mapDtoSchema>;
+
+export const setMapImageInputSchema = z.object({ assetId: z.string() });
+export type SetMapImageInput = z.infer<typeof setMapImageInputSchema>;
+
+/** No `points` length cap beyond the general body-size limits — a hand-drawn region can have many vertices. */
+const pointsSchema = z.string().max(20_000).optional();
+
+export const mapMarkerDtoSchema = z.object({
+  id: z.string(),
+  mapNodeId: z.string(),
+  shape: markerShapeSchema,
+  x: z.number(),
+  y: z.number(),
+  points: z.string().nullable(),
+  label: z.string().nullable(),
+  icon: z.string().nullable(),
+  color: z.string().nullable(),
+  members: z.string().nullable(),
+  revealed: z.boolean(),
+  /** Reuses fields' 3-value visibility scheme — no creator column here either to key a 'private' level off of. */
+  visibility: fieldVisibilitySchema,
+  targetNode: z.object({ id: z.string(), title: z.string(), icon: z.string().nullable() }).nullable(),
+  parentMarkerId: z.string().nullable(),
+});
+export type MapMarkerDto = z.infer<typeof mapMarkerDtoSchema>;
+
+export const createMarkerInputSchema = z.object({
+  shape: markerShapeSchema.default("pin"),
+  x: z.number(),
+  y: z.number(),
+  points: pointsSchema,
+  targetNodeId: z.string().nullable().optional(),
+  label: z.string().max(300).nullable().optional(),
+  icon: z.string().max(60).nullable().optional(),
+  color: z.string().max(60).nullable().optional(),
+  members: z.string().max(2_000).nullable().optional(),
+  visibility: fieldVisibilitySchema.default("members"),
+  parentMarkerId: z.string().nullable().optional(),
+});
+export type CreateMarkerInput = z.infer<typeof createMarkerInputSchema>;
+
+export const updateMarkerInputSchema = z
+  .object({
+    x: z.number(),
+    y: z.number(),
+    points: pointsSchema,
+    targetNodeId: z.string().nullable(),
+    label: z.string().max(300).nullable(),
+    icon: z.string().max(60).nullable(),
+    color: z.string().max(60).nullable(),
+    members: z.string().max(2_000).nullable(),
+    revealed: z.boolean(),
+    visibility: fieldVisibilitySchema,
+  })
+  .partial();
+export type UpdateMarkerInput = z.infer<typeof updateMarkerInputSchema>;
+
+// ---------------------------------------------------------------------------
 // Posts (Kanka's entity notes: a node's DM-only sections live here)
 // ---------------------------------------------------------------------------
 

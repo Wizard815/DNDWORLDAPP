@@ -1,4 +1,4 @@
-import type { NodeKind, Role, Visibility } from "@dndworldapp/schema";
+import type { FieldType, FieldVisibility, MarkerShape, NodeKind, Role, Visibility } from "@dndworldapp/schema";
 
 /** Row shapes, mirroring migrations/*.sql. SQLite booleans are 0/1 integers. */
 
@@ -74,6 +74,67 @@ export type AssetRow = {
   mime: string;
   bytes: number;
   orig_name: string;
+  /** Nullable, lazily backfilled — see services/assets.ts::ensureAssetDimensions. */
+  width: number | null;
+  height: number | null;
   created_by: string | null;
   created_at: number;
+}
+
+export type TemplateRow = {
+  id: string;
+  world_id: string;
+  name: string;
+  icon: string | null;
+  /** JSON: TemplateFieldDef[] — parsed at the service layer. */
+  field_schema: string;
+  default_body_md: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export type FieldRow = {
+  id: string;
+  node_id: string;
+  key: string;
+  type: FieldType;
+  value_text: string | null;
+  value_num: number | null;
+  value_ref: string | null;
+  sort_key: string;
+  visibility: FieldVisibility;
+}
+
+export type MapRow = {
+  node_id: string;
+  asset_id: string;
+  min_zoom: number;
+  max_zoom: number;
+  tiling_status: "none" | "pending" | "running" | "ready" | "error";
+  tiling_error: string | null;
+  fog_enabled: number;
+  fog_mask_updated_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export type MapMarkerRow = {
+  id: string;
+  map_node_id: string;
+  layer_id: string | null;
+  target_node_id: string | null;
+  parent_marker_id: string | null;
+  shape: MarkerShape;
+  x: number;
+  y: number;
+  points: string | null;
+  label: string | null;
+  icon: string | null;
+  color: string | null;
+  members: string | null;
+  revealed: number;
+  visibility: FieldVisibility;
+  created_by: string | null;
+  created_at: number;
+  updated_at: number;
 }

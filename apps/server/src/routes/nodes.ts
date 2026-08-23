@@ -1,8 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
+  createFieldInputSchema,
   createPostInputSchema,
   grantAclInputSchema,
+  moveFieldInputSchema,
   moveNodeInputSchema,
+  updateFieldInputSchema,
   updateNodeInputSchema,
   updatePostInputSchema,
 } from "@dndworldapp/schema";
@@ -10,11 +13,13 @@ import { isGameMaster } from "../auth/policy.ts";
 import type { Viewer } from "../auth/viewer.ts";
 import { db } from "../db/index.ts";
 import { viewerForNode, viewerForWorld } from "../http/context.ts";
-import { forbidden, notFound } from "../lib/errors.ts";
+import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { grantAcl, listAcl, revokeAcl } from "../services/acl.ts";
-import { archiveNode, getNodeDetail, moveNode, updateNode } from "../services/nodes.ts";
+import { createField, deleteField, listFields, moveField, updateField } from "../services/fields.ts";
+import { archiveNode, getNodeDetail, getNodeRow, moveNode, updateNode } from "../services/nodes.ts";
 import { createPost, deletePost, listPosts, updatePost } from "../services/posts.ts";
 import { createShareLink, listShareLinks, revokeShareLink } from "../services/shareLinks.ts";
+import { assignTemplateFields } from "../services/templates.ts";
 
 interface NodeParams {
   nodeId: string;
@@ -29,6 +34,10 @@ interface AclParams {
 interface ShareLinkParams {
   nodeId: string;
   shareLinkId: string;
+}
+interface FieldParams {
+  nodeId: string;
+  fieldId: string;
 }
 
 const selectPostNode = db.prepare("SELECT node_id FROM posts WHERE id = ?");
@@ -136,6 +145,52 @@ export async function nodeRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true };
     },
   );
+
+  /** Typed field values on a node. Same edit gate as a post: canEditNode. */
+  app.get<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/fields", async (request) => {
+    const { viewer } = viewerForNode(request, request.params.nodeId);
+    return { fields: listFields(request.params.nodeId, viewer) };
+  });
+
+  app.post<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/fields", async (request, reply) => {
+    const { viewer } = viewerForNode(request, request.params.nodeId);
+    const input = createFieldInputSchema.parse(request.body);
+    reply.code(201);
+    return { field: createField(request.params.nodeId, viewer, input) };
+  });
+
+  app.patch<{ Params: FieldParams }>("/api/v1/nodes/:nodeId/fields/:fieldId", async (request) => {
+    const { viewer } = viewerForNode(request, request.params.nodeId);
+    const input = updateFieldInputSchema.parse(request.body);
+    return { field: updateField(request.params.nodeId, request.params.fieldId, viewer, input) };
+  });
+
+  app.delete<{ Params: FieldParams }>("/api/v1/nodes/:nodeId/fields/:fieldId", async (request) => {
+    const { viewer } = viewerForNode(request, request.params.nodeId);
+    deleteField(request.params.nodeId, request.params.fieldId, viewer);
+    return { ok: true };
+  });
+
+  app.post<{ Params: FieldParams }>(
+    "/api/v1/nodes/:nodeId/fields/:fieldId/move",
+    async (request) => {
+      const { viewer } = viewerForNode(request, request.params.nodeId);
+      const input = moveFieldInputSchema.parse(request.body);
+      moveField(request.params.nodeId, request.params.fieldId, viewer, input);
+      return { ok: true };
+    },
+  );
+
+  /** Backfills any template fields the node is missing, without disturbing existing values. */
+  app.post<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/apply-template", async (request) => {
+    const { viewer, worldId } = viewerForNode(request, request.params.nodeId);
+    if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can apply templates.");
+    const node = getNodeRow(request.params.nodeId);
+    if (node === null) throw notFound("No such node.");
+    if (node.template_id === null) throw badRequest("This page has no template assigned.");
+    assignTemplateFields(request.params.nodeId, worldId, node.template_id);
+    return { fields: listFields(request.params.nodeId, viewer) };
+  });
 
   /** Posts are addressed directly, so their world comes via the owning node. */
   function viewerForPost(postId: string, request: FastifyRequest): Viewer {

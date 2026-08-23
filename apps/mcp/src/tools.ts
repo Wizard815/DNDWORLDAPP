@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { visibilitySchema } from "@dndworldapp/schema";
+import { fieldVisibilitySchema, markerShapeSchema, visibilitySchema } from "@dndworldapp/schema";
 import type { NodeSummary } from "@dndworldapp/schema";
 import { ApiError, type WorldClient } from "./client.ts";
 
@@ -32,8 +32,20 @@ function fail(error: unknown) {
   return { content: [{ type: "text" as const, text: `Failed: ${message}` }], isError: true };
 }
 
-/** Renders the tree as indented lines — far cheaper for a model to read than JSON. */
-function renderTree(nodes: NodeSummary[]): string {
+function nodeLine(node: NodeSummary, depth: number): string {
+  const marks = [node.kind !== "document" ? node.kind : null, node.visibility !== "members" ? node.visibility : null]
+    .filter(Boolean)
+    .join(", ");
+  return `${"  ".repeat(depth)}- ${node.title} [${node.id}]${marks ? ` (${marks})` : ""}`;
+}
+
+/**
+ * Renders a tree (or, given `rootId`, just one page's descendant hierarchy) as
+ * indented lines — far cheaper for a model to read than JSON. `nodes` is always the
+ * whole world's tree; filtering to one page's subtree happens here, not server-side,
+ * since GET .../tree already returns everything the viewer may see in one call.
+ */
+function renderTree(nodes: NodeSummary[], rootId: string | null = null): string {
   const byParent = new Map<string | null, NodeSummary[]>();
   for (const node of nodes) {
     const list = byParent.get(node.parentId) ?? [];
@@ -45,14 +57,18 @@ function renderTree(nodes: NodeSummary[]): string {
   const lines: string[] = [];
   const walk = (parentId: string | null, depth: number): void => {
     for (const node of byParent.get(parentId) ?? []) {
-      const marks = [node.kind !== "document" ? node.kind : null, node.visibility !== "members" ? node.visibility : null]
-        .filter(Boolean)
-        .join(", ");
-      lines.push(`${"  ".repeat(depth)}- ${node.title} [${node.id}]${marks ? ` (${marks})` : ""}`);
+      lines.push(nodeLine(node, depth));
       walk(node.id, depth + 1);
     }
   };
-  walk(null, 0);
+
+  if (rootId === null) {
+    walk(null, 0);
+  } else {
+    const root = nodes.find((n) => n.id === rootId);
+    if (root !== undefined) lines.push(nodeLine(root, 0));
+    walk(rootId, 1);
+  }
   return lines.join("\n");
 }
 
@@ -97,6 +113,27 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         const { nodes } = await client.tree(worldId);
         if (nodes.length === 0) return text("This world has no pages yet.");
         return text(`${nodes.length} pages:\n\n${renderTree(nodes)}`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_subtree",
+    {
+      title: "Get one page's descendant hierarchy",
+      description:
+        "The pages nested under one page — its children, their children, and so on — as an indented outline, without pulling in the rest of the world. Use this after find_nodes/get_tree has located a page (e.g. a family, faction, or region) to see just the hierarchy underneath it.",
+      inputSchema: { node_id: z.string().describe("The page to root the outline at.") },
+    },
+    async ({ node_id }) => {
+      try {
+        const { node } = await client.node(node_id);
+        const { nodes } = await client.tree(node.worldId);
+        const outline = renderTree(nodes, node_id);
+        const hasChildren = outline.includes("\n");
+        return text(hasChildren ? outline : `"${node.title}" [${node.id}] has no pages inside it.`);
       } catch (error) {
         return fail(error);
       }
@@ -170,6 +207,22 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           }
         }
 
+        const { fields } = await client.fields(node_id);
+        if (fields.length > 0) {
+          parts.push(
+            "",
+            "## Fields",
+            ...fields.map((f) => {
+              if (f.type === "section") return `--- ${f.label} ---`;
+              const value = f.type === "link" && f.refNode !== null && f.refNode !== undefined
+                ? `${f.refNode.title} [${f.refNode.id}]`
+                : String(f.value ?? "(empty)");
+              const vis = f.visibility !== "members" ? ` (${f.visibility})` : "";
+              return `- ${f.label}: ${value}${vis}`;
+            }),
+          );
+        }
+
         if (node.children.length > 0) {
           parts.push("", `## Pages inside`, ...node.children.map((c) => `- ${c.title} [${c.id}]`));
         }
@@ -177,6 +230,33 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           parts.push("", `## Linked from`, ...node.backlinks.map((b) => `- ${b.title} [${b.nodeId}]`));
         }
         return text(parts.join("\n"));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_templates",
+    {
+      title: "List field templates",
+      description:
+        "This world's field-definition templates — each a named, ordered list of typed fields (see set_node_template / set_field to use one).",
+      inputSchema: { world_id: worldIdArg },
+    },
+    async ({ world_id }) => {
+      try {
+        const worldId = await client.resolveWorldId(world_id);
+        const { templates } = await client.templates(worldId);
+        if (templates.length === 0) return text("This world has no templates yet.");
+        return text(
+          templates
+            .map((t) => {
+              const fields = t.fieldSchema.map((f) => `${f.key} (${f.type})`).join(", ");
+              return `${t.icon ?? ""} ${t.name} [${t.id}]${fields.length > 0 ? ` — ${fields}` : ""}`;
+            })
+            .join("\n"),
+        );
       } catch (error) {
         return fail(error);
       }
@@ -365,6 +445,218 @@ export function registerTools(server: McpServer, client: WorldClient): void {
     },
   );
 
+  server.registerTool(
+    "set_node_template",
+    {
+      title: "Assign a field template to a page",
+      description:
+        "Assigns a template, instantiating a blank/default field for each of its definitions the page doesn't already have (by key) — never disturbs a field already there. Pass template_id null to clear it (already-instantiated fields are untouched).",
+      inputSchema: {
+        node_id: z.string(),
+        template_id: z.string().nullable().describe("From list_templates. Null clears the page's template."),
+      },
+    },
+    async ({ node_id, template_id }) => {
+      try {
+        const { node } = await client.updateNode(node_id, { templateId: template_id });
+        return text(`"${node.title}" [${node.id}] now uses template ${node.templateId ?? "(none)"}.`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "set_field",
+    {
+      title: "Set a field's value on a page",
+      description:
+        "The ergonomic way to write a typed field: matches an existing field on the page by key and updates its value, or creates a new ad hoc one if no field with that key exists yet. The field's type is inferred from the JS value's type (string/number/boolean) when creating.",
+      inputSchema: {
+        node_id: z.string(),
+        key: z.string().describe("The field's key, as shown by get_node's Fields section or list_templates."),
+        value: z
+          .union([z.string(), z.number(), z.boolean(), z.null()])
+          .describe("For a link field, pass the target page's id as a string."),
+      },
+    },
+    async ({ node_id, key, value }) => {
+      try {
+        const { fields } = await client.fields(node_id);
+        const existing = fields.find((f) => f.key === key);
+        if (existing !== undefined) {
+          const { field } = await client.updateField(node_id, existing.id, { value });
+          return text(`Set ${field.label} = ${String(field.value ?? "(empty)")} on [${node_id}].`);
+        }
+        const type = typeof value === "boolean" ? "checkbox" : typeof value === "number" ? "number" : "text";
+        const { field } = await client.createField(node_id, { key, type, value, visibility: "members" });
+        return text(`Added field ${field.label} = ${String(field.value ?? "(empty)")} on [${node_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_field",
+    {
+      title: "Delete a field",
+      description:
+        "Remove a field from a page by key, whether it was ad hoc or came from a template. Does not touch the template itself, and does not affect other pages using it.",
+      inputSchema: {
+        node_id: z.string(),
+        key: z.string().describe("The field's key, as shown by get_node's Fields section."),
+      },
+    },
+    async ({ node_id, key }) => {
+      try {
+        const { fields } = await client.fields(node_id);
+        const field = fields.find((f) => f.key === key);
+        if (field === undefined) return text(`No field with key "${key}" on [${node_id}].`);
+        await client.deleteField(node_id, field.id);
+        return text(`Deleted field "${key}" from [${node_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "apply_template",
+    {
+      title: "Re-apply a page's template",
+      description:
+        "Backfills any of the page's template fields it is missing (by key), without disturbing values already set. Use after editing a template's schema to push new fields onto pages that assigned it earlier. Fails if the page has no template.",
+      inputSchema: { node_id: z.string() },
+    },
+    async ({ node_id }) => {
+      try {
+        const { fields } = await client.applyTemplate(node_id);
+        return text(`[${node_id}] now has ${fields.length} field(s).`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_map",
+    {
+      title: "Get a page's map",
+      description:
+        "A map page's source image, pixel bounds, and every marker on it (shape, position, linked page if any) in one call.",
+      inputSchema: { node_id: z.string().describe("The map page's id.") },
+    },
+    async ({ node_id }) => {
+      try {
+        const { map } = await client.map(node_id);
+        const { markers } = await client.mapMarkers(node_id);
+        const parts = [
+          `Map on [${node_id}]: ${map.width}x${map.height}px, zoom ${map.minZoom}-${map.maxZoom}, tiling: ${map.tilingStatus}`,
+        ];
+        if (markers.length === 0) {
+          parts.push("No markers yet.");
+        } else {
+          parts.push(
+            "",
+            "Markers:",
+            ...markers.map((m) => {
+              const target = m.targetNode !== null ? ` -> [${m.targetNode.id}]` : "";
+              const vis = m.visibility !== "members" ? ` (${m.visibility})` : "";
+              return `- [${m.id}] ${m.shape} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${target}${vis}`;
+            }),
+          );
+        }
+        return text(parts.join("\n"));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "place_marker",
+    {
+      title: "Place a marker on a map",
+      description:
+        "Add a pin, label, circle, region polygon, or party/army token to a map page. A marker linked via target_node_id shows that page's title/icon unless label/icon are set explicitly.",
+      inputSchema: {
+        node_id: z.string().describe("The map page's id."),
+        shape: markerShapeSchema.optional().describe("Default 'pin'."),
+        x: z.number().describe("Pixel x position, in the map image's own pixel space."),
+        y: z.number().describe("Pixel y position."),
+        target_node_id: z.string().nullable().optional().describe("A page this marker links to and inherits title/icon from."),
+        label: z.string().optional().describe("Overrides the linked page's title, or names an unlinked marker."),
+        icon: z.string().optional().describe("A single emoji, overriding the linked page's icon."),
+        color: z.string().optional(),
+        members: z.string().optional().describe("Token markers only: freeform description of who's in this group."),
+        visibility: fieldVisibilitySchema.optional().describe("public | members | dm. Default members."),
+      },
+    },
+    async ({ node_id, shape, x, y, target_node_id, label, icon, color, members, visibility }) => {
+      try {
+        const { marker } = await client.createMarker(node_id, {
+          shape: shape ?? "pin",
+          x,
+          y,
+          targetNodeId: target_node_id,
+          label,
+          icon,
+          color,
+          members,
+          visibility: visibility ?? "members",
+        });
+        return text(`Placed ${marker.shape} marker [${marker.id}] at (${marker.x}, ${marker.y}) on [${node_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_marker",
+    {
+      title: "Update a marker",
+      description: "Change a marker's position, links, overrides, or visibility. Use the id from get_map or place_marker.",
+      inputSchema: {
+        marker_id: z.string(),
+        x: z.number().optional(),
+        y: z.number().optional(),
+        target_node_id: z.string().nullable().optional(),
+        label: z.string().nullable().optional(),
+        icon: z.string().nullable().optional(),
+        color: z.string().nullable().optional(),
+        members: z.string().nullable().optional(),
+        visibility: fieldVisibilitySchema.optional(),
+      },
+    },
+    async ({ marker_id, ...input }) => {
+      try {
+        const { marker } = await client.updateMarker(marker_id, input);
+        return text(`Updated marker [${marker.id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_marker",
+    {
+      title: "Delete a marker",
+      description: "Remove a marker from its map. Use the id from get_map or place_marker.",
+      inputSchema: { marker_id: z.string() },
+    },
+    async ({ marker_id }) => {
+      try {
+        await client.deleteMarker(marker_id);
+        return text(`Deleted marker [${marker_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
   // -------------------------------------------------------------------------
   // Declared but not built yet — visible on purpose, so the shape is known.
   // -------------------------------------------------------------------------
@@ -376,7 +668,6 @@ export function registerTools(server: McpServer, client: WorldClient): void {
   });
 
   for (const [name, phase, label] of [
-    ["place_marker", "arrives in P4 with maps", "Place a map marker"],
     ["add_event", "arrives in P5 with calendars", "Add a timeline event"],
     ["advance_calendar", "arrives in P5 with calendars", "Advance the world's current date"],
   ] as const) {

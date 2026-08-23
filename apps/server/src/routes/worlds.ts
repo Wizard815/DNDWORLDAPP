@@ -2,15 +2,18 @@ import type { FastifyInstance } from "fastify";
 import {
   addMemberInputSchema,
   createNodeInputSchema,
+  createTemplateInputSchema,
   createWorldInputSchema,
   resetPasswordInputSchema,
   searchQuerySchema,
+  updateTemplateInputSchema,
 } from "@dndworldapp/schema";
 import { canCreate, isGameMaster } from "../auth/policy.ts";
 import { badRequest, forbidden } from "../lib/errors.ts";
 import { requireUser, viewerForWorld } from "../http/context.ts";
 import { storeAsset } from "../services/assets.ts";
 import { createNode, getTree, searchNodes, unresolvedLinks } from "../services/nodes.ts";
+import { createTemplate, deleteTemplate, listTemplates, updateTemplate } from "../services/templates.ts";
 import {
   addOrCreateMember,
   createWorld,
@@ -24,6 +27,10 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 interface WorldParams {
   worldId: string;
+}
+interface TemplateParams {
+  worldId: string;
+  templateId: string;
 }
 
 export async function worldRoutes(app: FastifyInstance): Promise<void> {
@@ -129,4 +136,38 @@ export async function worldRoutes(app: FastifyInstance): Promise<void> {
     );
     return { asset };
   });
+
+  /** Field-definition templates. Any member reads; only the owner/DM authors them. */
+  app.get<{ Params: WorldParams }>("/api/v1/worlds/:worldId/templates", async (request) => {
+    viewerForWorld(request, request.params.worldId);
+    return { templates: listTemplates(request.params.worldId) };
+  });
+
+  app.post<{ Params: WorldParams }>("/api/v1/worlds/:worldId/templates", async (request, reply) => {
+    const viewer = viewerForWorld(request, request.params.worldId);
+    if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can create templates.");
+    const input = createTemplateInputSchema.parse(request.body);
+    reply.code(201);
+    return { template: createTemplate(request.params.worldId, input) };
+  });
+
+  app.patch<{ Params: TemplateParams }>(
+    "/api/v1/worlds/:worldId/templates/:templateId",
+    async (request) => {
+      const viewer = viewerForWorld(request, request.params.worldId);
+      if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can edit templates.");
+      const input = updateTemplateInputSchema.parse(request.body);
+      return { template: updateTemplate(request.params.templateId, request.params.worldId, input) };
+    },
+  );
+
+  app.delete<{ Params: TemplateParams }>(
+    "/api/v1/worlds/:worldId/templates/:templateId",
+    async (request) => {
+      const viewer = viewerForWorld(request, request.params.worldId);
+      if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can delete templates.");
+      deleteTemplate(request.params.templateId, request.params.worldId);
+      return { ok: true };
+    },
+  );
 }

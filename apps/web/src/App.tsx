@@ -1,19 +1,53 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
-import type { MoveNodeInput, NodeDetail } from "@dndworldapp/schema";
+import type { MoveNodeInput, NodeDetail, NodeKind } from "@dndworldapp/schema";
 import { ApiError, api, setViewAsPlayer } from "./api.ts";
 import { AuthScreen } from "./components/Auth.tsx";
+import { CreateChooser } from "./components/CreateChooser.tsx";
 import { Members } from "./components/Members.tsx";
 import { Backlinks, NodeView } from "./components/NodeView.tsx";
+import { PinnedStrip } from "./components/PinnedStrip.tsx";
 import { QuickSwitcher } from "./components/QuickSwitcher.tsx";
 import { ShareView } from "./components/ShareView.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
+import { Templates } from "./components/Templates.tsx";
 import { Tokens } from "./components/Tokens.tsx";
 import { navigate, nodeIdFromPath, usePath } from "./lib/nav.ts";
 
 function shareTokenFromPath(path: string): string | null {
   const match = /^\/share\/([a-f0-9]+)/.exec(path);
   return match?.[1] ?? null;
+}
+
+/**
+ * Manually pinned pages — a personal view preference, not campaign content, so it's
+ * client-side-only, same reasoning Sidebar.tsx's own expand/collapse state uses.
+ */
+function usePinned(worldId: string) {
+  const storageKey = `dwa:pinned:${worldId}`;
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      return new Set<string>(raw !== null ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      return new Set<string>();
+    }
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem(storageKey, JSON.stringify([...pinnedIds]));
+  }, [pinnedIds, storageKey]);
+
+  const togglePin = useCallback((nodeId: string) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  }, []);
+
+  return { pinnedIds, togglePin };
 }
 
 export function App() {
@@ -23,7 +57,9 @@ export function App() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [tokensOpen, setTokensOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [viewAsPlayer, setViewAsPlayerState] = useState(false);
+  const [createChooser, setCreateChooser] = useState<{ parentId: string | null } | null>(null);
 
   const session = useQuery({
     queryKey: ["me"],
@@ -50,6 +86,7 @@ export function App() {
   });
 
   const world = worlds.data?.worlds[0] ?? null;
+  const { pinnedIds, togglePin } = usePinned(world?.id ?? "");
 
   const tree = useQuery({
     queryKey: ["tree", world?.id],
@@ -108,8 +145,17 @@ export function App() {
   }, [queryClient]);
 
   const createNode = useMutation({
-    mutationFn: ({ parentId, title }: { parentId: string | null; title?: string }) =>
-      api.createNode(world!.id, { title: title ?? "Untitled", parentId }),
+    mutationFn: ({
+      parentId,
+      title,
+      kind,
+      templateId,
+    }: {
+      parentId: string | null;
+      title?: string;
+      kind?: NodeKind;
+      templateId?: string;
+    }) => api.createNode(world!.id, { title: title ?? "Untitled", parentId, kind, templateId }),
     onSuccess: (result) => {
       refreshTree();
       navigate(`/n/${result.node.id}`);
@@ -167,68 +213,97 @@ export function App() {
   const isGameMaster = world.role === "owner" || world.role === "dm";
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar
-        worldName={world.name}
-        nodes={nodes}
-        activeId={activeId}
-        onCreate={(parentId) => createNode.mutate({ parentId })}
-        onMove={(nodeId, input) => moveNode.mutate({ nodeId, input })}
-        onOpenSwitcher={() => setSwitcherOpen(true)}
-        onOpenTokens={() => setTokensOpen(true)}
-        onOpenMembers={() => setMembersOpen(true)}
-        isGameMaster={isGameMaster}
-        viewAsPlayer={viewAsPlayer}
-        onToggleViewAsPlayer={toggleViewAsPlayer}
-        onSignOut={() => {
-          setViewAsPlayer(false);
-          setViewAsPlayerState(false);
-          void api.logout().then(() => queryClient.invalidateQueries());
-        }}
-      />
+    <div className="flex h-screen flex-col overflow-hidden">
+      <PinnedStrip nodes={nodes} pinnedIds={pinnedIds} activeId={activeId} onUnpin={togglePin} />
 
-      {node.data !== undefined ? (
-        <>
-          <NodeView
-            key={node.data.node.id}
-            node={node.data.node}
-            allNodes={nodes}
-            isGameMaster={isGameMaster}
-            onChanged={refreshTree}
-            onCreateChild={(parentId) => createNode.mutate({ parentId })}
-            onCreateNamed={(title) =>
-              createNode.mutate({ parentId: node.data!.node.id, title })
-            }
-            onArchive={archiveNode}
-          />
-          <Backlinks
-            node={node.data.node}
-            onCreateNamed={(title) =>
-              createNode.mutate({ parentId: node.data!.node.id, title })
-            }
-          />
-        </>
-      ) : (
-        <div className="flex-1 p-8 text-sm text-[#7a7d86]">
-          {node.isError ? "That page is not available." : "Pick a page."}
-        </div>
-      )}
-
-      {tokensOpen && (
-        <Tokens worldId={world.id} worldName={world.name} onClose={() => setTokensOpen(false)} />
-      )}
-
-      {membersOpen && (
-        <Members worldId={world.id} canManage={isGameMaster} onClose={() => setMembersOpen(false)} />
-      )}
-
-      {switcherOpen && (
-        <QuickSwitcher
-          worldId={world.id}
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar
+          worldName={world.name}
           nodes={nodes}
-          onClose={() => setSwitcherOpen(false)}
+          activeId={activeId}
+          onOpenCreateChooser={(parentId) => setCreateChooser({ parentId })}
+          onMove={(nodeId, input) => moveNode.mutate({ nodeId, input })}
+          onChanged={refreshTree}
+          pinnedIds={pinnedIds}
+          onTogglePin={togglePin}
+          onOpenSwitcher={() => setSwitcherOpen(true)}
+          onOpenTokens={() => setTokensOpen(true)}
+          onOpenMembers={() => setMembersOpen(true)}
+          onOpenTemplates={() => setTemplatesOpen(true)}
+          isGameMaster={isGameMaster}
+          viewAsPlayer={viewAsPlayer}
+          onToggleViewAsPlayer={toggleViewAsPlayer}
+          onSignOut={() => {
+            setViewAsPlayer(false);
+            setViewAsPlayerState(false);
+            void api.logout().then(() => queryClient.invalidateQueries());
+          }}
         />
-      )}
+
+        {node.data !== undefined ? (
+          <>
+            <NodeView
+              key={node.data.node.id}
+              node={node.data.node}
+              allNodes={nodes}
+              isGameMaster={isGameMaster}
+              onChanged={refreshTree}
+              onOpenCreateChooser={(parentId) => setCreateChooser({ parentId })}
+              onCreateNamed={(title) =>
+                createNode.mutate({ parentId: node.data!.node.id, title })
+              }
+              onArchive={archiveNode}
+              pinnedIds={pinnedIds}
+              onTogglePin={togglePin}
+            />
+            <Backlinks
+              node={node.data.node}
+              allNodes={nodes}
+              onCreateNamed={(title) =>
+                createNode.mutate({ parentId: node.data!.node.id, title })
+              }
+            />
+          </>
+        ) : (
+          <div className="flex-1 p-8 text-sm text-[#7a7d86]">
+            {node.isError ? "That page is not available." : "Pick a page."}
+          </div>
+        )}
+
+        {tokensOpen && (
+          <Tokens worldId={world.id} worldName={world.name} onClose={() => setTokensOpen(false)} />
+        )}
+
+        {membersOpen && (
+          <Members worldId={world.id} canManage={isGameMaster} onClose={() => setMembersOpen(false)} />
+        )}
+
+        {templatesOpen && <Templates worldId={world.id} onClose={() => setTemplatesOpen(false)} />}
+
+        {createChooser !== null && (
+          <CreateChooser
+            worldId={world.id}
+            onClose={() => setCreateChooser(null)}
+            onCreate={(input) => {
+              setCreateChooser(null);
+              createNode.mutate({
+                parentId: createChooser.parentId,
+                title: input.kind === "map" ? "New Map" : "Untitled",
+                kind: input.kind,
+                templateId: input.templateId,
+              });
+            }}
+          />
+        )}
+
+        {switcherOpen && (
+          <QuickSwitcher
+            worldId={world.id}
+            nodes={nodes}
+            onClose={() => setSwitcherOpen(false)}
+          />
+        )}
+      </div>
     </div>
   );
 }

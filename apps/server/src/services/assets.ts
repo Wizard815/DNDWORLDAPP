@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { AssetDto } from "@dndworldapp/schema";
+import sharp from "sharp";
 import { db } from "../db/index.ts";
 import type { AssetRow } from "../db/types.ts";
 import { paths } from "../env.ts";
-import { badRequest } from "../lib/errors.ts";
+import { badRequest, notFound } from "../lib/errors.ts";
 import { shortId } from "../lib/id.ts";
 
 const ALLOWED_MIME = new Set([
@@ -18,10 +19,12 @@ const ALLOWED_MIME = new Set([
 ]);
 
 const selectBySha = db.prepare("SELECT * FROM assets WHERE world_id = ? AND sha256 = ?");
+const selectById = db.prepare("SELECT * FROM assets WHERE id = ?");
 const insertAsset = db.prepare(`
   INSERT INTO assets (id, world_id, sha256, mime, bytes, orig_name, created_by, created_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
+const updateDimensions = db.prepare("UPDATE assets SET width = ?, height = ? WHERE id = ?");
 
 function extensionFor(mime: string, origName: string): string {
   const fromName = path.extname(origName).toLowerCase();
@@ -69,4 +72,31 @@ export function toDto(row: AssetRow): AssetDto {
     bytes: row.bytes,
     origName: row.orig_name,
   };
+}
+
+export function filePathFor(row: AssetRow): string {
+  return path.join(paths.assets, row.sha256.slice(0, 2), `${row.sha256}${extensionFor(row.mime, row.orig_name)}`);
+}
+
+export function getAssetRow(assetId: string): AssetRow | null {
+  return (selectById.get(assetId) as AssetRow | undefined) ?? null;
+}
+
+/**
+ * Lazily backfills width/height by reading only the file's header (sharp's own
+ * metadata() call is already a header read, not a full decode) — mirrors Kanka's
+ * own Image::ensureDimensions(). Not computed at upload time, so ordinary editor
+ * image uploads never pay this cost; only a map, which needs pixel bounds, calls it.
+ */
+export async function ensureAssetDimensions(assetId: string): Promise<{ width: number; height: number }> {
+  const row = getAssetRow(assetId);
+  if (row === null) throw notFound("No such asset.");
+  if (row.width !== null && row.height !== null) return { width: row.width, height: row.height };
+
+  const { width, height } = await sharp(filePathFor(row)).metadata();
+  if (width === undefined || height === undefined) {
+    throw badRequest("Could not read that image's dimensions.");
+  }
+  updateDimensions.run(width, height, assetId);
+  return { width, height };
 }

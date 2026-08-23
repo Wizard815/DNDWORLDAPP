@@ -4,13 +4,22 @@ import type {
   AssetDto,
   Backlink,
   ChangePasswordInput,
+  CreateFieldInput,
+  CreateMarkerInput,
   CreateNodeInput,
+  CreateTemplateInput,
   CreateTokenInput,
   CreatedShareLinkDto,
   CreatedTokenDto,
+  FieldDto,
+  FieldType,
+  FieldVisibility,
   GrantAclInput,
   LoginInput,
+  MapDto,
+  MapMarkerDto,
   MemberDto,
+  MoveFieldInput,
   MoveNodeInput,
   NodeDetail,
   NodeSummary,
@@ -18,8 +27,13 @@ import type {
   SearchHit,
   SetupInput,
   ShareLinkDto,
+  TemplateDto,
+  TemplateFieldDef,
   TokenDto,
+  UpdateFieldInput,
+  UpdateMarkerInput,
   UpdateNodeInput,
+  UpdateTemplateInput,
   UserDto,
   Visibility,
   WorldDto,
@@ -202,6 +216,52 @@ export const api = {
   revokeToken: (tokenId: string) =>
     request<{ ok: true }>(`/tokens/${tokenId}`, { method: "DELETE" }),
 
+  templates: (worldId: string) => request<{ templates: TemplateDto[] }>(`/worlds/${worldId}/templates`),
+
+  createTemplate: (worldId: string, input: CreateTemplateInput) =>
+    request<{ template: TemplateDto }>(`/worlds/${worldId}/templates`, { method: "POST", ...json(input) }),
+
+  updateTemplate: (worldId: string, templateId: string, input: UpdateTemplateInput) =>
+    request<{ template: TemplateDto }>(`/worlds/${worldId}/templates/${templateId}`, {
+      method: "PATCH",
+      ...json(input),
+    }),
+
+  deleteTemplate: (worldId: string, templateId: string) =>
+    request<{ ok: true }>(`/worlds/${worldId}/templates/${templateId}`, { method: "DELETE" }),
+
+  fields: (nodeId: string) => request<{ fields: FieldDto[] }>(`/nodes/${nodeId}/fields`),
+
+  createField: (nodeId: string, input: CreateFieldInput) =>
+    request<{ field: FieldDto }>(`/nodes/${nodeId}/fields`, { method: "POST", ...json(input) }),
+
+  updateField: (nodeId: string, fieldId: string, input: UpdateFieldInput) =>
+    request<{ field: FieldDto }>(`/nodes/${nodeId}/fields/${fieldId}`, { method: "PATCH", ...json(input) }),
+
+  deleteField: (nodeId: string, fieldId: string) =>
+    request<{ ok: true }>(`/nodes/${nodeId}/fields/${fieldId}`, { method: "DELETE" }),
+
+  moveField: (nodeId: string, fieldId: string, input: MoveFieldInput) =>
+    request<{ ok: true }>(`/nodes/${nodeId}/fields/${fieldId}/move`, { method: "POST", ...json(input) }),
+
+  applyTemplate: (nodeId: string) =>
+    request<{ fields: FieldDto[] }>(`/nodes/${nodeId}/apply-template`, { method: "POST" }),
+
+  map: (nodeId: string) => request<{ map: MapDto }>(`/nodes/${nodeId}/map`),
+
+  setMapImage: (nodeId: string, assetId: string) =>
+    request<{ map: MapDto }>(`/nodes/${nodeId}/map`, { method: "PUT", ...json({ assetId }) }),
+
+  mapMarkers: (nodeId: string) => request<{ markers: MapMarkerDto[] }>(`/nodes/${nodeId}/map/markers`),
+
+  createMarker: (nodeId: string, input: CreateMarkerInput) =>
+    request<{ marker: MapMarkerDto }>(`/nodes/${nodeId}/map/markers`, { method: "POST", ...json(input) }),
+
+  updateMarker: (markerId: string, input: UpdateMarkerInput) =>
+    request<{ marker: MapMarkerDto }>(`/markers/${markerId}`, { method: "PATCH", ...json(input) }),
+
+  deleteMarker: (markerId: string) => request<{ ok: true }>(`/markers/${markerId}`, { method: "DELETE" }),
+
   uploadAsset: async (worldId: string, file: File): Promise<AssetDto> => {
     const form = new FormData();
     form.append("file", file);
@@ -219,12 +279,19 @@ export const api = {
 export type {
   AclEntryDto,
   Backlink,
+  FieldDto,
+  FieldType,
+  FieldVisibility,
+  MapDto,
+  MapMarkerDto,
   MemberDto,
   NodeDetail,
   NodeSummary,
   PostDto,
   SearchHit,
   ShareLinkDto,
+  TemplateDto,
+  TemplateFieldDef,
   TokenDto,
   UserDto,
   WorldDto,

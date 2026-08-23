@@ -4,13 +4,14 @@ Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
 
-> **Status, 2026-08-22 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite.
-> No importer is planned.**
+> **Status, 2026-08-23 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite,
+> P3's templates/typed fields, and P4.1+P4.2 of maps (source image + typed markers with
+> inheritance, plus background tiling for large images). No importer is planned.**
 >
 > | | |
 > |---|---|
-> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands, page linking, inline DM-notes sections, columns, hover-to-link) |
-> | **Next** | P3 templates and query views → P4 maps → P5 calendars and timelines → P6 play mode → P7 hardening |
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands, page linking, inline DM-notes sections, columns, hover-to-link) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, and typed, inheriting markers · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Lore/Map/saved templates) · manually pinned pages |
+> | **Next** | P4.3 region/zone polygons → P4.4 fog of war → P4.5 party/army tokens → P3's query views → P5 calendars and timelines → P6 play mode → P7 hardening |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
 > Kanka day to day and will move content over by hand through Kanka's MCP and ours as it
@@ -108,8 +109,8 @@ ever becomes real, the Drizzle schema ports to Postgres without touching app cod
   source of truth; `db/types.ts` mirrors it by hand. An ORM (Drizzle) earns its place at
   P3 when the view engine needs a dynamic query builder — not before.
 - **Assets:** content-hashed files on disk under `$DATA_DIR/assets/`, served at `/media/`
-  (`/assets/` belongs to the client bundle); the DB holds metadata. `sharp` arrives with
-  map tiling at P4.
+  (`/assets/` belongs to the client bundle); the DB holds metadata. `sharp` (✅ added,
+  P4.1) lazily backfills a map image's pixel dimensions; its tiling pipeline lands P4.2.
 - **Client:** React + Vite + TanStack Query, Tailwind. URL state is hand-rolled while
   there is exactly one route shape; a real router lands when there are real routes.
 - **Editor:** a markdown textarea with `[[` autocomplete in P0; replaced in P2.4 by
@@ -119,8 +120,10 @@ ever becomes real, the Drizzle schema ports to Postgres without touching app cod
   Custom nodes for embeds, statblocks and inline query views land with P3/P4. The storage
   format was already final, so the swap touched one component and needed zero server
   changes — see docs/HANDOFF.md §7.6.
-- **Maps:** Leaflet with `CRS.Simple` over pre-cut tiles — the same approach
-  obsidian-leaflet uses and, as it turns out, the same one LegendKeeper uses.
+- **Maps:** Leaflet (via `react-leaflet`) with `CRS.Simple` — pixel-space bounds, y-down,
+  the same convention Kanka and LegendKeeper both use. ✅ P4.1 renders the whole source
+  image via `ImageOverlay`; pre-cut tiles over the same `CRS.Simple` setup land at P4.2
+  for large images.
 - **Auth:** cookie sessions for the browser; scoped bearer tokens for API and MCP.
 - **Realtime (later):** Yjs + y-websocket for live co-editing.
 
@@ -183,17 +186,26 @@ nodes         id, world_id, parent_id, template_id, kind, title, slug, body_md, 
               is_archived, created_by, created_at, updated_at
 posts         id, node_id, title, body_md, visibility, position, created_by
 acl           node_id, subject_type (user|role), subject_id, can_read, can_edit
-templates     id, world_id, name, icon, field_schema (JSON), default_body_md
-fields        node_id, key, type, value_text, value_num, value_date, value_ref
-              -- one row per field so query views can index and filter fast
+templates     id, world_id, name, icon, field_schema (JSON), default_body_md  -- ✅ built
+fields        id, node_id, key, type, value_text, value_num, value_ref, sort_key,
+              visibility  -- ✅ built. one row per field so query views can index and
+              filter fast; date values live in value_text (ISO), label/options are
+              resolved at read time from the node's template, not stored per-row
 links         src_node_id, dst_node_id, kind (wikilink|embed|field_ref), anchor
 relations     src_node_id, dst_node_id, label, reverse_label, attrs (JSON)
 tags          node_id, tag_node_id            -- tags are just nodes
-assets        id, world_id, sha256, mime, width, height, path, orig_name
-maps          node_id, asset_id, min_zoom, max_zoom, bounds, crs
-map_layers    id, map_node_id, name, asset_id, opacity, z, is_default
-map_markers   id, map_node_id, layer_id, x, y, shape, icon, label, target_node_id,
-              visibility
+assets        id, world_id, sha256, mime, bytes, orig_name, width, height  -- ✅ built.
+              width/height nullable, lazily backfilled via sharp (P4.1)
+maps          node_id, asset_id, min_zoom, max_zoom, tiling_status, tiling_error,
+              fog_enabled, fog_mask_updated_at  -- ✅ built (P4.1); tiling/fog columns
+              reserved now, populated starting P4.2/P4.4
+map_layers    id, map_node_id, name, asset_id, is_overlay, opacity, sort_key, is_default
+              -- table exists (P4.1 migration), unused until P4.6 (backlog)
+map_markers   id, map_node_id, layer_id, target_node_id, parent_marker_id, shape, x, y,
+              points, label, icon, color, members, revealed, visibility  -- ✅ built
+              (P4.1). One typed table for pin/label/circle/polygon/path/token — see
+              HANDOFF.md §7.8. label/icon resolve from target_node_id at read time when
+              unset, the same pattern fields.ts uses for template-seeded labels.
 calendars     node_id, schema (JSON: months, weekdays, leap rules, moons, eras)
 dates         node_id, calendar_id, start_abs (int MINUTES), end_abs, precision, lane,
               real_date
@@ -241,10 +253,12 @@ free, and a read-only token provably cannot write through an assistant.
   **A token acts as its owner and inherits their role; scopes only ever narrow that.**
   Tokens cannot manage tokens — that would route around their own scopes and expiry.
 - The **MCP server ships in-repo** (`apps/mcp`) as a thin adapter over that same API,
-  over stdio. Built: `list_worlds`, `get_tree`, `find_nodes`, `get_node`,
-  `list_unresolved_links`, `create_node`, `update_node`, `move_node`, `archive_node`,
-  `create_post`, `update_post`. Declared but not yet implemented, so the shape is
-  visible: `place_marker`, `add_event`, `advance_calendar`.
+  over stdio. Built: `list_worlds`, `get_tree`, `get_subtree`, `find_nodes`, `get_node`,
+  `list_templates`, `list_unresolved_links`, `create_node`, `update_node`, `move_node`,
+  `archive_node`, `create_post`, `update_post`, `set_node_template`, `set_field`,
+  `delete_field`, `apply_template`, `get_map`, `place_marker`, `update_marker`,
+  `delete_marker`. Declared but not yet implemented, so the shape is visible:
+  `add_event`, `advance_calendar`.
 
 Still to come: streamable-HTTP transport for MCP, an `audit_log` so every write is
 attributable, and webhooks so a Discord bot or Foundry can react.
@@ -317,16 +331,47 @@ import is wanted later, both are specified well enough to build from cold.
    sidebar button instead of three, so the sidebar stays uncluttered as the admin surface
    grows. See HANDOFF.md §7.4.
 
-**P3 — Templates and query views.** Template editor, typed fields, then the view engine:
-table, board (kanban), gallery. Views embeddable inside a node body.
+**P3 — Templates and query views.**
 
-**P4 — Maps.** Map nodes, image and tiled layers, pins, pin-to-node targeting, nested
-maps (a pin opens a child map), DM-only markers, polygon regions.
+1. **Field-definition templates and typed fields. ✅ built.** A `Template` is a
+   world-scoped, named, ordered list of field *definitions* (`text | longtext | number |
+   checkbox | select | date | link | section`), authored from the DM Menu's Templates
+   editor. Assigning one to a node instantiates blank/default field *values* there — the
+   DM can then edit them freely, including diverging from the template (extra ad hoc
+   fields, skipped ones). Editing a template's schema later never retroactively touches
+   nodes that already instantiated fields from it; an explicit "re-apply template"
+   action (also an MCP tool, `apply_template`) backfills new fields onto them by hand.
+   Field values render inline in the right rail with no Edit/Save toggle, same house
+   style as everything else — autosave on blur/change, a gold dot marking a `dm`-only
+   field. Migration `0007_fields_unique_key.sql` (one `UNIQUE(node_id, key)` index) was
+   the only schema change needed — `templates` and `fields` were already fully migrated
+   in P0 and sat unused until now. See HANDOFF.md §7.7.
+2. **Query views — not yet built.** table, board (kanban), gallery, embeddable inside a
+   node body.
 
-Store the **source image plus pixel bounds and max zoom**, and treat tiling as a derived
-pipeline step — that is how LegendKeeper does it. Make pin **inheritance the default**:
-in a real world 73 of 77 pins store no name, glyph or colour at all and take everything
-from the page they link to (§10.5).
+**P4 — Maps.** Split into sub-phases; see HANDOFF.md §7.8 for the full design.
+
+1. **Map node + source image + untiled render + typed markers with inheritance. ✅
+   built.** A `kind="map"` node gets a source image (pixel bounds backfilled via
+   `sharp`), rendered through Leaflet's `CRS.Simple` + `ImageOverlay`. Markers are one
+   typed table (`pin | label | circle | polygon | path | token`), and a marker linked to
+   a node inherits that node's title/icon unless overridden — **inheritance is the
+   default**, matching LegendKeeper's evidence that 73 of 77 real pins store no name,
+   glyph or colour at all (§10.5). Nested maps (a pin opens a child map) need no special
+   code — a marker linking to another map node just navigates there like any link.
+2. **Tiling pipeline for large images. ✅ built.** `sharp`'s `tile({layout:"google"})`
+   generates a real Leaflet `{z}/{x}/{y}.webp` pyramid, run as an in-process background
+   task (no queue — see docs/PLAN.md §3) whenever an image exceeds 2000px on either
+   axis; `MapView` swaps `ImageOverlay` for `TileLayer` the moment `tilingStatus` reaches
+   `ready`, with no reload. See HANDOFF.md §7.8.
+3. **Region/zone polygons — not yet built.** Labeled, colored `polygon`-shaped markers
+   for splitting up a map (borders, "off-limits" areas).
+4. **Fog of war — not yet built.** DungeonBoard-style: a map defaults fully hidden once
+   enabled, revealed via a freehand-painted mask and/or toggling a region "revealed".
+5. **Party/army/faction tokens — not yet built.** A `token`-shaped marker with a
+   self-referential parent link, for tracking a splitting party or moving factions.
+6. **Layers — backlog.** Alternate base images / always-on overlays; deprioritized below
+   1–5 per the owner's explicit ask.
 
 **P5 — Calendars, events, timelines.** Calendar schema editor (months, weekdays, leap
 rules, moons, eras), date fields on any node, timeline view with lanes, per-world

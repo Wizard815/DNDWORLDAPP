@@ -34,6 +34,10 @@ const TokenDto = ref("TokenDto", S.tokenDtoSchema);
 const AssetDto = ref("AssetDto", S.assetDtoSchema);
 const AclEntryDto = ref("AclEntryDto", S.aclEntryDtoSchema);
 const ShareLinkDto = ref("ShareLinkDto", S.shareLinkDtoSchema);
+const TemplateDto = ref("TemplateDto", S.templateDtoSchema);
+const FieldDto = ref("FieldDto", S.fieldDtoSchema);
+const MapDto = ref("MapDto", S.mapDtoSchema);
+const MapMarkerDto = ref("MapMarkerDto", S.mapMarkerDtoSchema);
 const ApiError = ref("ApiError", S.apiErrorSchema);
 
 const SetupInput = ref("SetupInput", S.setupInputSchema);
@@ -49,6 +53,14 @@ const CreatePostInput = ref("CreatePostInput", S.createPostInputSchema);
 const UpdatePostInput = ref("UpdatePostInput", S.updatePostInputSchema);
 const CreateTokenInput = ref("CreateTokenInput", S.createTokenInputSchema);
 const GrantAclInput = ref("GrantAclInput", S.grantAclInputSchema);
+const CreateTemplateInput = ref("CreateTemplateInput", S.createTemplateInputSchema);
+const UpdateTemplateInput = ref("UpdateTemplateInput", S.updateTemplateInputSchema);
+const CreateFieldInput = ref("CreateFieldInput", S.createFieldInputSchema);
+const UpdateFieldInput = ref("UpdateFieldInput", S.updateFieldInputSchema);
+const MoveFieldInput = ref("MoveFieldInput", S.moveFieldInputSchema);
+const SetMapImageInput = ref("SetMapImageInput", S.setMapImageInputSchema);
+const CreateMarkerInput = ref("CreateMarkerInput", S.createMarkerInputSchema);
+const UpdateMarkerInput = ref("UpdateMarkerInput", S.updateMarkerInputSchema);
 
 const obj = (properties: Json, required?: string[]): Json => ({
   type: "object",
@@ -258,6 +270,42 @@ const paths: Json = {
       responses: { 200: ok(obj({ asset: AssetDto }, ["asset"])), ...ERRORS },
     },
   },
+  "/worlds/{worldId}/templates": {
+    get: {
+      tags: ["templates"],
+      summary: "This world's field-definition templates",
+      parameters: [pathParam("worldId", "World id")],
+      responses: { 200: ok(obj({ templates: arr(TemplateDto) }, ["templates"])), ...ERRORS },
+    },
+    post: {
+      tags: ["templates"],
+      summary: "Create a template",
+      description:
+        "Owner or DM only. A template is a named, ordered list of field definitions — assigning it to a page instantiates blank/default field values there.",
+      parameters: [pathParam("worldId", "World id")],
+      requestBody: body(CreateTemplateInput),
+      responses: { 201: ok(obj({ template: TemplateDto }, ["template"])), ...ERRORS },
+    },
+  },
+  "/worlds/{worldId}/templates/{templateId}": {
+    patch: {
+      tags: ["templates"],
+      summary: "Update a template's name, icon, default body, or field schema",
+      description:
+        "Owner or DM only. Never retroactively touches pages that already instantiated fields from this template — see POST /nodes/{nodeId}/apply-template to backfill new fields onto them.",
+      parameters: [pathParam("worldId", "World id"), pathParam("templateId", "Template id")],
+      requestBody: body(UpdateTemplateInput),
+      responses: { 200: ok(obj({ template: TemplateDto }, ["template"])), ...ERRORS },
+    },
+    delete: {
+      tags: ["templates"],
+      summary: "Delete a template",
+      description:
+        "Owner or DM only. Pages using it keep their already-instantiated field values; only their templateId is cleared.",
+      parameters: [pathParam("worldId", "World id"), pathParam("templateId", "Template id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
 
   "/nodes/{nodeId}": {
     get: {
@@ -388,6 +436,112 @@ const paths: Json = {
       responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
     },
   },
+  "/nodes/{nodeId}/fields": {
+    get: {
+      tags: ["fields"],
+      summary: "Typed field values on this page that the caller may see",
+      description: "DM-only fields are filtered in SQL, the same as DM posts.",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(obj({ fields: arr(FieldDto) }, ["fields"])), ...ERRORS },
+    },
+    post: {
+      tags: ["fields"],
+      summary: "Add an ad hoc field to this page",
+      description:
+        "Same edit gate as a section. `select`-typed fields can only come from a template (their options live in the template's schema), so this rejects that type.",
+      parameters: [pathParam("nodeId", "Node id")],
+      requestBody: body(CreateFieldInput),
+      responses: { 201: ok(obj({ field: FieldDto }, ["field"])), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/fields/{fieldId}": {
+    patch: {
+      tags: ["fields"],
+      summary: "Update a field's value or visibility",
+      description: "The field's key and type are fixed at creation.",
+      parameters: [pathParam("nodeId", "Node id"), pathParam("fieldId", "Field id")],
+      requestBody: body(UpdateFieldInput),
+      responses: { 200: ok(obj({ field: FieldDto }, ["field"])), ...ERRORS },
+    },
+    delete: {
+      tags: ["fields"],
+      summary: "Delete a field",
+      parameters: [pathParam("nodeId", "Node id"), pathParam("fieldId", "Field id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/fields/{fieldId}/move": {
+    post: {
+      tags: ["fields"],
+      summary: "Reorder a field among its siblings",
+      description: "Give the fields to sit between; the server mints a fractional sort key.",
+      parameters: [pathParam("nodeId", "Node id"), pathParam("fieldId", "Field id")],
+      requestBody: body(MoveFieldInput),
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/apply-template": {
+    post: {
+      tags: ["fields"],
+      summary: "Backfill any of the page's template fields it is missing",
+      description:
+        "Owner or DM only. Adds a blank/default field for each template def the page doesn't already have by key, in schema order; never disturbs a value already there. 400 if the page has no template.",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(obj({ fields: arr(FieldDto) }, ["fields"])), ...ERRORS },
+    },
+  },
+
+  "/nodes/{nodeId}/map": {
+    get: {
+      tags: ["maps"],
+      summary: "A page's map — source image, pixel bounds, and tiling status",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(obj({ map: MapDto }, ["map"])), ...ERRORS },
+    },
+    put: {
+      tags: ["maps"],
+      summary: "Set or replace a page's map source image",
+      description:
+        "The image must already be an uploaded asset in this world (see POST /worlds/{worldId}/assets). Replacing the image resets tiling.",
+      parameters: [pathParam("nodeId", "Node id")],
+      requestBody: body(SetMapImageInput),
+      responses: { 200: ok(obj({ map: MapDto }, ["map"])), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/map/markers": {
+    get: {
+      tags: ["maps"],
+      summary: "Markers on this map that the caller may see",
+      description: "DM-only markers are filtered in SQL, the same as DM fields and posts.",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(obj({ markers: arr(MapMarkerDto) }, ["markers"])), ...ERRORS },
+    },
+    post: {
+      tags: ["maps"],
+      summary: "Add a marker to this map",
+      description:
+        "A marker linked to a page (targetNodeId) shows that page's title/icon unless label/icon are set explicitly. Same edit gate as a field.",
+      parameters: [pathParam("nodeId", "Node id")],
+      requestBody: body(CreateMarkerInput),
+      responses: { 201: ok(obj({ marker: MapMarkerDto }, ["marker"])), ...ERRORS },
+    },
+  },
+  "/markers/{markerId}": {
+    patch: {
+      tags: ["maps"],
+      summary: "Update a marker",
+      parameters: [pathParam("markerId", "Marker id")],
+      requestBody: body(UpdateMarkerInput),
+      responses: { 200: ok(obj({ marker: MapMarkerDto }, ["marker"])), ...ERRORS },
+    },
+    delete: {
+      tags: ["maps"],
+      summary: "Delete a marker",
+      parameters: [pathParam("markerId", "Marker id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+
   "/share/{token}/tree": {
     get: {
       tags: ["share-links"],
@@ -486,6 +640,9 @@ export function buildOpenApiDocument(version = "0.1.0"): Json {
       { name: "posts", description: "Sections on a page, each with its own visibility" },
       { name: "members", description: "Who is in a world, and their role" },
       { name: "acl", description: "Per-page access grants, on top of a page's own visibility" },
+      { name: "templates", description: "World-scoped field-definition templates" },
+      { name: "fields", description: "Typed field values on a page, optionally seeded by a template" },
+      { name: "maps", description: "A page's map image, pixel bounds, and markers" },
       {
         name: "share-links",
         description: "Anonymous, no-account read access to one page's subtree via a URL token",

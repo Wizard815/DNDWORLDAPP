@@ -20,6 +20,7 @@ export const env = {
 export const paths = {
   db: path.join(env.dataDir, "worldapp.db"),
   assets: path.join(env.dataDir, "assets"),
+  tiles: path.join(env.dataDir, "tiles"),
 };
 
 /** Refuse to boot a production container with the development secret. */

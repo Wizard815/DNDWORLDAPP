@@ -12,6 +12,7 @@ import { assertProductionSafe, env, paths } from "./env.ts";
 import { assertScope, attachUser } from "./http/context.ts";
 import { HttpError, forbidden } from "./lib/errors.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { mapRoutes } from "./routes/maps.ts";
 import { nodeRoutes } from "./routes/nodes.ts";
 import { openApiRoutes } from "./routes/openapi.ts";
 import { shareRoutes } from "./routes/share.ts";
@@ -102,6 +103,7 @@ app.get("/healthz", async () => ({
 await app.register(authRoutes);
 await app.register(worldRoutes);
 await app.register(nodeRoutes);
+await app.register(mapRoutes);
 await app.register(shareRoutes);
 await app.register(tokenRoutes);
 await app.register(openApiRoutes);
@@ -117,11 +119,24 @@ await app.register(fastifyStatic, {
   immutable: true,
 });
 
+// Map tile pyramids, one directory per map node. Not content-addressed (a map's
+// tiles are replaced wholesale when its source image changes), so no long-lived
+// cache header — see services/maps.ts's startTiling().
+await app.register(fastifyStatic, {
+  root: paths.tiles,
+  prefix: "/tiles/",
+  decorateReply: false,
+});
+
 // The built client, when it exists. In development Vite serves it on its own port.
 if (fs.existsSync(webDist)) {
   await app.register(fastifyStatic, { root: webDist, prefix: "/", decorateReply: true });
   app.setNotFoundHandler((request, reply) => {
-    if (request.url.startsWith("/api/")) {
+    // A missing static file (a stale/never-generated map tile, an asset that was never
+    // uploaded) must 404 for real — falling through to the SPA shell would silently
+    // hand back index.html with a 200, which content-type-agnostic callers (an <img>
+    // tag, a fetch() checking only .ok) can't distinguish from a genuine hit.
+    if (request.url.startsWith("/api/") || request.url.startsWith("/media/") || request.url.startsWith("/tiles/")) {
       return reply.code(404).send({ error: { code: "not_found", message: "No such endpoint." } });
     }
     return reply.sendFile("index.html");

@@ -19,6 +19,7 @@ import { keyAfterAll, keyBetween } from "../lib/sortkey.ts";
 import { slugify, uniqueSlug } from "../lib/slug.ts";
 import { linkKey, parseWikilinks } from "../lib/wikilinks.ts";
 import { canEditNode } from "./acl.ts";
+import { assertTemplateInWorld, assignTemplateFields } from "./templates.ts";
 
 /**
  * "Can this viewer read a node?" is node visibility OR a per-node ACL grant —
@@ -301,13 +302,15 @@ export function createNode(worldId: string, viewer: Viewer, input: CreateNodeInp
   const id = shortId();
   const title = input.title.trim().length > 0 ? input.title.trim() : "Untitled";
   const now = Date.now();
+  const templateId = input.templateId ?? null;
+  if (templateId !== null) assertTemplateInWorld(templateId, worldId);
 
   const row = transaction((): NodeRow => {
     insertNode.run({
       id,
       worldId,
       parentId,
-      templateId: input.templateId ?? null,
+      templateId,
       kind: input.kind ?? "document",
       title,
       slug: uniqueSlug(title, (s) => slugTaken.get(worldId, s) !== undefined),
@@ -322,6 +325,7 @@ export function createNode(worldId: string, viewer: Viewer, input: CreateNodeInp
     reindexLinks(created);
     resettleLinksFor(created);
     reindexFts(created);
+    if (templateId !== null) assignTemplateFields(id, worldId, templateId);
     return created;
   });
 
@@ -348,6 +352,10 @@ export function updateNode(nodeId: string, viewer: Viewer, input: UpdateNodeInpu
     ? uniqueSlug(title, (s) => s !== existing.slug && slugTaken.get(existing.world_id, s) !== undefined)
     : existing.slug;
 
+  const templateId = input.templateId !== undefined ? input.templateId : existing.template_id;
+  const templateChanged = templateId !== null && templateId !== existing.template_id;
+  if (templateChanged) assertTemplateInWorld(templateId, existing.world_id);
+
   return transaction((): NodeRow => {
     db.prepare(
       `UPDATE nodes SET title = ?, slug = ?, body_md = ?, icon = ?, visibility = ?,
@@ -359,7 +367,7 @@ export function updateNode(nodeId: string, viewer: Viewer, input: UpdateNodeInpu
       input.bodyMd ?? existing.body_md,
       input.icon !== undefined ? input.icon : existing.icon,
       input.visibility ?? existing.visibility,
-      input.templateId !== undefined ? input.templateId : existing.template_id,
+      templateId,
       input.isArchived !== undefined ? (input.isArchived ? 1 : 0) : existing.is_archived,
       Date.now(),
       nodeId,
@@ -369,6 +377,7 @@ export function updateNode(nodeId: string, viewer: Viewer, input: UpdateNodeInpu
     if (input.bodyMd !== undefined) reindexLinks(updated);
     if (renaming) resettleLinksFor(updated);
     if (input.bodyMd !== undefined || renaming) reindexFts(updated);
+    if (templateChanged) assignTemplateFields(nodeId, existing.world_id, templateId);
     return updated;
   });
 }
