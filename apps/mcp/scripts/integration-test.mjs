@@ -290,8 +290,35 @@ check("get_map reflects the updated label", mapAfterUpdate.text.includes("Old Wa
 
 const markerDeleted = await callTool("delete_marker", { marker_id: markerId });
 check("delete_marker removes it", !markerDeleted.isError && markerDeleted.text.includes("Deleted"), markerDeleted.text);
+
+// P4.3 — region polygons through MCP: place with `points`, update them, and get_map reports the vertex count.
+const regionPlaced = await callTool("place_marker", {
+  node_id: mapNodeId,
+  shape: "polygon",
+  x: 0.5,
+  y: 0.5,
+  label: "The Salt Flats",
+  points: "0,0 0,1 1,1 1,0",
+});
+check("place_marker accepts a polygon with points", !regionPlaced.isError && regionPlaced.text.includes("Placed"), regionPlaced.text);
+const regionId = regionPlaced.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+check("place_marker's response carries the region's id", typeof regionId === "string", regionPlaced.text);
+
+const regionMap = await callTool("get_map", { node_id: mapNodeId });
+check("get_map reports the region's vertex count", regionMap.text.includes("[4 vertices]"), regionMap.text);
+
+const regionResized = await callTool("update_marker", { marker_id: regionId, points: "0,0 0,1 1,1" });
+check("update_marker can redraw a region's points", !regionResized.isError, regionResized.text);
+const regionMap2 = await callTool("get_map", { node_id: mapNodeId });
+check("get_map reflects the redrawn vertex count", regionMap2.text.includes("[3 vertices]"), regionMap2.text);
+
+const regionRejected = await callTool("place_marker", { node_id: mapNodeId, shape: "polygon", x: 0, y: 0, points: "0,0 1,1" });
+check("a polygon with too few vertices is rejected with a clear error", regionRejected.isError && regionRejected.text.includes("400"), regionRejected.text);
+
+const regionDeleted = await callTool("delete_marker", { marker_id: regionId });
+check("a region can be deleted", !regionDeleted.isError, regionDeleted.text);
 const mapAfterDelete = await callTool("get_map", { node_id: mapNodeId });
-check("get_map shows no markers once the only one is deleted", mapAfterDelete.text.includes("No markers yet"), mapAfterDelete.text);
+check("get_map shows no markers once the last one is deleted", mapAfterDelete.text.includes("No markers yet"), mapAfterDelete.text);
 
 console.log("\n== guard rails ==");
 const notYet = await callTool("add_event");

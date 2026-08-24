@@ -1,6 +1,6 @@
 # HANDOFF — read this first
 
-Written 2026-08-21, last updated 2026-08-22, for whoever (human or agent) picks this up
+Written 2026-08-21, last updated 2026-08-23, for whoever (human or agent) picks this up
 next.
 
 This document is the operating manual: what exists, why it is shaped this way, which
@@ -49,17 +49,20 @@ If you are about to add a table called `characters`, or a nav section called
 ## 3. Current status
 
 **P0, P1 and P2 are complete, plus a P2.4 editor rewrite, P3's templates/typed fields, and
-P4.1's maps (source image + typed markers with inheritance — the first sub-phase of P4;
-tiling/regions/fog/tokens/layers are not built yet).** No bulk importer is planned — see
+P4.1–P4.3 of maps (source image + typed markers with inheritance, background tiling for
+large images, and labeled/colored region/zone polygons — fog/tokens/layers are not built
+yet).** No bulk importer is planned — see
 §9.4.
 
 Verified by:
-- `npm test` — 20 unit tests (fractional indexing, wiki-link parsing, secret blocks). All
-  pass.
-- `npm run smoke` — 167 end-to-end API checks against a running server, run against an
+- `npm test` — 31 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
+  the P4.3 marker-points parser). All pass.
+- `npm run smoke` — 193 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
-  for P3 (see §7.7) and the `== maps ==` section added for P4.1 (see §7.8).
-- `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All pass.
+  for P3 (see §7.7) and the `== maps ==` section added for P4.1 (see §7.8), now extended
+  with the P4.3 polygon/region block and its DM-leak assertion.
+- `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All
+  pass (57 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow).
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
 - Driven by hand in a browser: login → tree → page → posts → rendered wiki links →
@@ -127,16 +130,41 @@ to fix it; it just stopped being true once the renderer changed.
   `fields` rows when assigned; DM Menu → Templates to author one, a node's "⋯" menu to
   assign/re-apply. Fields render inline with no Edit/Save toggle, same as everything
   else. See §7.7.
-- **Maps: source image + typed, inheriting markers** (P4, sub-phase 1) — a `kind="map"`
-  node renders through Leaflet `CRS.Simple`; `pin`/`label`/`circle` markers can link to
-  any node and inherit its title/icon unless overridden. "+ New map" in the sidebar,
-  "Add a map inside" in a node's "⋯" menu. See §7.8.
+- **Maps: source image, tiling, typed/inheriting markers, region polygons** (P4,
+  sub-phases 1–3) — a `kind="map"` node renders through Leaflet `CRS.Simple`, swaps to
+  a `sharp`-generated tile pyramid past 2000px, and carries `pin`/`label`/`circle`
+  markers that link to any node and inherit its title/icon unless overridden, plus
+  drawable, labeled/colored `polygon`/`path` region/zone shapes (freehand draw,
+  redraw from the inspector, server-validated vertex counts). "+ New map" in the
+  sidebar, "Add a map inside" in a node's "⋯" menu, a "🖼 Replace image" button in the
+  map toolbar to swap a map's source image after the fact. See §7.8.
 
 ### Not started
 
-Map tiling/region polygons/fog of war/party tokens/layers (P4.2–P4.6), calendars,
-timelines, the query/view engine (table/board/gallery), statblocks, initiative, realtime.
-No importer is planned — see §9.4.
+Fog of war/party tokens/layers (P4.4–P4.6), calendars, timelines, the query/view
+engine (table/board/gallery), statblocks, initiative, realtime. No importer is planned
+— see §9.4.
+
+### Known open items (check these before starting new work)
+
+- **Still owed**: a broader best-practices/other-bugs audit was requested and never
+  started — the session that requested it got redirected onto the UI-feedback batch
+  (§7.9), then a push-and-stop, then the P4.3-patch evaluation and map bugs below. Only
+  the *security* half of "audit for vulnerabilities, then best-practices/bugs" ran (the
+  two real findings from that pass are already fixed and covered by regression tests —
+  see §6.5 and the `requireOwnMarker`/`requireOwnField` visibility checks). The
+  best-practices/bugs half has not happened yet.
+- **Unconfirmed**: sidebar "⋯" / top-bar "Page actions" / right-click reported
+  unresponsive around the map page, in the owner's own browser. Not reproduced in
+  automated testing this session — see §7.8's last paragraph for what was tried and the
+  leading (stale-tab) theory. Get a hard-refresh confirmation and, if it still happens,
+  exact repro steps before touching anything.
+- **Not yet asked for a screenshot on**: the owner said the map "still looks bad" after
+  the CRS fix, without specifics. The fix is verified correct at the network level (real
+  tiles load at the coordinates `sharp` actually generated), but "looks bad" could mean
+  something purely visual (blurry at a low initial zoom — expected tile-pyramid
+  behavior, not a bug — vs. a genuine rendering defect). Ask for a screenshot before
+  assuming either way.
 
 ---
 
@@ -152,7 +180,7 @@ apps/server/
   migrations/0006_share_links.sql  Anonymous share links — see §7.5
   migrations/0007_fields_unique_key.sql  UNIQUE(node_id, key) on fields — see §7.7
   migrations/0008_maps.sql   maps, map_markers, map_layers, assets.width/height — §7.8
-  scripts/smoke.mjs          167-check end-to-end API test. Needs an empty data dir.
+  scripts/smoke.mjs          193-check end-to-end API test. Needs an empty data dir.
   src/
     index.ts                 Fastify app: plugins, error handler, static serving, boot
     env.ts                   Config from env vars; refuses prod boot with the dev secret
@@ -184,8 +212,8 @@ apps/server/
       shareLinks.ts          Anonymous share links — see §7.5
       templates.ts           Field-definition templates + instantiation — see §7.7
       fields.ts              Typed per-node field values — see §7.7
-      maps.ts                Map image + typed markers, inheritance resolved at read
-                              time — see §7.8
+      maps.ts                Map image + typed markers (incl. region/zone polygons),
+                              inheritance + point validation at read/write time — §7.8
     routes/
       auth.ts                setup, login, logout, me, self-service change-password
       worlds.ts              worlds, tree, search, members (add/create/remove/reset-pw),
@@ -446,7 +474,8 @@ PUT    /nodes/:nodeId/map                   { assetId } — set/replace the map'
                                             image (canEditNode gate)
 GET    /nodes/:nodeId/map/markers           visibility-filtered — §7.8
 POST   /nodes/:nodeId/map/markers           { shape, x, y, targetNodeId?, label?, icon?,
-                                            color?, members?, visibility }
+                                            color?, points? (polygon/path only), members?,
+                                            visibility } — points validated per shape, see §7.8
 PATCH  /markers/:markerId                   (canEditNode on the owning map node)
 DELETE /markers/:markerId
 
@@ -957,6 +986,118 @@ genuinely servable, confirm replacing a tiled map with a small image resets
 image, watched the network log show `ImageOverlay` swap to a live `TileLayer` with no
 reload, confirmed via `img.leaflet-tile` elements in the DOM).
 
+**P4.3, region/zone polygons, built and verified.** The `polygon` and `path` marker
+shapes that 0008 reserved (and whose `points` column had no validation at all until
+now) are now the full feature: labeled, colored polygons that split up a map —
+borders, "off-limits" areas, named zones — plus an open `path` (polyline) for routes.
+What actually changed:
+- **`packages/schema` now owns the `points` format.** `parseMarkerPoints()` (strict:
+  `"x,y x,y ..."`, whitespace-separated, one integer/decimal pair per vertex, no
+  exponents, a 2,000-vertex cap) and `formatMarkerPoints()` (canonical single-space,
+  2-decimal rounding) are the one definition of well-formedness, so the draw UI, the
+  REST API, and the MCP server cannot drift apart. `points` on the create/update input
+  schemas is `refine`d against it; a malformed string 400s at the route boundary
+  instead of being stored and never being fixable.
+- **`services/maps.ts` enforces shape-specific semantics** (it knows `shape`; the
+  schema package doesn't): a `polygon` needs ≥ 3 vertices, a `path` ≥ 2, and no other
+  shape may carry points at all. Points are canonicalized on write (the stored bytes
+  are always `formatMarkerPoints(parseMarkerPoints(input))`), so a producer sending
+  `"10,20  30,40"` with a double space stores the same string the draw UI would.
+  PATCH with no `points` leaves the shape untouched; a `polygon`'s points can never be
+  cleared — delete the marker (a "region with no vertices" is a contradiction the UI
+  exposes no path to).
+- **`MapView.tsx` gained a draw mode.** The toolbar's polygon/path buttons start a
+  draft instead of a click-to-place: click adds a vertex, double-click (or the Done
+  button) finishes, Escape or Cancel aborts, and the live preview is a translucent
+  `Polygon`/`Polyline` with vertex circles and a close button — pan/zoom stay live
+  while drawing (Kanka-style free drawing; the map's `dblclick` zoom is suspended
+  only while a draft is active, because Leaflet fires two clicks before every
+  dblclick and the draft handler must own the vertex list to strip that phantom pair).
+  New shapes render as a filled/clickable `Polygon` (or stroked `Polyline`) with a
+  draggable label anchor at the marker's own x/y, and the marker inspector gained a
+  **Redraw shape** button that re-enters draw mode pre-targeted at the existing
+  marker (the draft commit PATCHes its `points` instead of creating a new marker).
+  Polygon/path markers are also the only markers that get the `color` field a real UI
+  for (pins keep their fixed palette; regions need a color of their own).
+- **MCP:** `place_marker`/`update_marker` accept `points` (documented as polygon/path
+  only), `get_map` reports a vertex count per shape marker, and the
+  `integration-test.mjs` `== maps ==` section exercises the full place→read→redraw→
+  reject-too-few-vertices→delete flow.
+- **`smoke.mjs` `== maps ==`** gained the P4.3 block: create/canonicalize, vertex-minimum
+  400s for both shapes, non-shape-with-points rejection, malformed-points rejection,
+  redraw via PATCH, and the §6.5 DM-leak assertion — a `dm`-visibility region must be
+  invisible in the player's marker list *and* 404 on a direct PATCH even for a player
+  who holds edit rights on the map (the check re-grants edit rights for its duration
+  on purpose — without them the 403 from `requireMapNode` masks the
+  marker-visibility rule, which is the exact leak §6.5 exists to catch).
+
+Verified: 12 new unit tests on the parser (`apps/server/src/lib/marker-points.test.ts`
+— `npm test` is now 31), the full `== maps ==` smoke section (including the new DM-leak
+assertion) against a fresh server, `test:mcp` end-to-end over stdio, `typecheck` clean
+on all three packages, and `build` green. Not yet covered: drawing in a real browser
+(the automated checks hit the API and MCP, not the Leaflet interaction layer) — the
+draw-mode state machine is small and typechecked, but the first human draw is the real
+acceptance test, especially double-click-to-finish at high zoom.
+
+**P4.3's provenance is unusual and worth recording**: this sub-phase was implemented
+independently by the owner's own locally-hosted model (Hermes 3.8 27B, a quantized
+GGUF, run through `llama-server`), producing a standalone patch file rather than a
+live branch. It was reviewed hunk-by-hunk (not merged on trust), then verified for
+real: applied cleanly with `git apply` onto the pushed P4.1/P4.2 code, `npm run
+typecheck` clean across all three packages, `npm test` (31/31 including its own new
+`marker-points.test.ts`), and the full `npm run smoke` suite green against a live
+instance on an isolated port/data dir. It correctly scoped itself to zero schema/route
+changes (reusing what P4.1's migration already reserved), built on top of the
+`requireOwnMarker` visibility fix from this same session rather than reverting it, and
+independently reproduced the §6.5 DM-leak-on-mutation test convention for its own new
+surface. Genuinely mergeable quality — noted here so a future session doesn't assume
+every line was written by whichever agent's session log claims the phase.
+
+**A real bug found afterward, in P4.1/P4.2's own code, not the P4.3 patch**: the first
+time a real (non-synthetic) image over 2000px was tiled and opened in an actual
+browser, the map rendered as a wall of 404s / effectively blank. Root cause was two
+compounding issues in `MapView.tsx`, both invisible until that point because
+`ImageOverlay` (P4.1's untiled path) doesn't care about either:
+1. `L.CRS.Simple`'s default `transformation` negates y (`point.y = -lat`), but this
+   app's pixel space is y-down (row 0 at the top). Every row below the top edge landed
+   in *negative* internal point-space.
+2. `L.CRS.Simple`'s `scale(zoom) = 2^zoom` means a raw pixel coordinate only equals its
+   Leaflet point-space coordinate at *one* zoom — the deepest/native tiled zoom, not
+   zoom 0 — but bounds and every marker position were using raw pixel numbers directly
+   at every zoom.
+Both combined to make `TileLayer` request tile rows/columns nowhere near what `sharp`
+actually generated (e.g. `/tiles/<id>/0/5/-9.webp` when zoom 0 only ever has a single
+`0/0/0.webp`). Fixed with a custom `PIXEL_CRS` (`new L.Transformation(1, 0, 1, 0)`, no
+negation) plus a `scaleFor(map)` factor (`2^maxZoom` once tiled, `1` before) threaded
+through every pixel↔latlng conversion point in `MapView.tsx` — bounds, pin/circle/label
+markers, drag handlers, and the P4.3 draw tool's click/vertex handling. Verified by
+actually loading a real 3072×4096 photo through the tiling pipeline in a browser and
+confirming the tile requests land on real, servable files — the smoke suite's tiling
+check only confirms a tile file exists on disk, not which coordinates a real Leaflet
+instance requests, so this class of bug won't be caught by `npm run smoke` alone; a
+manual browser pass with a real, non-synthetic large image is the only thing that
+actually exercises this path.
+
+**A missing feature, also found while chasing the above**: there was no way to replace
+a map's source image once one was set — the upload control only rendered in the
+"no image yet" branch of `MapView.tsx`. Added a **🖼 Replace image** button to the
+always-visible map toolbar (reuses the existing `setMapImage` upload flow verbatim);
+an upload error now surfaces as a small toast near the toolbar instead of only in the
+empty-map state.
+
+**Open, unconfirmed as of this writing**: the owner reported the sidebar's per-row "⋯"
+menu and the top-bar "Page actions" ⋯ button becoming unresponsive, and right-click not
+opening a context menu, while on/around the map page — in their own browser, after
+several rapid rebuilds landed under an already-open tab. It was **not reproduced**
+in this session's automated browser testing (the "Page actions" dropdown was confirmed
+to open via a direct script-driven click; an earlier attempt that looked like a hang was
+actually reading the DOM before React's render had committed, a false alarm from the test
+method, not the app). Leading theory is a stale tab holding an old JS bundle across a
+`vite build` that changed the asset hash mid-session — ask the owner to hard-refresh
+(Ctrl+Shift+R) before investigating further, and get exact repro steps (which button,
+which page, immediately before vs. after) if it still reproduces. Do not assume this is
+fixed; it is unconfirmed either way.
+
 ### 7.9 Sidebar right-click menu, the "+ New" chooser, and pinned pages
 
 Three additions the owner asked for after comparing this app to a LegendKeeper trial:
@@ -1139,10 +1280,10 @@ cold. But nothing currently on the roadmap depends on them.
 
 P2 is done (inline secret blocks, DM-driven accounts, per-node ACL, anonymous share
 links, "view as a player," the DM Menu — see §7.2–§7.5). P3's templates and typed fields
-are done too (see §7.7), and so is P4's first sub-phase — maps with a source image and
-typed, inheriting markers (see §7.8). Next: P4.2 tiling → P4.3 region/zone polygons →
-P4.4 fog of war → P4.5 party/army tokens → P3's query views → P5 calendars + timelines →
-P6 play mode → P7 hardening. See [PLAN.md](PLAN.md) §8.
+are done too (see §7.7), and so are P4's first three sub-phases — maps with a source
+image, background tiling, typed/inheriting markers, and labeled/colored region/zone
+polygons (see §7.8). Next: P4.4 fog of war → P4.5 party/army tokens → P3's query views →
+P5 calendars + timelines → P6 play mode → P7 hardening. See [PLAN.md](PLAN.md) §8.
 
 ---
 

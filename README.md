@@ -7,16 +7,16 @@ One tree. Anything nests inside anything. A map is a page, a timeline is a page,
 character is a page — type is a filter, not a folder you are forced to live in.
 
 **Status: P0, P1 and P2 done, plus a P2.4 editor rewrite, P3's templates/typed fields,
-and P4.1+P4.2 of maps** — the spine, scoped API tokens, a generated OpenAPI spec, an MCP
+and P4.1–P4.3 of maps** — the spine, scoped API tokens, a generated OpenAPI spec, an MCP
 server, inline `:::secret` blocks, username/password accounts with a DM member panel (no
 email, ever — this is self-hosted with no mail server), per-node ACL overrides,
 anonymous share links, "view as a player," a live TipTap document editor (slash
 commands, page linking, inline DM-notes sections, columns, hover-to-link),
 field-definition templates with typed per-node fields, map nodes (Leaflet `CRS.Simple`,
-a source image with background tiling for large ones, and typed markers that inherit a
-linked page's title/icon), a sidebar right-click/⋯ row menu, a "+ New" tile chooser
-(Lore/Map/saved templates), and manually pinned pages.
-Next: region/zone polygons, fog of war, and party/army tokens (P4.3–P4.5), then query
+a source image with background tiling for large ones, typed markers that inherit a
+linked page's title/icon, and drawable region/zone polygons), a sidebar right-click/⋯
+row menu, a "+ New" tile chooser (Lore/Map/saved templates), and manually pinned pages.
+Next: fog of war and party/army tokens (P4.4–P4.5), then query
 views (table/board/gallery). No bulk importer is planned; content moves in through the
 API/MCP as needed.
 
@@ -105,12 +105,15 @@ uploaded images. Backup is a copy of that directory.
   inline like everything else. Editing a template later never rewrites pages that already
   used it — an explicit "Re-apply template" backfills new fields onto them by hand.
 - **Maps.** The "+ New" chooser's Map tile creates a page that renders through Leaflet
-  instead of the document editor: upload a source image, then drop pins/labels/circles.
+  instead of the document editor: upload a source image (replaceable later from the map
+  toolbar), then drop pins/labels/circles, or draw region/zone polygons (click to place a
+  vertex, double-click to finish) that you can label, recolor and redraw from the marker
+  inspector.
   A marker linked to another page shows that page's title and icon automatically unless
   you override them — and if the linked page is itself a map, clicking the pin opens it,
   giving you nested maps for free. Images over 2000px tile automatically in the
-  background (no page reload needed once ready). Region/zone polygons, fog of war, and
-  party/army tokens are next.
+  background (no page reload needed once ready). Fog of war and party/army tokens are
+  next.
 - **A sidebar row menu, reachable by right-click or its own "⋯" button** — add a page
   inside, rename in place, pin, or archive, without first opening the page.
 - **Manually pinned pages** — a strip of quick-access chips at the top of the app,
@@ -163,7 +166,7 @@ drift from what the server actually validates:
 
 ## What does not exist yet
 
-Map tiling, region/zone polygons, fog of war, party/army tokens, map layers, calendars,
+Fog of war, party/army tokens, map layers, calendars,
 timelines, query views, boards, statblocks. Those are the rest of P4 through P6 in the
 plan, in that order. No bulk importer from Kanka or LegendKeeper is planned — content
 moves over by hand through the API/MCP as needed.
@@ -199,7 +202,7 @@ docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.js
 
 ```bash
 npm test          # unit: fractional indexing, wiki-link parsing, secret blocks
-npm run smoke     # 167 end-to-end API checks (needs an EMPTY data/ dir + running server)
+npm run smoke     # 193 end-to-end API checks (needs an EMPTY data/ dir + running server)
 npm run test:mcp  # drives the MCP server over stdio (needs a running server)
 npm run typecheck
 ```

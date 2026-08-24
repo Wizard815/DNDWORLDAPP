@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { fieldVisibilitySchema, markerShapeSchema, visibilitySchema } from "@dndworldapp/schema";
+import { fieldVisibilitySchema, markerShapeSchema, parseMarkerPoints, visibilitySchema } from "@dndworldapp/schema";
 import type { NodeSummary } from "@dndworldapp/schema";
 import { ApiError, type WorldClient } from "./client.ts";
 
@@ -563,7 +563,11 @@ export function registerTools(server: McpServer, client: WorldClient): void {
             ...markers.map((m) => {
               const target = m.targetNode !== null ? ` -> [${m.targetNode.id}]` : "";
               const vis = m.visibility !== "members" ? ` (${m.visibility})` : "";
-              return `- [${m.id}] ${m.shape} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${target}${vis}`;
+              const vertices =
+                m.points !== null && m.points !== ""
+                  ? ` [${parseMarkerPoints(m.points)?.length ?? 0} vertices]`
+                  : "";
+              return `- [${m.id}] ${m.shape} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${vertices}${target}${vis}`;
             }),
           );
         }
@@ -589,11 +593,17 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         label: z.string().optional().describe("Overrides the linked page's title, or names an unlinked marker."),
         icon: z.string().optional().describe("A single emoji, overriding the linked page's icon."),
         color: z.string().optional(),
+        points: z
+          .string()
+          .optional()
+          .describe(
+            'Polygon/path markers only: vertices as "x,y x,y ..." in the map\'s pixel space (polygon needs >= 3, path >= 2). Ignored for other shapes.',
+          ),
         members: z.string().optional().describe("Token markers only: freeform description of who's in this group."),
         visibility: fieldVisibilitySchema.optional().describe("public | members | dm. Default members."),
       },
     },
-    async ({ node_id, shape, x, y, target_node_id, label, icon, color, members, visibility }) => {
+    async ({ node_id, shape, x, y, target_node_id, label, icon, color, points, members, visibility }) => {
       try {
         const { marker } = await client.createMarker(node_id, {
           shape: shape ?? "pin",
@@ -603,10 +613,14 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           label,
           icon,
           color,
+          points,
           members,
           visibility: visibility ?? "members",
         });
-        return text(`Placed ${marker.shape} marker [${marker.id}] at (${marker.x}, ${marker.y}) on [${node_id}].`);
+        const vertexCount = parseMarkerPoints(marker.points)?.length ?? 0;
+        return text(
+          `Placed ${marker.shape} marker [${marker.id}] at (${marker.x}, ${marker.y})${vertexCount > 0 ? ` with ${vertexCount} vertices` : ""} on [${node_id}].`,
+        );
       } catch (error) {
         return fail(error);
       }
@@ -626,6 +640,12 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         label: z.string().nullable().optional(),
         icon: z.string().nullable().optional(),
         color: z.string().nullable().optional(),
+        points: z
+          .string()
+          .optional()
+          .describe(
+            'Polygon/path markers only: vertices as "x,y x,y ..." in the map\'s pixel space. Replaces the whole shape; to remove one, delete the marker.',
+          ),
         members: z.string().nullable().optional(),
         visibility: fieldVisibilitySchema.optional(),
       },

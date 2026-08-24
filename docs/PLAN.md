@@ -5,13 +5,14 @@ Deploy target: **a Docker container on the homelab.** That is the product, not a
 packaging step.
 
 > **Status, 2026-08-23 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite,
-> P3's templates/typed fields, and P4.1+P4.2 of maps (source image + typed markers with
-> inheritance, plus background tiling for large images). No importer is planned.**
+> P3's templates/typed fields, and P4.1–P4.3 of maps (source image + typed markers with
+> inheritance, background tiling for large images, and labeled/colored region/zone
+> polygons). No importer is planned.**
 >
 > | | |
 > |---|---|
-> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands, page linking, inline DM-notes sections, columns, hover-to-link) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, and typed, inheriting markers · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Lore/Map/saved templates) · manually pinned pages |
-> | **Next** | P4.3 region/zone polygons → P4.4 fog of war → P4.5 party/army tokens → P3's query views → P5 calendars and timelines → P6 play mode → P7 hardening |
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands, page linking, inline DM-notes sections, columns, hover-to-link) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, typed/inheriting markers, and drawable region/zone polygons (labeled, colored, with a redraw flow) · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Lore/Map/saved templates) · manually pinned pages |
+> | **Next** | P4.4 fog of war → P4.5 party/army tokens → P3's query views → P5 calendars and timelines → P6 play mode → P7 hardening |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
 > Kanka day to day and will move content over by hand through Kanka's MCP and ours as it
@@ -364,8 +365,26 @@ import is wanted later, both are specified well enough to build from cold.
    task (no queue — see docs/PLAN.md §3) whenever an image exceeds 2000px on either
    axis; `MapView` swaps `ImageOverlay` for `TileLayer` the moment `tilingStatus` reaches
    `ready`, with no reload. See HANDOFF.md §7.8.
-3. **Region/zone polygons — not yet built.** Labeled, colored `polygon`-shaped markers
-   for splitting up a map (borders, "off-limits" areas).
+3. **Region/zone polygons. ✅ built.** Labeled, colored `polygon`-shaped markers for
+   splitting up a map (borders, "off-limits" areas), drawn freehand in the map's pixel
+   space (click adds a vertex, double-click finishes), with a `path` (open polyline)
+   variant, a redraw flow in the marker inspector, and server-side validation that
+   polygon needs ≥ 3 and path ≥ 2 vertices. `points` is stored in the shared
+   `packages/schema` parser (`parseMarkerPoints`/`formatMarkerPoints`) so the draw UI,
+   the REST API, and the MCP server all agree on the `"x,y x,y ..."` format. Built by the
+   owner's own local model (Hermes 3.8 27B) as a standalone patch, reviewed and verified
+   before merging — see HANDOFF.md §7.8 for the full provenance note and the review
+   result.
+   - **Bug found and fixed after merging, in P4.1/P4.2's own code**: `MapView.tsx`'s
+     `L.CRS.Simple` usage negated the app's y-down pixel space and used raw pixel
+     coordinates at every zoom despite `CRS.Simple`'s `scale(zoom) = 2^zoom`, so a real
+     tiled image (anything over 2000px, first hit with a real photo rather than a
+     synthetic test image) rendered as a wall of 404s in the browser. `ImageOverlay`
+     (the untiled P4.1 path) never exposed this. Fixed with a custom CRS transformation
+     plus a per-map scale factor threaded through every marker/bounds conversion. See
+     HANDOFF.md §7.8.
+   - **Missing feature found the same time**: no way to replace a map's source image
+     once set. Added a "🖼 Replace image" toolbar button.
 4. **Fog of war — not yet built.** DungeonBoard-style: a map defaults fully hidden once
    enabled, revealed via a freehand-painted mask and/or toggling a region "revealed".
 5. **Party/army/faction tokens — not yet built.** A `token`-shaped marker with a

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { CreateMarkerInput, MapDto, MapMarkerDto, UpdateMarkerInput } from "@dndworldapp/schema";
+import { formatMarkerPoints, parseMarkerPoints } from "@dndworldapp/schema";
 import sharp from "sharp";
 import { readableLevels } from "../auth/policy.ts";
 import type { Viewer } from "../auth/viewer.ts";
@@ -184,6 +185,47 @@ function requireMapNode(nodeId: string, viewer: Viewer) {
   return node;
 }
 
+// ---------------------------------------------------------------------------
+// Marker points (P4.3) — the shared parser (packages/schema) already guarantees
+// well-formedness by the time input.points reaches here; what remains is
+// shape-specific semantics, which live here because `shape` is in scope.
+// ---------------------------------------------------------------------------
+
+/**
+ * `polygon` needs at least 3 vertices (fewer is not a region) and `path` at
+ * least 2; no other shape carries points at all. Returns `null` for a shape that
+ * has no points, and the CANONICALIZED string otherwise (re-serialized through
+ * formatMarkerPoints so the stored form is always the normalized one the client
+ * and MCP parse from — a producer sending "10,20  30,40" with a double space
+ * gets the same stored bytes as the draw UI would).
+ */
+function validateAndNormalizePoints(
+  shape: CreateMarkerInput["shape"],
+  rawPoints: string | undefined,
+): string | null {
+  if (shape !== "polygon" && shape !== "path") {
+    if (rawPoints !== undefined) throw badRequest(`${shape} markers do not carry points.`);
+    return null;
+  }
+  const points = parseMarkerPoints(rawPoints);
+  if (points === null) throw badRequest("points are required for polygon and path markers.");
+  const minVertices = shape === "polygon" ? 3 : 2;
+  if (points.length < minVertices) {
+    throw badRequest(`A ${shape} needs at least ${minVertices} vertices; got ${points.length}.`);
+  }
+  return formatMarkerPoints(points);
+}
+
+/** The same check for a PATCH that omits shape — resolves the shape from the existing marker. */
+function validatePointsForUpdate(
+  shape: MapMarkerRow["shape"],
+  rawPoints: string | undefined,
+  existingPoints: string | null,
+): string | null {
+  if (rawPoints === undefined) return existingPoints;
+  return validateAndNormalizePoints(shape, rawPoints);
+}
+
 export function createMarker(mapNodeId: string, viewer: Viewer, input: CreateMarkerInput): MapMarkerDto {
   const node = requireMapNode(mapNodeId, viewer);
   if (input.targetNodeId !== null && input.targetNodeId !== undefined) {
@@ -198,6 +240,7 @@ export function createMarker(mapNodeId: string, viewer: Viewer, input: CreateMar
       throw badRequest("That marker to split from is not on this map.");
     }
   }
+  const points = validateAndNormalizePoints(input.shape, input.points);
 
   const id = shortId(12);
   const now = Date.now();
@@ -209,7 +252,7 @@ export function createMarker(mapNodeId: string, viewer: Viewer, input: CreateMar
     input.shape,
     input.x,
     input.y,
-    input.points ?? null,
+    points,
     input.label ?? null,
     input.icon ?? null,
     input.color ?? null,
@@ -255,7 +298,7 @@ export function updateMarker(
   updateMarkerStmt.run(
     input.x ?? existing.x,
     input.y ?? existing.y,
-    input.points !== undefined ? input.points : existing.points,
+    validatePointsForUpdate(existing.shape, input.points, existing.points),
     input.targetNodeId !== undefined ? input.targetNodeId : existing.target_node_id,
     input.label !== undefined ? input.label : existing.label,
     input.icon !== undefined ? input.icon : existing.icon,

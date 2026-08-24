@@ -972,6 +972,120 @@ check(
 );
 await dm("DELETE", `/nodes/${mapNode.id}/acl/${mapEditGrant.body.entry.id}`);
 
+// ---------------------------------------------------------------------------
+// P4.3 — region/zone polygons (shape "polygon"/"path" carry a `points` string).
+// The shared parser (packages/schema) guarantees well-formedness; here we pin the
+// API-level contract: shape-specific vertex minimums, canonicalization on write,
+// and the §6.5 rule that every new surface gets a DM-leak assertion.
+// ---------------------------------------------------------------------------
+const region = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "polygon",
+  x: 120,
+  y: 90,
+  points: "10,10  100,10 100,80 10,80", // note the double space — must be canonicalized
+  color: "#c9a227",
+  label: "The Salt Flats",
+  visibility: "members",
+});
+check(
+  "a region (polygon) can be created with 4 vertices and its own color",
+  region.status === 201 && region.body.marker.color === "#c9a227" && region.body.marker.points === "10,10 100,10 100,80 10,80",
+  region.body,
+);
+
+const badRegion = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "polygon",
+  x: 0,
+  y: 0,
+  points: "1,1 2,2",
+  visibility: "members",
+});
+check("a polygon with only 2 vertices is rejected (not a region)", badRegion.status === 400, badRegion.body);
+
+const regionNoPoints = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "polygon",
+  x: 0,
+  y: 0,
+  visibility: "members",
+});
+check("a polygon with no points at all is rejected", regionNoPoints.status === 400, regionNoPoints.body);
+
+const pinWithPoints = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "pin",
+  x: 0,
+  y: 0,
+  points: "1,1 2,2 3,3",
+  visibility: "members",
+});
+check("a non-shape marker cannot carry points", pinWithPoints.status === 400, pinWithPoints.body);
+
+const trail = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "path",
+  x: 5,
+  y: 5,
+  points: "0,0 5,5 9,12",
+  visibility: "members",
+});
+check("a path (polyline) needs at least 2 vertices and stores them", trail.status === 201 && trail.body.marker.points !== null, trail.body);
+
+const badPath = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "path",
+  x: 0,
+  y: 0,
+  points: "1,1",
+  visibility: "members",
+});
+check("a path with a single vertex is rejected", badPath.status === 400, badPath.body);
+
+const malformedPoints = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "polygon",
+  x: 0,
+  y: 0,
+  points: "1,1 2,2 1,,3",
+  visibility: "members",
+});
+check("a malformed points string (empty coord) is rejected", malformedPoints.status === 400, malformedPoints.body);
+
+// Redraw: replace the whole shape via PATCH (the client's "Redraw shape" does exactly this).
+const redrawn = await dm("PATCH", `/markers/${region.body.marker.id}`, {
+  points: "20,20 200,20 200,200 20,200",
+  x: 110,
+  y: 110,
+});
+check("a region's points can be redrawn (fully replaced) via PATCH", redrawn.status === 200 && redrawn.body.marker.points === "20,20 200,20 200,200 20,200", redrawn.body.marker);
+
+// §6.5 — a new surface, so a new DM-leak assertion: a dm-visibility region must be
+// invisible to a player both in the list AND on direct PATCH (hidden means 404).
+// The PATCH check needs the player to hold edit rights on the map — otherwise the
+// 403 from requireMapNode masks the marker-visibility rule — so grant them for the
+// duration of this block, exactly like the earlier dm-label check does.
+const secretRegion = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "polygon",
+  x: 0,
+  y: 0,
+  points: "1,1 50,1 50,50 1,50",
+  label: "Hidden Vault Outline",
+  visibility: "dm",
+});
+check("a DM-only region is created", secretRegion.status === 201, secretRegion.body);
+const playerRegionList = (await player("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers;
+check(
+  "a player never sees the dm-visibility region in the marker list",
+  !playerRegionList.some((m) => m.id === secretRegion.body.marker.id),
+  playerRegionList.map((m) => m.id),
+);
+const regionEditGrant = await dm("POST", `/nodes/${mapNode.id}/acl`, { subjectType: "user", subjectId: player1Id, canRead: true, canEdit: true });
+const playerPatchRegion = await player("PATCH", `/markers/${secretRegion.body.marker.id}`, { label: "snooped" });
+check(
+  "nor can a player with edit rights on the map edit a dm-visibility region they cannot see (404, not 200)",
+  playerPatchRegion.status === 404,
+  playerPatchRegion.body,
+);
+await dm("DELETE", `/nodes/${mapNode.id}/acl/${regionEditGrant.body.entry.id}`);
+
+const deletedRegion = await dm("DELETE", `/markers/${trail.body.marker.id}`);
+check("a path marker can be deleted", deletedRegion.status === 200, deletedRegion.body);
+
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);
 check("archive succeeds", archived.status === 200, archived.body);

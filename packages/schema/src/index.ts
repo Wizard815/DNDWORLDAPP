@@ -383,8 +383,74 @@ export type MapDto = z.infer<typeof mapDtoSchema>;
 export const setMapImageInputSchema = z.object({ assetId: z.string() });
 export type SetMapImageInput = z.infer<typeof setMapImageInputSchema>;
 
-/** No `points` length cap beyond the general body-size limits — a hand-drawn region can have many vertices. */
-const pointsSchema = z.string().max(20_000).optional();
+// ---------------------------------------------------------------------------
+// Marker points (P4.3) — polygon/path vertices, stored as ONE string in the map's
+// own pixel space: "x,y x,y ..." (Kanka's custom_shape format). The string is
+// what round-trips through the DB/API/MCP; the parsed form (number pairs) is what
+// the client renders and what the server validates. Both directions live here so
+// the draw UI, the API validation, and the MCP server can never disagree on what
+// a valid shape is.
+//
+// Well-formedness (parseable, finite, within the vertex cap) is enforced by the
+// schema below and is reusable by the client + MCP. Shape-specific *semantics*
+// (a polygon needs ≥ 3 vertices, a path ≥ 2, and only polygon/path carry points)
+// are enforced in services/maps.ts, where input.shape is in scope, as 400s.
+// ---------------------------------------------------------------------------
+
+/** A single vertex in the map's pixel space, as [x, y]. */
+export type MarkerPoint = [number, number];
+
+/** Hard vertex cap. The 20k-char length cap already bounds this loosely; this is a tighter, shape-aware guard against a pathological points blob. */
+export const MAX_MARKER_POINTS = 2_000;
+
+// One coordinate: optional sign, integer or decimal, but no exponent/whitespace.
+// ".5" and "5." are both rejected on purpose — the draw UI and any sane producer
+// never emit them, so accepting them only widens the surface we have to reason about.
+const COORD_RE = /^[+-]?\d+(?:\.\d+)?$/;
+
+/**
+ * Parse a stored/`points` string into vertices. Returns `null` when there is no
+ * usable shape (absent, or empty/whitespace-only); returns `null` for anything that
+ * is not well-formed, so callers can treat "null" uniformly as "no valid points".
+ */
+export function parseMarkerPoints(raw: string | null | undefined): MarkerPoint[] | null {
+  if (raw === null || raw === undefined) return null;
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const out: MarkerPoint[] = [];
+  for (const token of trimmed.split(/\s+/)) {
+    const parts = token.split(",");
+    if (parts.length !== 2) return null; // "1,2,3" is not one vertex
+    if (!COORD_RE.test(parts[0]!) || !COORD_RE.test(parts[1]!)) return null;
+    out.push([Number(parts[0]), Number(parts[1])]);
+  }
+  if (out.length === 0 || out.length > MAX_MARKER_POINTS) return null;
+  return out;
+}
+
+/** True when `raw` parses into at least one well-formed vertex. */
+export function isWellFormedPoints(raw: string): boolean {
+  return (parseMarkerPoints(raw)?.length ?? 0) > 0;
+}
+
+/**
+ * Serialize vertices back to the storage string. Rounds each coordinate to 2
+ * decimal places — sub-pixel precision is meaningless for a hand-drawn region and
+ * it keeps the string well under the length cap even for dense shapes. Full-
+ * precision values from an API/MCP producer are stored verbatim by the server and
+ * still parse fine; rounding is only a draw-UI compactness convenience.
+ */
+export function formatMarkerPoints(points: MarkerPoint[]): string {
+  const round = (v: number) => Math.round(v * 100) / 100;
+  return points.map(([x, y]) => `${round(x)},${round(y)}`).join(" ");
+}
+
+/** A `points` field as it appears on marker *input*: a well-formed, non-empty vertex string (or absent). */
+const pointsSchema = z
+  .string()
+  .max(20_000)
+  .refine(isWellFormedPoints, { message: "points must be a non-empty \"x,y x,y ...\" list in the map's pixel space." })
+  .optional();
 
 export const mapMarkerDtoSchema = z.object({
   id: z.string(),
