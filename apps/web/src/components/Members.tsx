@@ -134,7 +134,7 @@ export function Members({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   type="text"
-                  placeholder="Password (10+ characters)"
+                  placeholder="Password"
                   required={newAccount}
                   className="min-w-0 flex-1 rounded-md border border-[#33363d] bg-[#17181b] px-3 py-2 text-sm outline-none focus:border-[#4a4d55]"
                 />
@@ -240,7 +240,7 @@ function MemberRow({
           <input
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="New password (10+ characters)"
+            placeholder="New password"
             required
             className="min-w-0 flex-1 rounded-md border border-[#33363d] bg-[#17181b] px-2 py-1.5 text-xs outline-none focus:border-[#4a4d55]"
           />

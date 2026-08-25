@@ -12,6 +12,46 @@ body {
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+/*
+ * Leaflet's own stylesheet (leaflet/dist/leaflet.css) ships light-mode chrome —
+ * white zoom buttons, a white attribution strip, a light `.leaflet-container`
+ * fallback background — none of which was ever restyled, so a map sat inside
+ * this dark app as a bright, foreign-looking rectangle full of white UI. Two
+ * of these had to be `!important`: `.leaflet-container`'s own background
+ * because MapView.tsx's Tailwind `bg-[#0e0f11]` class and this stylesheet's
+ * `.leaflet-container` rule have equal specificity, so whichever loads later
+ * in the bundle wins the tie — not reliable to depend on — and
+ * `.leaflet-bar a`'s background for the same reason (it's one of Leaflet's
+ * own higher-specificity rules). Scoped to Leaflet's own class names, which
+ * only this app's maps use, so nothing else is affected.
+ */
+.leaflet-container {
+  background: #17181b !important;
+}
+.leaflet-bar {
+  border: none !important;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 40%) !important;
+}
+.leaflet-bar a {
+  background: #22242a !important;
+  color: #d7d8dc !important;
+  border-bottom: 1px solid #33363d !important;
+}
+.leaflet-bar a:hover {
+  background: #2b2e35 !important;
+}
+.leaflet-bar a.leaflet-disabled {
+  background: #1a1c20 !important;
+  color: #5c5f67 !important;
+}
+.leaflet-control-attribution {
+  background: rgb(23 24 27 / 85%) !important;
+  color: #7a7d86 !important;
+}
+.leaflet-control-attribution a {
+  color: #9db8ff !important;
+}
+
 /* Wiki links: an existing page reads as a link, a missing one as a to-do. */
 .wikilink {
   color: #9db8ff;

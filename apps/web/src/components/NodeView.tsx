@@ -148,7 +148,7 @@ export function NodeView({
                         }}
                         className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
                       >
-                        Add a page inside…
+                        Add a page under…
                       </button>
                       <button
                         type="button"
@@ -291,7 +291,7 @@ export function NodeView({
           {node.children.length > 0 && (
             <section className="mt-10">
               <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">
-                Pages inside
+                Child pages
               </h2>
               <ul className="grid gap-1 sm:grid-cols-2">
                 {node.children.map((child) => (
@@ -320,7 +320,7 @@ export function NodeView({
             onClick={() => onOpenCreateChooser(node.id)}
             className="mt-4 rounded px-2 py-1.5 text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
           >
-            + Add a page inside {node.title}
+            + Add a page under {node.title}
           </button>
         </div>
       </div>
@@ -470,7 +470,7 @@ export function Backlinks({
           <dd className={VISIBILITY_CLASS[node.visibility].split(" ")[0]}>{node.visibility}</dd>
         </div>
         <div className="flex justify-between">
-          <dt>Pages inside</dt>
+          <dt>Children</dt>
           <dd className="text-[#b6b8bf]">{node.children.length}</dd>
         </div>
         <div className="flex justify-between">

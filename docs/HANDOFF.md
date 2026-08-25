@@ -49,10 +49,10 @@ If you are about to add a table called `characters`, or a nav section called
 ## 3. Current status
 
 **P0, P1 and P2 are complete, plus a P2.4 editor rewrite, P3's templates/typed fields, and
-P4.1–P4.3 of maps (source image + typed markers with inheritance, background tiling for
-large images, and labeled/colored region/zone polygons — fog/tokens/layers are not built
-yet).** No bulk importer is planned — see
-§9.4.
+P4.1–P4.3 and P4.5 of maps (source image + typed markers with inheritance, background
+tiling for large images, labeled/colored region/zone polygons with full per-vertex
+editing, and party/army tokens with group-dominant visibility — fog and layers, P4.4 and
+P4.6, are not built yet).** No bulk importer is planned — see §9.4.
 
 Verified by:
 - `npm test` — 31 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
@@ -130,41 +130,67 @@ to fix it; it just stopped being true once the renderer changed.
   `fields` rows when assigned; DM Menu → Templates to author one, a node's "⋯" menu to
   assign/re-apply. Fields render inline with no Edit/Save toggle, same as everything
   else. See §7.7.
-- **Maps: source image, tiling, typed/inheriting markers, region polygons** (P4,
-  sub-phases 1–3) — a `kind="map"` node renders through Leaflet `CRS.Simple`, swaps to
-  a `sharp`-generated tile pyramid past 2000px, and carries `pin`/`label`/`circle`
-  markers that link to any node and inherit its title/icon unless overridden, plus
-  drawable, labeled/colored `polygon`/`path` region/zone shapes (freehand draw,
-  redraw from the inspector, server-validated vertex counts). "+ New map" in the
+- **Maps: source image, tiling, typed/inheriting markers, editable region polygons,
+  party/army tokens** (P4, sub-phases 1–3 and 5) — a `kind="map"` node renders through
+  Leaflet `CRS.Simple`, swaps to a `sharp`-generated tile pyramid past 2000px, and
+  carries `pin`/`label`/`circle`/`token` markers that link to any node and inherit its
+  title/icon unless overridden, plus drawable, labeled/colored `polygon`/`path`
+  region/zone shapes with full editing (per-vertex dragging, click-a-line-to-split,
+  freehand draw, redraw from the inspector, server-validated vertex counts). `token`
+  markers can be grouped under another token via a self-referential `parent_marker_id`
+  (a party splitting into squads), with group-dominant visibility — hiding the parent
+  hides every descendant regardless of its own visibility setting. "+ New map" in the
   sidebar, "Add a map inside" in a node's "⋯" menu, a "🖼 Replace image" button in the
   map toolbar to swap a map's source image after the fact. See §7.8.
 
 ### Not started
 
-Fog of war/party tokens/layers (P4.4–P4.6), calendars, timelines, the query/view
+Fog of war/layers (P4.4/P4.6), calendars, timelines, the query/view
 engine (table/board/gallery), statblocks, initiative, realtime. No importer is planned
 — see §9.4.
 
 ### Known open items (check these before starting new work)
 
-- **Still owed**: a broader best-practices/other-bugs audit was requested and never
-  started — the session that requested it got redirected onto the UI-feedback batch
-  (§7.9), then a push-and-stop, then the P4.3-patch evaluation and map bugs below. Only
-  the *security* half of "audit for vulnerabilities, then best-practices/bugs" ran (the
-  two real findings from that pass are already fixed and covered by regression tests —
-  see §6.5 and the `requireOwnMarker`/`requireOwnField` visibility checks). The
-  best-practices/bugs half has not happened yet.
+- **In progress, 2026-08-25 — map display groups (Kanka's `MapGroup`), server side
+  only.** Requested directly by the owner, referencing their own Kanka campaign's map
+  groups panel (toggle categories of markers on/off, control their stacking order).
+  Migration `0010` (`map_groups` table + `map_markers.group_id`),
+  `services/mapGroups.ts` (full CRUD, cycle-checked nesting via `parent_group_id`,
+  fractional-index `sort_key` doubling as z-order), the routes in `routes/maps.ts`, and
+  the `apps/web/src/api.ts` client methods are all done and typecheck/smoke-test clean.
+  **The client has no UI for any of this yet** — no panel to see/create/toggle/reorder
+  groups, no "assign to a group" control in the marker inspector, and the MCP server
+  has no group tools. This was a deliberate stopping point mid-feature, not an
+  oversight — pick up by building `MapView.tsx`'s groups panel next (a toggle button in
+  the map toolbar, a nested checklist with up/down reorder, a "Group" dropdown in
+  `MarkerInspector` alongside the existing "Group (parent token)" one — these are two
+  different dropdowns for two different features, see PLAN.md item 6's note on why).
+  The one design decision already made and worth preserving: a group's on/off toggle is
+  **personal, per-viewer, client-side-only** (`localStorage`, same mechanism as
+  `usePinned`) — the owner chose this explicitly over a shared server-side toggle, so a
+  player decluttering their own view never hides anything for anyone else. Groups
+  themselves (name/color/order/membership) remain shared map data like markers.
+- **Resolved 2026-08-24**: the broader best-practices/other-bugs audit that had been
+  owed since an earlier session (redirected onto the UI-feedback batch in §7.9, then a
+  push-and-stop, then the P4.3-patch evaluation) finally ran — see
+  `docs/AUDIT-2026-08-24.md`. Five real leak surfaces and four correctness bugs found,
+  all fixed the same day with a regression assertion added to `smoke.mjs` per §6.5
+  for each. One item (`@fastify/static`'s CVEs) was deliberately deferred — confirmed
+  non-exploitable in this app's configuration, and a major version bump felt like the
+  wrong risk to take without a changelog review.
 - **Unconfirmed**: sidebar "⋯" / top-bar "Page actions" / right-click reported
   unresponsive around the map page, in the owner's own browser. Not reproduced in
   automated testing this session — see §7.8's last paragraph for what was tried and the
   leading (stale-tab) theory. Get a hard-refresh confirmation and, if it still happens,
   exact repro steps before touching anything.
-- **Not yet asked for a screenshot on**: the owner said the map "still looks bad" after
-  the CRS fix, without specifics. The fix is verified correct at the network level (real
-  tiles load at the coordinates `sharp` actually generated), but "looks bad" could mean
-  something purely visual (blurry at a low initial zoom — expected tile-pyramid
-  behavior, not a bug — vs. a genuine rendering defect). Ask for a screenshot before
-  assuming either way.
+- **Resolved 2026-08-24**: "the map still looks bad" is not a vague visual quibble — it
+  was a real, previously-undetected tile-coordinate transposition bug. See §7.8's map
+  section for the full root cause and fix; the short version is that `sharp`'s tile
+  output and `MapView.tsx`'s `<TileLayer>` URL disagreed about which axis was which, and
+  every non-square map (i.e. almost every real one) was rendering scrambled/incomplete
+  at deep zoom. Root-caused with a purpose-built grid-and-quadrant test image rather than
+  a screenshot, fixed, and now covered by a `smoke.mjs` regression that would fail if
+  this axis order regresses again.
 
 ---
 
@@ -1085,6 +1111,186 @@ always-visible map toolbar (reuses the existing `setMapImage` upload flow verbat
 an upload error now surfaces as a small toast near the toolbar instead of only in the
 empty-map state.
 
+**A second, more serious bug found 2026-08-24 — "the map still looks bad" was a real
+tile-coordinate transposition, not a vague quibble.** The owner said this after the
+CRS fix above, with no further detail; rather than wait on a screenshot, the map
+pipeline was re-verified directly: uploaded a purpose-built 3000×2200 test image (four
+solid, distinctly-colored quadrants, split at (1500, 1100)) through the real tiling
+pipeline, then fetched the specific tile files a live `<TileLayer>` would request for
+several known, off-diagonal pixel coordinates and decoded their actual pixel color with
+`sharp`. Root cause: `sharp`'s `tile({layout:"google"})` writes this pyramid to disk as
+`{z}/{row}/{col}.webp` (confirmed by enumerating the real output directories — the
+"google layout" name does not imply this), while `MapView.tsx`'s `<TileLayer>` requested
+the more-familiar-looking `{z}/{x}/{y}.webp}`, where Leaflet's own `{x}`/`{y}` are
+column/row respectively (confirmed from this file's own `pixelToLatLng`: `lat = y/scale`,
+`lng = x/scale`, and Leaflet projects `latlng` to `point.x = lng, point.y = lat`). Column
+landed in the row slot and vice versa. For any image where width and height need a
+different number of 256px tiles — i.e. nearly every real map, since a perfectly square
+map is a coincidence — this meant every non-diagonal tile was either:
+- **silently served from the wrong coordinates** (row and column swapped), whenever
+  both index values happened to fit inside the narrower axis's directory count, or
+- **404 outright**, once the wider axis's index exceeded the narrower axis's count,
+  leaving a whole strip of the map blank.
+
+Fixed by swapping the URL template to `{z}/{y}/{x}.webp`, and — so this can't silently
+drift back — the template itself was pulled out of `MapView.tsx` into a single shared
+export, `mapTileUrlTemplate()` in `packages/schema`, which both the client and a new
+`smoke.mjs` regression import and use identically (see below). This was invisible to
+every check that had been run against it before now:
+- **The existing `smoke.mjs` tiling fixture** (`continent.png`, 2200×2100) is
+  coincidentally near-square — both axes round up to exactly 9 tiles at native
+  resolution — so there is no index value that overflows one axis but not the other, and
+  it is flat-colored, so a transposed tile is pixel-identical to the correct one. This
+  fixture cannot detect this bug no matter how it's asserted against; a new,
+  deliberately non-square, four-quadrant fixture was added specifically to close that
+  gap (below).
+- **The manual browser verification that fixed the CRS bug above** used a real
+  3072×4096 photo, but only checked "do tile requests 404" — never "is each tile's
+  actual content correct for its position." A photo's content can look locally
+  plausible even scrambled, especially glanced at rather than compared pixel-by-pixel
+  against known coordinates.
+
+**Verified**: `npm run typecheck` clean, `npm test` (31/31), the full `npm run smoke`
+suite (which now includes a new `== map tiling: tile coordinates are not transposed ==`
+section — a non-square, four-quadrant test image, fetching the exact tile a real
+`<TileLayer>` would request for several off-diagonal pixel coordinates via the shared
+`mapTileUrlTemplate()`, and asserting the decoded pixel color is correct, not
+transposed). Confirmed the new regression actually catches this class of bug by
+temporarily reverting the template and re-running the suite (3 of the 4 new checks
+failed, in exactly the predicted way — two wrong colors and one 404 — then passed clean
+again once reverted). Also verified end-to-end in a live browser session: created a
+world, uploaded the same test image through the real HTTP upload flow, waited for
+tiling, and confirmed via direct authenticated fetches (the Browser pane's screenshot
+compositing was unavailable in this environment, so pixel-level HTTP verification stood
+in for a visual check) that the specific tiles a real `<TileLayer>` would request now
+decode to the correct quadrant color at both a previously-wrong-content coordinate and a
+previously-404 coordinate. `test:mcp` also re-run clean (57/57) since it exercises
+`get_map`/marker tools over the same HTTP surface.
+
+**Map editor UI pass, 2026-08-25 — region/path vertex editing, and a real Leaflet
+theming gap.** A round of direct owner feedback on the map editor, addressed in one
+pass:
+
+- **Editing an existing region/path used to mean redrawing it from scratch.** There was
+  no way to nudge one vertex or add a single point to an otherwise-correct shape — only
+  the inspector's "Redraw shape" button, which restarts the whole draft. Selecting a
+  polygon/path marker now shows a small draggable dot on every vertex (drag to move it)
+  and a dashed highlight over every line segment (click anywhere on one to insert a new
+  vertex right there, split between that segment's two endpoints). Both write straight
+  through `update_marker`'s `points`. Deliberately not built: dragging the whole shape
+  by its filled body (translating every vertex at once) — that needs a small Leaflet
+  plugin (`Leaflet.Path.Drag`) this project doesn't depend on, and per-vertex dragging
+  plus the existing draggable label anchor already cover repositioning.
+- **`<MapContainer>`'s `minZoom`/`maxZoom`/`maxBounds`/`maxBoundsViscosity` only apply
+  once, at the instant react-leaflet constructs the underlying `L.Map`** — its own
+  source memoizes that construction with an empty `useCallback` dependency array, so
+  passing a new value as a prop later has no effect on an already-open map (only a
+  genuine remount does, i.e. navigating to a *different* map node, since this map's
+  `key={node.id}`). This is why raising the untiled zoom ceiling didn't do anything for
+  a map that was already open when the owner tested it — the code was correct, but a
+  live map instance never saw it. Fixed generally, not just for this one case: a small
+  `<MapOptionsSync>` child (inside `<MapContainer>`, using `useMap()`) applies these
+  values imperatively via Leaflet's own setters (`map.setMinZoom`/`setMaxZoom`/
+  `setMaxBounds`, and a direct `map.options.maxBoundsViscosity =` assignment since
+  Leaflet has no setter for that one), so any future change to these takes effect
+  immediately regardless of when it happens. The zoom ceiling for an untiled map (one
+  small enough to skip the tiling pipeline) is also raised substantially
+  (`maxZoom + 6` instead of `+ 2`) — it gets soft past native resolution, same as
+  zooming into any raster image, which is expected and still strictly better than a
+  hard wall.
+- **`maxBounds` was the image's exact pixel edges**, so panning toward a corner had
+  nowhere left to go once you reached it — the empty space beyond (unavoidable
+  whenever the viewport's aspect ratio doesn't exactly match the image's) had nothing
+  to show but bare `.leaflet-container` background, which read as a stray dark bar.
+  `maxBounds` is now the initial-fit `bounds` padded by half a screen's worth on every
+  side (`L.latLngBounds(bounds).pad(0.5)`), with `maxBoundsViscosity={0.8}` for soft
+  resistance near that edge instead of a hard stop — a corner or edge marker can now sit
+  comfortably in the middle of the view. The *initial* view (`bounds` itself) is
+  unchanged, so a map still opens showing the whole image.
+- **Leaflet's own stylesheet ships light-mode chrome** — white zoom buttons, a white
+  attribution strip, a light `.leaflet-container` fallback background — none of it ever
+  themed against this app's dark UI, which is almost certainly what read as "so much
+  white background." `.leaflet-container`, `.leaflet-bar`, and
+  `.leaflet-control-attribution` are now overridden in `styles.css` to match the app's
+  palette. Two of these needed `!important`: `.leaflet-container`'s background, because
+  MapView.tsx's own Tailwind class and this stylesheet rule have equal specificity and
+  whichever loads later in the bundle wins that tie (not something to depend on), and
+  `.leaflet-bar a`'s background, one of Leaflet's own higher-specificity rules.
+- **The marker inspector's icon field was a blank text input with no guidance.**
+  Swapped for the existing `IconPicker` component (already used for page icons) — a
+  grid of presets plus a custom-paste fallback, so there's something to pick from
+  instead of needing to already know an emoji to type.
+- **Color was hex-only, no picker.** Added a native `<input type="color">` next to the
+  hex field (the browser's own picker already provides a saturation/hue spectrum,
+  no reason to hand-roll one) plus a small localStorage-backed favorites system — save
+  the current color under a name, click a saved swatch to reapply it, right-click to
+  remove one. Same "personal preference, not campaign content, no server round-trip"
+  reasoning as `usePinned`.
+- **Ctrl/Cmd+Z while drawing** undoes the last placed vertex, so a mis-click while
+  drawing a region doesn't mean starting over.
+- **"+ Add a page inside {title}" → "+ Add a page under {title}"**, and the metadata
+  sidebar's **"Pages inside" → "Children"** (with the matching section heading changed
+  to "Child pages") — wording requested directly, applied everywhere both phrases
+  appeared (Sidebar.tsx, NodeView.tsx, ShareView.tsx). The "+ New" chooser's **"Lore"
+  tile is now "Document"**, for the same reason.
+
+Verified: `npm run typecheck` and `npm run build` clean; drag/click interaction itself
+confirmed working by the owner directly (this environment's Browser pane cannot
+reliably drive Leaflet drag/click, per §8.5) after the fix landed.
+
+**Party/army tokens (P4.5), 2026-08-25.** A `token`-shaped marker with a
+self-referential `parent_marker_id` — the schema already reserved this column in P4.1,
+unused until now. A party token can have squad tokens grouped under it, arbitrarily
+deep (a squad can itself have a further split grouped under it).
+
+- **Group visibility is dominant**, matching Kanka's own `MapGroup` model: a marker's
+  *effective* visibility is the most restrictive value across itself and its entire
+  parent chain, not just its own `visibility` column. Hiding "the party" (setting it to
+  `dm`) hides every squad grouped under it in both `listMarkers()` (the map's marker
+  list) and `requireOwnMarker()` (direct-by-id access, so a player with edit rights on
+  the map still can't read or destroy a group-hidden marker just by knowing its id) —
+  the same "new surface, same treatment" rule §6.5 asks for. This can't be expressed as
+  a flat SQL `WHERE` the way a plain column comparison can (it needs the whole map's
+  parent chains), so `listMarkers()` fetches every marker on the already-visibility-
+  gated map and filters before any row reaches a DTO or leaves the function — still
+  "never returned," just computed in JS instead of the SQL text. See `effectiveVisibility()`
+  in `services/maps.ts`.
+- **Cycle prevention.** Setting a token's `parent_marker_id` to itself, or to one of its
+  own descendants, is rejected (`wouldCycle()`) — checked server-side (the real
+  guarantee) and the client's "Group" dropdown also excludes both, so the UI never
+  offers an option it already knows is invalid.
+- **A new `radius` column** (migration `0009`) for `circle` markers, added the same
+  session — there was no stored size at all before this; the client hardcoded
+  `radius={10}` **screen pixels** with nothing to change it, which is the literal answer
+  to "why can't I resize it." Stored in the same native-image pixel space as x/y/points,
+  and rendered via Leaflet's `Circle` (not `CircleMarker`) so it scales with zoom like a
+  region's vertices already do, instead of staying a constant on-screen size.
+- **A real, pre-existing bug found while wiring `parent_marker_id` into the MCP
+  server**: `update_marker`'s handler spread its snake_case arguments straight into the
+  (camelCase) `UpdateMarkerInput` with no translation — `async ({ marker_id, ...input })
+  => client.updateMarker(marker_id, input)`. This happened to work for every field
+  because every other one is a single word with no snake/camel difference to lose
+  (`label`, `icon`, `color`, `radius`, `points`, `members`, `visibility`).
+  `target_node_id` is not: sent this way, it became an unrecognized key that the
+  server's `updateMarkerInputSchema.parse()` silently drops, so **a `target_node_id`
+  update sent through `update_marker` has never actually taken effect**, since that
+  tool existed. Fixed by mapping fields explicitly, matching the pattern
+  `place_marker` already used correctly. Regression: `apps/mcp/scripts/
+  integration-test.mjs` places a marker with no target, links it via `update_marker`,
+  and asserts `get_map`'s output actually shows the link — not just a non-error
+  response, which is exactly the kind of false-positive this bug would have hidden
+  behind.
+- Inspector gains a "Group (parent token)" dropdown and a "Who's in this group"
+  freeform text field, both token-only. `get_map`'s MCP output now shows a marker's
+  group (`(group: [parentId])`) alongside its existing target/visibility annotations.
+
+Verified: `npm run typecheck`, `npm run build`, 31 unit tests, the full `npm run smoke`
+suite (14 new checks: grouping at creation, self-parent and cycle rejection, explicit
+group/ungroup round-trips, the group-visibility-dominance leak check from both the list
+and direct-PATCH surfaces, and the delete-a-parent-ungroups-children cascade), and
+`npm run test:mcp` (8 new checks, including the `target_node_id` regression above) —
+all against isolated servers, never the owner's own live dev instance.
+
 **Open, unconfirmed as of this writing**: the owner reported the sidebar's per-row "⋯"
 menu and the top-bar "Page actions" ⋯ button becoming unresponsive, and right-click not
 opening a context menu, while on/around the map page — in their own browser, after
@@ -1163,6 +1369,27 @@ Consequences:
 
 Vite emits the client bundle into `/assets/`. Mounting uploads there shadowed the bundle
 and the server returned `index.html` for `.js` requests. Uploads live at `/media/`.
+
+**`/media/` is served with no authorization check, deliberately — this is a capability
+URL, not an oversight.** The 2026-08-24 audit (`docs/AUDIT-2026-08-24.md`, finding 1.5)
+flagged this and found the sibling `/tiles/` prefix genuinely unauthorized (fixed, see
+below); `/media/` was evaluated the same way and kept as-is, for a reason specific to it:
+anonymous share links (`ShareView.tsx`, §7.5) render a node's body with **no session and
+no token at all**, and that body can contain `<img src="/media/...">` from a pasted or
+dropped image. Gating `/media/` behind world membership would break every image on every
+shared page. The mitigating facts are that asset filenames are sha256 content hashes
+(unguessable — nothing about the path reveals which world or node an image belongs to)
+and assets have no single owning node to check visibility against anyway (one image can
+be reused across many node bodies). If this ever needs to be tightened — e.g. signing
+asset URLs per share-scope, so a shared page's images work but a bare `/media/<hash>`
+guess does not — that is real, unscheduled work, not a one-line fix.
+
+`/tiles/` got the opposite answer: it is keyed by the map's own short **node id**, which
+appears in the URL bar, every tree response, and every share-link payload — not a
+capability URL by any reasonable definition. `index.ts` now runs `viewerForNode` +
+`requireVisibleNode` for the map node in an `onRequest` hook before `@fastify/static`
+serves anything under that prefix, so a map that goes `dm`-only stops serving its tiles
+to a player who saw the id while it was open.
 
 ### 8.3 Node runs the TypeScript directly
 

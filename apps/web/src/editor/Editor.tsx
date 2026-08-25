@@ -141,17 +141,47 @@ export function Editor({ nodeId, worldId, bodyMd, allNodes, editable, onCreateNa
     [],
   );
 
+  // `pendingEditorRef` is the editor instance a scheduled-but-not-yet-fired
+  // autosave would read from — kept alongside the timer so a flush (unmount,
+  // tab close) can call the same getMarkdown() the timer itself would have,
+  // rather than dropping the edit on the floor.
   const saveTimer = useRef<number | null>(null);
+  const pendingEditorRef = useRef<NonNullable<typeof editor> | null>(null);
+
   function scheduleAutosave(ed: NonNullable<typeof editor>): void {
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    pendingEditorRef.current = ed;
     saveTimer.current = window.setTimeout(() => {
+      saveTimer.current = null;
+      pendingEditorRef.current = null;
       onChangeRef.current(ed.getMarkdown());
     }, AUTOSAVE_QUIET_MS);
   }
 
+  /**
+   * Fires the pending save immediately instead of waiting out the debounce.
+   * NodeView.tsx mounts this component with `key={node.id}`, so navigating to
+   * another page UNMOUNTS it — without this, typing a character and clicking
+   * a sidebar row inside the 800ms debounce window silently discarded the
+   * edit (docs/AUDIT-2026-08-24.md finding 2.3). This is the one failure mode
+   * an always-editable, no-Save-button editor cannot afford.
+   */
+  function flushPendingSave(): void {
+    if (saveTimer.current === null) return;
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    const ed = pendingEditorRef.current;
+    pendingEditorRef.current = null;
+    if (ed !== null) onChangeRef.current(ed.getMarkdown());
+  }
+
   useEffect(() => {
+    // Best-effort for an actual tab/window close — the save request may not
+    // finish before the page unloads, but firing it beats not trying.
+    window.addEventListener("beforeunload", flushPendingSave);
     return () => {
-      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+      window.removeEventListener("beforeunload", flushPendingSave);
+      flushPendingSave();
     };
   }, []);
 

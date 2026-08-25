@@ -11,7 +11,7 @@ interface Tile {
 }
 
 const TILES: Tile[] = [
-  { kind: null, icon: "📄", label: "Lore", hint: "A page you write" },
+  { kind: null, icon: "📄", label: "Document", hint: "A page you write" },
   { kind: "map", icon: "🗺️", label: "Map", hint: "An interactive map" },
   { kind: "board", icon: "🗂️", label: "Board", hint: "Soon", soon: true },
   { kind: "timeline", icon: "🕰️", label: "Timeline", hint: "Soon", soon: true },

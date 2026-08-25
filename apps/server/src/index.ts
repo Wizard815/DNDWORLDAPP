@@ -7,9 +7,9 @@ import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { purgeExpiredSessions } from "./auth/session.ts";
-import { appliedMigrations, closeDatabase } from "./db/index.ts";
+import { appliedMigrations, closeDatabase, db } from "./db/index.ts";
 import { assertProductionSafe, env, paths } from "./env.ts";
-import { assertScope, attachUser } from "./http/context.ts";
+import { assertScope, attachUser, viewerForNode } from "./http/context.ts";
 import { HttpError, forbidden } from "./lib/errors.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { mapRoutes } from "./routes/maps.ts";
@@ -18,8 +18,24 @@ import { openApiRoutes } from "./routes/openapi.ts";
 import { shareRoutes } from "./routes/share.ts";
 import { tokenRoutes } from "./routes/tokens.ts";
 import { worldRoutes } from "./routes/worlds.ts";
+import { recoverStuckTiling } from "./services/maps.ts";
+import { backfillLinksStrippedOfSecrets, requireVisibleNode } from "./services/nodes.ts";
 
 assertProductionSafe();
+
+/**
+ * One-time JS-driven data repair, tracked in the same `_migrations` ledger the
+ * SQL migrations use so it runs exactly once ever. See backfillLinksStrippedOfSecrets's
+ * own comment for why this is not a migrations/*.sql file.
+ */
+function runOnceAtBoot(name: string, fn: () => void): void {
+  const already = db.prepare("SELECT 1 FROM _migrations WHERE name = ?").get(name);
+  if (already !== undefined) return;
+  fn();
+  db.prepare("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)").run(name, Date.now());
+}
+runOnceAtBoot("_backfill_links_stripped_of_secrets", backfillLinksStrippedOfSecrets);
+recoverStuckTiling();
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDist = path.resolve(here, "..", "..", "web", "dist");
@@ -37,6 +53,37 @@ app.decorateRequest("user", null);
 app.decorateRequest("tokenAuth", null);
 app.addHook("onRequest", async (request) => {
   attachUser(request);
+});
+
+/**
+ * Map tiles are served as plain static files under /tiles/<mapNodeId>/z/x/y.webp
+ * — outside /api/v1/, so the scope hook below never sees them, and outside
+ * @fastify/static's own reach to add per-request logic. Unlike /media/'s
+ * sha256-addressed images (unguessable, so treated as a capability URL — see
+ * HANDOFF.md §8.2), a tile path is keyed by the map's own short node id, which
+ * appears in the URL bar, every tree response, and every share-link payload.
+ * A dm-only map's tiles must not outlive its visibility just because a player
+ * once saw the id. Gated here, on the root app, so it runs before
+ * @fastify/static's handler regardless of registration order (Fastify wires
+ * hooks by encapsulation, not by when register() was called).
+ */
+app.addHook("onRequest", async (request, reply) => {
+  if (!request.url.startsWith("/tiles/")) return;
+  const mapNodeId = request.url.slice("/tiles/".length).split("/")[0]?.split("?")[0];
+  if (mapNodeId === undefined || mapNodeId.length === 0) {
+    return reply.code(404).send({ error: { code: "not_found", message: "No such endpoint." } });
+  }
+  try {
+    const { viewer } = viewerForNode(request, mapNodeId);
+    requireVisibleNode(mapNodeId, viewer);
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return reply
+        .code(error.statusCode)
+        .send({ error: { code: error.code, message: error.message } });
+    }
+    throw error;
+  }
 });
 
 /**

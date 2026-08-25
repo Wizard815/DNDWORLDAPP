@@ -84,6 +84,18 @@ export function Sidebar({
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; mode: DropMode } | null>(null);
   const [menuForId, setMenuForId] = useState<string | null>(null);
+  /**
+   * Screen coordinates for the row action menu, captured at open time.
+   * The menu renders `fixed` at this point rather than `absolute` inside the
+   * row: the tree lives in a `flex-1 overflow-y-auto` scroller (below), and
+   * setting only `overflow-y` makes a browser compute `overflow-x: auto` too
+   * (CSS overflow spec) — so an `absolute` menu wide enough to spill past the
+   * narrow 290px sidebar column was being clipped by that scroller instead of
+   * floating over the page, which showed up as a horizontal scrollbar
+   * appearing at the sidebar's bottom edge rather than a visible dropdown.
+   * `fixed` positioning escapes that ancestor's overflow clipping entirely.
+   */
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
@@ -161,8 +173,24 @@ export function Sidebar({
     }
   }
 
-  function startRename(node: NodeSummary): void {
+  /** Clamped so a row near the sidebar's bottom/right doesn't open a menu off-screen. */
+  function openMenuAt(id: string, x: number, y: number): void {
+    const MENU_WIDTH = 192; // w-48
+    const MENU_HEIGHT = 150; // ~4 rows
+    setMenuForId(id);
+    setMenuPos({
+      x: Math.min(x, window.innerWidth - MENU_WIDTH - 8),
+      y: Math.min(y, window.innerHeight - MENU_HEIGHT - 8),
+    });
+  }
+
+  function closeMenu(): void {
     setMenuForId(null);
+    setMenuPos(null);
+  }
+
+  function startRename(node: NodeSummary): void {
+    closeMenu();
     setRenamingId(node.id);
     setRenameValue(node.title);
   }
@@ -183,7 +211,7 @@ export function Sidebar({
 
   /** Archiving takes the subtree with it, so confirm first using childCount alone (no need to fetch full detail). */
   function requestArchive(node: NodeSummary): void {
-    setMenuForId(null);
+    closeMenu();
     const inside = node.childCount > 0 ? ` and the ${node.childCount} page(s) inside it` : "";
     if (!window.confirm(`Archive "${node.title}"${inside}?`)) return;
     void api.archiveNode(node.id).then(
@@ -230,7 +258,7 @@ export function Sidebar({
           onClick={() => !isRenaming && navigate(`/n/${node.id}`)}
           onContextMenu={(e) => {
             e.preventDefault();
-            setMenuForId(node.id);
+            openMenuAt(node.id, e.clientX, e.clientY);
           }}
           className={[
             "group relative flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-sm",
@@ -283,40 +311,42 @@ export function Sidebar({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setMenuForId(node.id);
+              const rect = e.currentTarget.getBoundingClientRect();
+              openMenuAt(node.id, rect.left, rect.bottom + 4);
             }}
             className="ml-1 hidden shrink-0 px-1 text-[#7a7d86] hover:text-[#d7d8dc] group-hover:block"
             title="Page actions"
           >
             ⋯
           </button>
-          {menuForId === node.id && (
+          {menuForId === node.id && menuPos !== null && (
             <>
               <div
                 className="fixed inset-0 z-30"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setMenuForId(null);
+                  closeMenu();
                 }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  setMenuForId(null);
+                  closeMenu();
                 }}
               />
               <div
                 onClick={(e) => e.stopPropagation()}
-                className="absolute left-full top-0 z-40 ml-1 w-48 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg"
+                style={{ top: menuPos.y, left: menuPos.x }}
+                className="fixed z-40 w-48 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg"
               >
                 <button
                   type="button"
                   onClick={() => {
-                    setMenuForId(null);
+                    closeMenu();
                     onOpenCreateChooser(node.id);
                   }}
                   className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
                 >
-                  Add a page inside…
+                  Add a page under…
                 </button>
                 <button
                   type="button"
@@ -328,7 +358,7 @@ export function Sidebar({
                 <button
                   type="button"
                   onClick={() => {
-                    setMenuForId(null);
+                    closeMenu();
                     onTogglePin(node.id);
                   }}
                   className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"

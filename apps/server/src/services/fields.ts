@@ -7,7 +7,7 @@ import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { shortId } from "../lib/id.ts";
 import { keyAfterAll, keyBetween } from "../lib/sortkey.ts";
 import { canEditNode } from "./acl.ts";
-import { getNodeRow, requireVisibleNode } from "./nodes.ts";
+import { getNodeRow, isNodeVisible, requireVisibleNode } from "./nodes.ts";
 import { getTemplateRow } from "./templates.ts";
 
 /**
@@ -49,7 +49,7 @@ function defsByKey(templateId: string | null): Map<string, TemplateFieldDef> {
   return new Map(defs.map((d) => [d.key, d]));
 }
 
-function toDto(row: FieldRow, defs: Map<string, TemplateFieldDef>): FieldDto {
+function toDto(row: FieldRow, defs: Map<string, TemplateFieldDef>, viewer: Viewer): FieldDto {
   let value: FieldDto["value"] = null;
   if (row.type === "number") value = row.value_num;
   else if (row.type === "checkbox") value = row.value_num === 1;
@@ -58,10 +58,13 @@ function toDto(row: FieldRow, defs: Map<string, TemplateFieldDef>): FieldDto {
 
   let refNode: FieldDto["refNode"] = undefined;
   if (row.type === "link" && row.value_ref !== null) {
-    // Same precedent as breadcrumbFor()/backlinksFor() in nodes.ts: shown
-    // without a second visibility check — the field's own visibility, which
-    // the caller already filtered on, is the gate here.
-    refNode = (selectRefNode.get(row.value_ref) as { id: string; title: string; icon: string | null } | undefined) ?? null;
+    // A `link` field's own visibility gates the FIELD, not its target — the
+    // target can be any node in the world, so it needs its own check here
+    // (same reasoning as maps.ts's targetNodeFor). An invisible target
+    // resolves to null rather than leaking its title/icon.
+    refNode = isNodeVisible(row.value_ref, viewer)
+      ? ((selectRefNode.get(row.value_ref) as { id: string; title: string; icon: string | null } | undefined) ?? null)
+      : null;
   }
 
   const def = defs.get(row.key);
@@ -86,7 +89,7 @@ export function listFields(nodeId: string, viewer: Viewer): FieldDto[] {
     .prepare(`SELECT * FROM fields WHERE node_id = ? AND ${vis.sql} ORDER BY sort_key`)
     .all(nodeId, ...vis.params) as FieldRow[];
   const defs = defsByKey(node.template_id);
-  return rows.map((row) => toDto(row, defs));
+  return rows.map((row) => toDto(row, defs, viewer));
 }
 
 function requireEditableNode(nodeId: string, viewer: Viewer) {
@@ -127,7 +130,7 @@ export function createField(nodeId: string, viewer: Viewer, input: CreateFieldIn
     }
     throw err;
   }
-  return toDto(selectField.get(id) as FieldRow, defsByKey(node.template_id));
+  return toDto(selectField.get(id) as FieldRow, defsByKey(node.template_id), viewer);
 }
 
 /**
@@ -150,7 +153,7 @@ export function updateField(nodeId: string, fieldId: string, viewer: Viewer, inp
     input.value !== undefined ? columnsFor(field.type, input.value, node.world_id) : [field.value_text, field.value_num, field.value_ref];
 
   updateFieldStmt.run(valueText, valueNum, valueRef, input.visibility ?? field.visibility, fieldId);
-  return toDto(selectField.get(fieldId) as FieldRow, defsByKey(node.template_id));
+  return toDto(selectField.get(fieldId) as FieldRow, defsByKey(node.template_id), viewer);
 }
 
 export function deleteField(nodeId: string, fieldId: string, viewer: Viewer): void {

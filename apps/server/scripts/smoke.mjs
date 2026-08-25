@@ -4,6 +4,7 @@
 // It walks the whole P0 surface, and asserts the DM/player boundary in every place
 // it could leak: tree, direct fetch by id, posts, and search.
 import sharp from "sharp";
+import { mapTileUrlTemplate } from "@dndworldapp/schema";
 
 const BASE = process.env.SMOKE_BASE ?? "http://localhost:8080/api/v1";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -20,7 +21,7 @@ function check(label, condition, extra) {
 
 function makeSession() {
   const jar = new Map();
-  return async function call(method, path, body, extraHeaders) {
+  const call = async function call(method, path, body, extraHeaders) {
     const isFormData = body instanceof FormData;
     const headers = { ...extraHeaders };
     if (body !== undefined && !isFormData) headers["content-type"] = "application/json";
@@ -45,6 +46,10 @@ function makeSession() {
     }
     return { status: res.status, body: json };
   };
+  // For raw fetch()es outside /api/v1 (static /media, /tiles) that still need
+  // this session's cookie, since the jar itself is a private closure variable.
+  call.cookieHeader = () => [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+  return call;
 }
 
 const dm = makeSession();
@@ -237,6 +242,81 @@ check("player cannot edit a DM-authored page", playerEdit.status === 403, player
 
 const playerSearch = (await player("GET", `/worlds/${worldId}/search?q=Crimson`)).body.hits;
 check("DM-only content does not leak through search", playerSearch.length === 0, playerSearch);
+
+console.log("\n== leak-surface regressions (docs/AUDIT-2026-08-24.md) ==");
+
+// F1a/F1b: unresolved-links used to have no viewer at all, and reindexLinks
+// used to read the raw (not secret-stripped) body, so a link written on a
+// dm-only page OR inside a :::secret block leaked its target_text to anyone.
+const dmOnlyLinker = (await dm("POST", `/worlds/${worldId}/nodes`, {
+  title: "Audit F1a source", visibility: "dm", parentId: rootId,
+  bodyMd: "The villain is [[Grand Vizier Zathrax]].",
+})).body.node;
+const publicSecretLinker = (await dm("POST", `/worlds/${worldId}/nodes`, {
+  title: "Audit F1b source", visibility: "public", parentId: rootId,
+  bodyMd: "A quiet square.\n\n:::secret\nBeneath it: [[The Ossuary Of Nine Mouths]].\n:::\n",
+})).body.node;
+const playerUnresolved = (await player("GET", `/worlds/${worldId}/unresolved-links`)).body.links.map((l) => l.targetText);
+check("F1a: a link written on a dm-only page does not leak via unresolved-links", !playerUnresolved.includes("Grand Vizier Zathrax"), playerUnresolved);
+check("F1b: a link written inside a :::secret block does not leak via unresolved-links", !playerUnresolved.includes("The Ossuary Of Nine Mouths"), playerUnresolved);
+const dmUnresolved = (await dm("GET", `/worlds/${worldId}/unresolved-links`)).body.links.map((l) => l.targetText);
+check("the DM still sees the dm-page link, since unresolved-links is a to-do list for them", dmUnresolved.includes("Grand Vizier Zathrax"), dmUnresolved);
+// The secret-block link is excluded for the DM too — reindexLinks now indexes
+// the secret-STRIPPED body, matching the existing (deliberate) precedent that
+// search excludes secret content for every role including the DM (§7.2),
+// rather than becoming a links row nobody but the DM should be able to see.
+check("the secret-block link is not indexed as a link at all, not even for the DM", !dmUnresolved.includes("The Ossuary Of Nine Mouths"), dmUnresolved);
+
+// F2a/F2b: getMap/listMarkers used to skip the map node's own visibility —
+// only edit paths (via requireMapNode) checked it, reads did not.
+const hiddenMapNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Audit F2 hidden map", parentId: rootId, visibility: "dm", kind: "map" })).body.node;
+// A real 1x1 PNG so setMapImage's dimension probe succeeds.
+const onePxPng = await sharp({ create: { width: 1, height: 1, channels: 3, background: { r: 1, g: 1, b: 1 } } }).png().toBuffer();
+const auditMapAsset = await dm("POST", `/worlds/${worldId}/assets`, (() => {
+  const f = new FormData();
+  f.append("file", new Blob([onePxPng], { type: "image/png" }), "f2.png");
+  return f;
+})());
+await dm("PUT", `/nodes/${hiddenMapNode.id}/map`, { assetId: auditMapAsset.body.asset.id });
+await dm("POST", `/nodes/${hiddenMapNode.id}/map/markers`, { shape: "pin", x: 1, y: 1, visibility: "members" });
+const playerGetHiddenMap = await player("GET", `/nodes/${hiddenMapNode.id}/map`);
+check("F2a: a player cannot GET a dm-only map's image/dimensions", playerGetHiddenMap.status === 404, playerGetHiddenMap.status);
+const playerGetHiddenMarkers = await player("GET", `/nodes/${hiddenMapNode.id}/map/markers`);
+check("F2b: a player cannot GET a dm-only map's markers", playerGetHiddenMarkers.status === 404, playerGetHiddenMarkers.status);
+
+// F1.4 (docs call it finding 1.4): a marker's inherited label/icon used to
+// resolve from target_node_id with no visibility check, so an unlabeled pin
+// on an otherwise-visible map handed out a dm-only target's title and id.
+const openMapForInheritance = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Audit F1.4 open map", parentId: rootId, visibility: "members", kind: "map" })).body.node;
+await dm("PUT", `/nodes/${openMapForInheritance.id}/map`, { assetId: auditMapAsset.body.asset.id });
+const inheritingMarker = await dm("POST", `/nodes/${openMapForInheritance.id}/map/markers`, {
+  shape: "pin", x: 1, y: 1, visibility: "members", targetNodeId: secret.id,
+});
+check("marker targeting the dm-only page was created", inheritingMarker.status === 201, inheritingMarker.body);
+const playerInheritanceMarkers = (await player("GET", `/nodes/${openMapForInheritance.id}/map/markers`)).body.markers;
+const inherited = playerInheritanceMarkers.find((m) => m.id === inheritingMarker.body.marker.id);
+check("F1.4: an unlabeled marker does not inherit a dm-only target's title", inherited?.label !== "The Crimson Veil (true plan)", inherited);
+check("F1.4: an unlabeled marker does not expose the dm-only target's node either", inherited?.targetNode === null, inherited);
+
+// A `link`-type field has the identical hole (fields.ts's refNode) — same fix, same check.
+const linkFieldPage = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Audit F1.4 field page", parentId: rootId, visibility: "members" })).body.node;
+const linkFieldToSecret = await dm("POST", `/nodes/${linkFieldPage.id}/fields`, { key: "sees", type: "link", value: secret.id, visibility: "members" });
+check("link field to the dm-only page was created", linkFieldToSecret.status === 201, linkFieldToSecret.body);
+const playerLinkFields = (await player("GET", `/nodes/${linkFieldPage.id}/fields`)).body.fields;
+check("F1.4: a link field does not resolve refNode for an invisible target", playerLinkFields.find((f) => f.key === "sees")?.refNode == null, playerLinkFields);
+
+// 2.1: an ACL edit grant on a node used to cover the node body and fields but
+// not sections — createPost gated on bare canEdit (node ownership only)
+// instead of canEditNode (which also checks the ACL table).
+const aclSectionPage = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Audit 2.1 ACL page", parentId: rootId, visibility: "members" })).body.node;
+const aclGrant = await dm("POST", `/nodes/${aclSectionPage.id}/acl`, {
+  subjectType: "user", subjectId: added.body.member.id, canRead: true, canEdit: true,
+});
+check("ACL edit grant created", aclGrant.status === 201, aclGrant.body);
+const playerSectionViaAcl = await player("POST", `/nodes/${aclSectionPage.id}/posts`, {
+  title: "Player section", bodyMd: "hello", visibility: "members",
+});
+check("2.1: an ACL edit grant lets the player add a section, same as it already lets them edit the body/fields", playerSectionViaAcl.status === 201, playerSectionViaAcl.body);
 
 console.log("\n== API tokens ==");
 
@@ -881,8 +961,110 @@ check(
   tiledMap,
 );
 
-const tileFetch = await fetch(`${BASE.replace("/api/v1", "")}/tiles/${bigMapNode.id}/${tiledMap.minZoom}/0/0.webp`);
-check("the lowest zoom level's first tile is actually servable", tileFetch.status === 200, tileFetch.status);
+const tileUrl = `${BASE.replace("/api/v1", "")}/tiles/${bigMapNode.id}/${tiledMap.minZoom}/0/0.webp`;
+const tileFetch = await fetch(tileUrl, { headers: { cookie: dm.cookieHeader() } });
+check("the lowest zoom level's first tile is actually servable to a viewer who can see the map", tileFetch.status === 200, tileFetch.status);
+
+// docs/AUDIT-2026-08-24.md finding 1.5: /tiles/ is keyed by the map's own
+// short node id (in the URL bar, every tree response, every share-link
+// payload) — not a capability URL like /media/'s sha256 addressing — so it
+// must be gated the same as any other read of that node.
+const anonTileFetch = await fetch(tileUrl);
+check("an anonymous request for the same tile is rejected, not served", anonTileFetch.status !== 200, anonTileFetch.status);
+
+const bigMapDm = await dm("PATCH", `/nodes/${bigMapNode.id}`, { visibility: "dm" });
+check("can set the big map to dm-only for the next check", bigMapDm.status === 200, bigMapDm.body);
+const playerTileFetch = await fetch(tileUrl, { headers: { cookie: player.cookieHeader() } });
+check("a player who cannot see a dm-only map cannot fetch its tiles either", playerTileFetch.status !== 200, playerTileFetch.status);
+const dmMapBackToMembers = await dm("PATCH", `/nodes/${bigMapNode.id}`, { visibility: "members" });
+check("restored the big map's visibility for the rest of the suite", dmMapBackToMembers.status === 200, dmMapBackToMembers.body);
+
+// Found 2026-08-24 while chasing an owner report that a real map "still looks
+// bad": sharp's tile({layout:"google"}) writes this pyramid on disk as
+// {z}/{row}/{col}.webp (confirmed by inspecting the actual output
+// directories — NOT the "{z}/{x}/{y}" naming its own docs use), while
+// MapView.tsx's <TileLayer> requested the standard Leaflet {z}/{x}/{y}
+// template, where Leaflet's own {x} is column and {y} is row. That put
+// column in the outer (row) slot and row in the inner (column) slot — every
+// non-square tile was either served from the WRONG coordinates (silently
+// transposed, whenever both indices happened to fit the narrower axis) or
+// 404'd outright (once the wider axis's index exceeded the narrower one's
+// directory count). The `continent.png` fixture above (2200x2100, both axes
+// needing exactly 9 tiles, flat-colored) cannot catch this — an axis swap on
+// a near-square, uniform image is invisible. This fixture is deliberately
+// non-square (3000x2200: 12 columns vs 9 rows at native res) and split into
+// four distinctly-colored quadrants, so a transposed or missing tile shows a
+// wrong or absent color rather than "still looks like the same flat blue".
+console.log("\n== map tiling: tile coordinates are not transposed ==");
+const quadWidth = 3000;
+const quadHeight = 2200;
+const quadImage = await sharp({ create: { width: quadWidth, height: quadHeight, channels: 3, background: "#c0392b" } })
+  .composite([
+    { input: await sharp({ create: { width: quadWidth / 2, height: quadHeight / 2, channels: 3, background: "#27ae60" } }).png().toBuffer(), left: quadWidth / 2, top: 0 },
+    { input: await sharp({ create: { width: quadWidth / 2, height: quadHeight / 2, channels: 3, background: "#2980b9" } }).png().toBuffer(), left: 0, top: quadHeight / 2 },
+    { input: await sharp({ create: { width: quadWidth / 2, height: quadHeight / 2, channels: 3, background: "#f1c40f" } }).png().toBuffer(), left: quadWidth / 2, top: quadHeight / 2 },
+  ])
+  .png()
+  .toBuffer();
+// Quadrants: top-left #c0392b (red), top-right #27ae60 (green),
+// bottom-left #2980b9 (blue), bottom-right #f1c40f (yellow); split at
+// (quadWidth/2, quadHeight/2) = (1500, 1100).
+
+const quadMapNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Audit: quadrant map", parentId: rootId, kind: "map" })).body.node;
+const quadForm = new FormData();
+quadForm.append("file", new Blob([quadImage], { type: "image/png" }), "quadrants.png");
+const quadAsset = await dm("POST", `/worlds/${worldId}/assets`, quadForm);
+await dm("PUT", `/nodes/${quadMapNode.id}/map`, { assetId: quadAsset.body.asset.id });
+
+let quadMap = null;
+for (let attempt = 0; attempt < 30; attempt++) {
+  const polled = (await dm("GET", `/nodes/${quadMapNode.id}/map`)).body.map;
+  if (polled.tilingStatus === "ready" || polled.tilingStatus === "error") {
+    quadMap = polled;
+    break;
+  }
+  await sleep(500);
+}
+check("the quadrant map finished tiling", quadMap !== null && quadMap.tilingStatus === "ready", quadMap);
+
+/**
+ * Builds the exact URL a real <TileLayer> would request for this pixel, by
+ * substituting into mapTileUrlTemplate() the same way Leaflet's own
+ * L.Util.template() would — importing the client's actual template rather
+ * than re-deriving the {x}/{y}/{z} ordering here, so this test is tied to
+ * MapView.tsx's real behavior and can't silently drift out of sync with it
+ * (which a hand-rolled, independently-correct formula would risk: it would
+ * verify sharp's tiling output, but not that the client actually asks for
+ * the right file). col/row are 256px-tile indices at the deepest
+ * (native-resolution) zoom, matching Leaflet's own x=col, y=row.
+ */
+async function fetchTilePixel(nodeId, zoom, pixelX, pixelY) {
+  const col = Math.floor(pixelX / 256);
+  const row = Math.floor(pixelY / 256);
+  const url =
+    BASE.replace("/api/v1", "") +
+    mapTileUrlTemplate(nodeId).replace("{z}", zoom).replace("{x}", col).replace("{y}", row);
+  const res = await fetch(url, { headers: { cookie: dm.cookieHeader() } });
+  if (!res.ok) return { status: res.status, rgb: null };
+  const buf = Buffer.from(await res.arrayBuffer());
+  const { data, info } = await sharp(buf).raw().toBuffer({ resolveWithObject: true });
+  const localX = pixelX % 256, localY = pixelY % 256;
+  const i = (localY * info.width + localX) * info.channels;
+  return { status: 200, rgb: [data[i], data[i + 1], data[i + 2]] };
+}
+function closeTo(rgb, expected) {
+  return rgb !== null && rgb.every((v, i) => Math.abs(v - expected[i]) <= 4); // webp is lossy
+}
+
+const RED = [192, 57, 43], GREEN = [39, 174, 96], BLUE = [41, 128, 185], YELLOW = [241, 196, 15];
+const topRight = await fetchTilePixel(quadMapNode.id, quadMap.maxZoom, 2000, 200); // col=7,row=0 — off-diagonal
+check("a non-diagonal top-right tile (col 7, row 0) is green, not transposed", closeTo(topRight.rgb, GREEN), topRight);
+const bottomLeft = await fetchTilePixel(quadMapNode.id, quadMap.maxZoom, 200, 1900); // col=0,row=7 — off-diagonal
+check("a non-diagonal bottom-left tile (col 0, row 7) is blue, not transposed", closeTo(bottomLeft.rgb, BLUE), bottomLeft);
+const farRightEdge = await fetchTilePixel(quadMapNode.id, quadMap.maxZoom, 2900, 1900); // col=11, past the row axis's own max index (8)
+check("a tile whose column index exceeds the row axis's range still resolves (was a 404)", closeTo(farRightEdge.rgb, YELLOW), farRightEdge);
+const topLeft = await fetchTilePixel(quadMapNode.id, quadMap.maxZoom, 200, 200); // col=0,row=0 — diagonal, sanity check
+check("the diagonal top-left tile (col 0, row 0) is red", closeTo(topLeft.rgb, RED), topLeft);
 
 const smallAgainImage = await dm("PUT", `/nodes/${bigMapNode.id}/map`, { assetId: mapAsset.body.asset.id });
 check(
@@ -921,6 +1103,15 @@ check("a DM-only marker is created", dmOnlyMarker.status === 201, dmOnlyMarker.b
 
 const circleMarker = await dm("POST", `/nodes/${mapNode.id}/map/markers`, { shape: "circle", x: 300, y: 300, color: "#c9a227", visibility: "members" });
 check("a circle marker can be created with its own color", circleMarker.status === 201 && circleMarker.body.marker.color === "#c9a227", circleMarker.body);
+check("a circle with no radius given stores null, not a fake default", circleMarker.body.marker.radius === null, circleMarker.body.marker);
+
+const resizedCircle = await dm("PATCH", `/markers/${circleMarker.body.marker.id}`, { radius: 250 });
+check("a circle's radius can be set", resizedCircle.status === 200 && resizedCircle.body.marker.radius === 250, resizedCircle.body);
+const negativeRadius = await dm("PATCH", `/markers/${circleMarker.body.marker.id}`, { radius: -10 });
+check("a negative radius is rejected", negativeRadius.status === 400, negativeRadius.body);
+const circleAtCreation = await dm("POST", `/nodes/${mapNode.id}/map/markers`, { shape: "circle", x: 10, y: 10, radius: 500, visibility: "members" });
+check("a radius can also be set at creation", circleAtCreation.status === 201 && circleAtCreation.body.marker.radius === 500, circleAtCreation.body);
+await dm("DELETE", `/markers/${circleAtCreation.body.marker.id}`);
 
 const playerMarkers = (await player("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers;
 check("a player never sees the dm-visibility marker", !playerMarkers.some((m) => m.id === dmOnlyMarker.body.marker.id), playerMarkers.map((m) => m.id));
@@ -1085,6 +1276,66 @@ await dm("DELETE", `/nodes/${mapNode.id}/acl/${regionEditGrant.body.entry.id}`);
 
 const deletedRegion = await dm("DELETE", `/markers/${trail.body.marker.id}`);
 check("a path marker can be deleted", deletedRegion.status === 200, deletedRegion.body);
+
+console.log("\n== party/army tokens (P4.5) ==");
+const party = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "token", x: 400, y: 400, label: "The Party", members: "Kael, Brint", visibility: "members",
+});
+check("a party token is created with its own members list", party.status === 201 && party.body.marker.members === "Kael, Brint", party.body);
+
+const squad = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "token", x: 420, y: 420, label: "Scout Squad", parentMarkerId: party.body.marker.id, visibility: "members",
+});
+check("a squad token can be grouped under the party at creation", squad.status === 201 && squad.body.marker.parentMarkerId === party.body.marker.id, squad.body);
+
+const selfParent = await dm("PATCH", `/markers/${party.body.marker.id}`, { parentMarkerId: party.body.marker.id });
+check("a token cannot be its own parent", selfParent.status === 400, selfParent.body);
+const cycleAttempt = await dm("PATCH", `/markers/${party.body.marker.id}`, { parentMarkerId: squad.body.marker.id });
+check("a token cannot be grouped under its own descendant (would cycle)", cycleAttempt.status === 400, cycleAttempt.body);
+
+const ungroup = await dm("PATCH", `/markers/${squad.body.marker.id}`, { parentMarkerId: null });
+check("a token can be explicitly ungrouped back to top-level", ungroup.status === 200 && ungroup.body.marker.parentMarkerId === null, ungroup.body);
+const regroup = await dm("PATCH", `/markers/${squad.body.marker.id}`, { parentMarkerId: party.body.marker.id });
+check("and grouped again afterward", regroup.status === 200 && regroup.body.marker.parentMarkerId === party.body.marker.id, regroup.body);
+
+// Group visibility dominates (Kanka's MapGroup precedent): hiding the party
+// must hide the squad too, even though the squad's own visibility still says
+// "members" — nobody should have to remember to also hide every child.
+const hideParty = await dm("PATCH", `/markers/${party.body.marker.id}`, { visibility: "dm" });
+check("the party can be set to dm-only", hideParty.status === 200 && hideParty.body.marker.visibility === "dm", hideParty.body);
+
+const playerTokenList = (await player("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers;
+check(
+  "a dm-only party's squad is hidden from the marker list too, despite its own visibility being members",
+  !playerTokenList.some((m) => m.id === squad.body.marker.id),
+  playerTokenList.map((m) => ({ id: m.id, label: m.label })),
+);
+const playerFetchSquad = await player("GET", `/nodes/${mapNode.id}/map/markers`);
+check("sanity: the player's own request succeeded (not masked by an unrelated error)", playerFetchSquad.status === 200, playerFetchSquad.status);
+
+const squadGroupGrant = await dm("POST", `/nodes/${mapNode.id}/acl`, { subjectType: "user", subjectId: player1Id, canRead: true, canEdit: true });
+const playerPatchSquad = await player("PATCH", `/markers/${squad.body.marker.id}`, { label: "snooped" });
+check(
+  "nor can a player with edit rights on the map edit the hidden-by-group squad (404, not 200)",
+  playerPatchSquad.status === 404,
+  playerPatchSquad.body,
+);
+await dm("DELETE", `/nodes/${mapNode.id}/acl/${squadGroupGrant.body.entry.id}`);
+
+const reshowParty = await dm("PATCH", `/markers/${party.body.marker.id}`, { visibility: "members" });
+check("restoring the party's visibility un-hides the squad again", reshowParty.status === 200, reshowParty.body);
+const playerTokenListAfter = (await player("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers;
+check("the squad is visible again once the party is", playerTokenListAfter.some((m) => m.id === squad.body.marker.id), playerTokenListAfter.map((m) => m.id));
+
+const deleteParty = await dm("DELETE", `/markers/${party.body.marker.id}`);
+check("the party token can be deleted", deleteParty.status === 200, deleteParty.body);
+const squadAfterParentDeleted = (await dm("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers.find((m) => m.id === squad.body.marker.id);
+check(
+  "deleting a parent token ungroups its children instead of deleting or orphaning them",
+  squadAfterParentDeleted !== undefined && squadAfterParentDeleted.parentMarkerId === null,
+  squadAfterParentDeleted,
+);
+await dm("DELETE", `/markers/${squad.body.marker.id}`);
 
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);

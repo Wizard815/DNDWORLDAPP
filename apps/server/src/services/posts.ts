@@ -7,6 +7,7 @@ import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { shortId } from "../lib/id.ts";
 import { containsSecret, redactForViewer } from "../lib/secrets.ts";
 import { keyAfterAll } from "../lib/sortkey.ts";
+import { canEditNode } from "./acl.ts";
 import { requireVisibleNode } from "./nodes.ts";
 
 /**
@@ -51,7 +52,12 @@ export function listPosts(nodeId: string, viewer: Viewer): PostDto[] {
 
 export function createPost(nodeId: string, viewer: Viewer, input: CreatePostInput): PostDto {
   const node = requireVisibleNode(nodeId, viewer);
-  if (!canEdit(viewer.role, node.created_by, viewer.userId)) {
+  // canEditNode, not bare canEdit: an ACL edit grant on the NODE ("this
+  // specific person may edit this page") must cover adding a section to it,
+  // the same as it already covers the node body and its fields — otherwise a
+  // grant that PLAN.md promises includes edit is silently missing the one
+  // feature (DM-notes sections) the whole visibility model was built around.
+  if (!canEditNode(node, viewer)) {
     throw forbidden("You cannot add sections to this page.");
   }
 

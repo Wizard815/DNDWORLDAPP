@@ -4,15 +4,20 @@ Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
 
-> **Status, 2026-08-23 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite,
-> P3's templates/typed fields, and P4.1–P4.3 of maps (source image + typed markers with
-> inheritance, background tiling for large images, and labeled/colored region/zone
-> polygons). No importer is planned.**
+> **Status, 2026-08-25 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite,
+> P3's templates/typed fields, and P4.1–P4.3 and P4.5 of maps (source image + typed
+> markers with inheritance, background tiling for large images, labeled/colored
+> region/zone polygons with full vertex editing, and party/army tokens with
+> group-dominant visibility). Map display groups (Kanka's `MapGroup` — toggleable,
+> orderable marker categories, item 6 under P4 below) are server-complete but have no
+> client UI yet: mid-build, deliberately left there rather than rushed. No importer is
+> planned.**
 >
 > | | |
 > |---|---|
-> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands, page linking, inline DM-notes sections, columns, hover-to-link) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, typed/inheriting markers, and drawable region/zone polygons (labeled, colored, with a redraw flow) · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Lore/Map/saved templates) · manually pinned pages |
-> | **Next** | P4.4 fog of war → P4.5 party/army tokens → P3's query views → P5 calendars and timelines → P6 play mode → P7 hardening |
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands, page linking, inline DM-notes sections, columns, hover-to-link) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, typed/inheriting markers, drawable region/zone polygons (labeled, colored, with per-vertex dragging and click-to-split editing) and party/army tokens (grouping, group-dominant visibility) · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Document/Map/saved templates) · manually pinned pages |
+> | **In progress** | Map display groups (P4, item 6): schema + service + routes + API client done; no panel, no inspector control, no MCP tools yet |
+> | **Next** | Finish map display groups' client UI → P4.4 fog of war → P3's query views → P5 calendars and timelines → P6 play mode → P7 hardening |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
 > Kanka day to day and will move content over by hand through Kanka's MCP and ours as it
@@ -201,12 +206,31 @@ maps          node_id, asset_id, min_zoom, max_zoom, tiling_status, tiling_error
               fog_enabled, fog_mask_updated_at  -- ✅ built (P4.1); tiling/fog columns
               reserved now, populated starting P4.2/P4.4
 map_layers    id, map_node_id, name, asset_id, is_overlay, opacity, sort_key, is_default
-              -- table exists (P4.1 migration), unused until P4.6 (backlog)
-map_markers   id, map_node_id, layer_id, target_node_id, parent_marker_id, shape, x, y,
-              points, label, icon, color, members, revealed, visibility  -- ✅ built
-              (P4.1). One typed table for pin/label/circle/polygon/path/token — see
-              HANDOFF.md §7.8. label/icon resolve from target_node_id at read time when
-              unset, the same pattern fields.ts uses for template-seeded labels.
+              -- table exists (P4.1 migration), unused until P4.6 (backlog). NOT the
+              same thing as map_groups below despite the similar name — asset_id is
+              NOT NULL, so this is alternate/overlay base IMAGES, not marker categories.
+map_groups    id, map_node_id, parent_group_id, name, color, sort_key  -- ✅ service +
+              routes built (P4, item 6), client UI not yet. Kanka's actual MapGroup:
+              a toggleable, orderable display category any marker can join, nestable
+              via parent_group_id ("Regions" containing "Capital"/"City"/"Town"). No
+              visibility column on purpose — purely organizational, distinct from a
+              token's own parent_marker_id below. sort_key doubles as z-order (a later
+              sort_key paints on top). Whether a viewer has toggled a group off is a
+              personal, client-side-only preference (localStorage), never sent to or
+              stored by the server — see HANDOFF.md §7.8.
+map_markers   id, map_node_id, layer_id, target_node_id, parent_marker_id, group_id,
+              shape, x, y, points, label, icon, color, radius, members, revealed,
+              visibility  -- ✅ built (P4.1, P4.5, group_id for the item above). One
+              typed table for pin/label/circle/polygon/path/token — see HANDOFF.md
+              §7.8. label/icon resolve from target_node_id at read time when unset, the
+              same pattern fields.ts uses for template-seeded labels — and, since P4.5,
+              so does a token's effective VISIBILITY: it resolves to the most
+              restrictive value across itself and its whole parent_marker_id chain, not
+              just its own column, so hiding a party also hides every squad grouped
+              under it. radius (P4.5) is circle-only, in the same pixel space as x/y so
+              it scales with zoom like a region's vertices. group_id is unrelated to
+              parent_marker_id — see map_groups above for why these are two features,
+              not one.
 calendars     node_id, schema (JSON: months, weekdays, leap rules, moons, eras)
 dates         node_id, calendar_id, start_abs (int MINUTES), end_abs, precision, lane,
               real_date
@@ -387,10 +411,43 @@ import is wanted later, both are specified well enough to build from cold.
      once set. Added a "🖼 Replace image" toolbar button.
 4. **Fog of war — not yet built.** DungeonBoard-style: a map defaults fully hidden once
    enabled, revealed via a freehand-painted mask and/or toggling a region "revealed".
-5. **Party/army/faction tokens — not yet built.** A `token`-shaped marker with a
-   self-referential parent link, for tracking a splitting party or moving factions.
-6. **Layers — backlog.** Alternate base images / always-on overlays; deprioritized below
-   1–5 per the owner's explicit ask.
+5. **Party/army/faction tokens. ✅ built.** A `token`-shaped marker with a
+   self-referential `parent_marker_id`, for tracking a splitting party or moving
+   factions — a party token can have squad tokens grouped under it, arbitrarily deep.
+   Group visibility is dominant (Kanka's `MapGroup` precedent): hiding the parent hides
+   every descendant regardless of their own visibility, so a DM hiding "the party" does
+   not also have to remember to hide each member. Editable end to end — the marker
+   inspector's "Group" dropdown (tokens only; excludes the token's own descendants,
+   which the server also refuses as a cycle), a "Who's in this group" freeform text
+   field, and the same through `place_marker`/`update_marker` in the MCP server. See
+   HANDOFF.md §7.8 for the full write-up, including a real pre-existing bug found and
+   fixed along the way (`update_marker`'s `target_node_id` never worked over MCP).
+6. **Map display groups (Kanka's actual `MapGroup`) — server complete, client UI not
+   started.** A separate feature from #5 above, despite the similar name: item 5's
+   `parent_marker_id` is a *token's own* party/squad hierarchy (self-referential on
+   `map_markers`, tied to group-dominant *visibility*). This is Kanka's literal
+   `MapGroup` — a named, colored, orderable *display category* that any marker of any
+   shape can join (a region, a pin, anything), independent of visibility entirely.
+   Requested directly by the owner, referencing their own Kanka campaign's map groups
+   panel, to toggle whole categories of markers on/off and control their stacking/
+   "height" order. Built: migration `0010` (`map_groups` table, self-referential
+   `parent_group_id` for nesting like "Regions" containing "Capital"/"City"/"Town";
+   `map_markers.group_id`), the full CRUD service (`services/mapGroups.ts`) and routes
+   (`GET/POST /nodes/:id/map/groups`, `PATCH`/`DELETE /map-groups/:id`,
+   `POST /map-groups/:id/move` for z-order via the same fractional-index scheme as
+   everything else), and the `apps/web/src/api.ts` client methods. **Not built yet**:
+   any actual UI — no panel to see/create/toggle/reorder groups, no "assign this marker
+   to a group" control in the inspector, and no MCP tools for group CRUD. The
+   visibility-toggle design decision is already made and worth preserving: toggling a
+   group off is a **personal, per-viewer display preference** (client-side
+   `localStorage`, keyed per map node — same mechanism as `usePinned`), not a shared
+   server-side setting, so a player decluttering their own screen never hides anything
+   for the DM or anyone else. Groups themselves (name/color/order/membership) ARE
+   shared map data, same as markers. See HANDOFF.md §7.8 for the fuller note on why
+   this needed a genuinely new table rather than reusing `map_layers` (P4.6 backlog,
+   image-bound by its `NOT NULL asset_id`) or #5's `parent_marker_id`.
+7. **Layers — backlog.** Alternate base images / always-on overlays; deprioritized below
+   1–6 per the owner's explicit ask.
 
 **P5 — Calendars, events, timelines.** Calendar schema editor (months, weekdays, leap
 rules, moons, eras), date fields on any node, timeline view with lanes, per-world

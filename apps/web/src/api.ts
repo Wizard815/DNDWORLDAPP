@@ -5,6 +5,7 @@ import type {
   Backlink,
   ChangePasswordInput,
   CreateFieldInput,
+  CreateMapGroupInput,
   CreateMarkerInput,
   CreateNodeInput,
   CreateTemplateInput,
@@ -17,9 +18,11 @@ import type {
   GrantAclInput,
   LoginInput,
   MapDto,
+  MapGroupDto,
   MapMarkerDto,
   MemberDto,
   MoveFieldInput,
+  MoveMapGroupInput,
   MoveNodeInput,
   NodeDetail,
   NodeSummary,
@@ -31,6 +34,7 @@ import type {
   TemplateFieldDef,
   TokenDto,
   UpdateFieldInput,
+  UpdateMapGroupInput,
   UpdateMarkerInput,
   UpdateNodeInput,
   UpdateTemplateInput,
@@ -261,6 +265,19 @@ export const api = {
     request<{ marker: MapMarkerDto }>(`/markers/${markerId}`, { method: "PATCH", ...json(input) }),
 
   deleteMarker: (markerId: string) => request<{ ok: true }>(`/markers/${markerId}`, { method: "DELETE" }),
+
+  mapGroups: (nodeId: string) => request<{ groups: MapGroupDto[] }>(`/nodes/${nodeId}/map/groups`),
+
+  createMapGroup: (nodeId: string, input: CreateMapGroupInput) =>
+    request<{ group: MapGroupDto }>(`/nodes/${nodeId}/map/groups`, { method: "POST", ...json(input) }),
+
+  updateMapGroup: (groupId: string, input: UpdateMapGroupInput) =>
+    request<{ group: MapGroupDto }>(`/map-groups/${groupId}`, { method: "PATCH", ...json(input) }),
+
+  moveMapGroup: (groupId: string, input: MoveMapGroupInput) =>
+    request<{ ok: true }>(`/map-groups/${groupId}/move`, { method: "POST", ...json(input) }),
+
+  deleteMapGroup: (groupId: string) => request<{ ok: true }>(`/map-groups/${groupId}`, { method: "DELETE" }),
 
   uploadAsset: async (worldId: string, file: File): Promise<AssetDto> => {
     const form = new FormData();

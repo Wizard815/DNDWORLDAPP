@@ -124,6 +124,7 @@ export type MapMarkerRow = {
   layer_id: string | null;
   target_node_id: string | null;
   parent_marker_id: string | null;
+  group_id: string | null;
   shape: MarkerShape;
   x: number;
   y: number;
@@ -131,10 +132,22 @@ export type MapMarkerRow = {
   label: string | null;
   icon: string | null;
   color: string | null;
+  radius: number | null;
   members: string | null;
   revealed: number;
   visibility: FieldVisibility;
   created_by: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export type MapGroupRow = {
+  id: string;
+  map_node_id: string;
+  parent_group_id: string | null;
+  name: string;
+  color: string | null;
+  sort_key: string;
   created_at: number;
   updated_at: number;
 }

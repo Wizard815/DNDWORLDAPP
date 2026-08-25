@@ -320,6 +320,49 @@ check("a region can be deleted", !regionDeleted.isError, regionDeleted.text);
 const mapAfterDelete = await callTool("get_map", { node_id: mapNodeId });
 check("get_map shows no markers once the last one is deleted", mapAfterDelete.text.includes("No markers yet"), mapAfterDelete.text);
 
+// update_marker used to spread its snake_case args straight into the (camelCase)
+// UpdateMarkerInput with no translation, which happened to work for every field
+// except target_node_id (the one multi-word name) — a target_node_id sent via
+// update_marker silently did nothing, dropped by the server's Zod schema as an
+// unrecognized key. Regression: link a page to a marker that was placed with no
+// target, then confirm get_map actually shows the link, not just a 200 response.
+const untargeted = await callTool("place_marker", { node_id: mapNodeId, shape: "pin", x: 1, y: 1, label: "Undiscovered" });
+const untargetedId = untargeted.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+const linkedViaUpdate = await callTool("update_marker", { marker_id: untargetedId, target_node_id: world.rootNodeId });
+check("update_marker accepts target_node_id without error", !linkedViaUpdate.isError, linkedViaUpdate.text);
+const mapAfterLink = await callTool("get_map", { node_id: mapNodeId });
+check(
+  "and the link actually took effect server-side, not just a silently-dropped field",
+  mapAfterLink.text.includes(`-> [${world.rootNodeId}]`),
+  mapAfterLink.text,
+);
+await callTool("delete_marker", { marker_id: untargetedId });
+
+// P4.5 — party/army tokens: a self-referential parent link for a splitting party.
+const partyPlaced = await callTool("place_marker", { node_id: mapNodeId, shape: "token", x: 5, y: 5, label: "The Party", members: "Kael, Brint" });
+const partyId = partyPlaced.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+check("place_marker accepts a token shape with a members list", !partyPlaced.isError, partyPlaced.text);
+
+const squadPlaced = await callTool("place_marker", {
+  node_id: mapNodeId, shape: "token", x: 6, y: 6, label: "Scout Squad", parent_marker_id: partyId,
+});
+const squadId = squadPlaced.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+check("place_marker accepts parent_marker_id at creation", !squadPlaced.isError, squadPlaced.text);
+
+const mapWithGroup = await callTool("get_map", { node_id: mapNodeId });
+check("get_map shows the squad's group membership", mapWithGroup.text.includes(`"Scout Squad" at (6, 6) (group: [${partyId}])`), mapWithGroup.text);
+
+const cycleRejected = await callTool("update_marker", { marker_id: partyId, parent_marker_id: squadId });
+check("update_marker rejects grouping a token under its own descendant", cycleRejected.isError, cycleRejected.text);
+
+const ungrouped = await callTool("update_marker", { marker_id: squadId, parent_marker_id: null });
+check("update_marker can ungroup a token via parent_marker_id: null", !ungrouped.isError, ungrouped.text);
+const mapUngrouped = await callTool("get_map", { node_id: mapNodeId });
+check("get_map no longer shows a group for the ungrouped token", !mapUngrouped.text.includes(`"Scout Squad" at (6, 6) (group:`), mapUngrouped.text);
+
+await callTool("delete_marker", { marker_id: squadId });
+await callTool("delete_marker", { marker_id: partyId });
+
 console.log("\n== guard rails ==");
 const notYet = await callTool("add_event");
 check("unbuilt tools say so rather than failing oddly", notYet.text.includes("not implemented yet"), notYet.text);

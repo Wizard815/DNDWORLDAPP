@@ -80,7 +80,7 @@ export function AuthScreen({ needsSetup, onDone }: { needsSetup: boolean; onDone
         <input
           className={inputClass}
           type="password"
-          placeholder={needsSetup ? "Password (10+ characters)" : "Password"}
+          placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required

@@ -567,7 +567,9 @@ export function registerTools(server: McpServer, client: WorldClient): void {
                 m.points !== null && m.points !== ""
                   ? ` [${parseMarkerPoints(m.points)?.length ?? 0} vertices]`
                   : "";
-              return `- [${m.id}] ${m.shape} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${vertices}${target}${vis}`;
+              // Party/army tokens (P4.5): which group this one belongs to, if any.
+              const group = m.parentMarkerId !== null ? ` (group: [${m.parentMarkerId}])` : "";
+              return `- [${m.id}] ${m.shape} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${vertices}${target}${vis}${group}`;
             }),
           );
         }
@@ -593,6 +595,13 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         label: z.string().optional().describe("Overrides the linked page's title, or names an unlinked marker."),
         icon: z.string().optional().describe("A single emoji, overriding the linked page's icon."),
         color: z.string().optional(),
+        radius: z
+          .number()
+          .positive()
+          .optional()
+          .describe(
+            "Circle markers only: radius in the map's own pixel space (same space as x/y), so it stays the same real size on the map at any zoom. Ignored for other shapes. Default 80.",
+          ),
         points: z
           .string()
           .optional()
@@ -600,10 +609,17 @@ export function registerTools(server: McpServer, client: WorldClient): void {
             'Polygon/path markers only: vertices as "x,y x,y ..." in the map\'s pixel space (polygon needs >= 3, path >= 2). Ignored for other shapes.',
           ),
         members: z.string().optional().describe("Token markers only: freeform description of who's in this group."),
+        parent_marker_id: z
+          .string()
+          .nullable()
+          .optional()
+          .describe(
+            "Groups this marker under another marker on the same map — a party/army token splitting into sub-groups. Group visibility dominates: a marker under a dm-only parent stays dm-only regardless of its own visibility.",
+          ),
         visibility: fieldVisibilitySchema.optional().describe("public | members | dm. Default members."),
       },
     },
-    async ({ node_id, shape, x, y, target_node_id, label, icon, color, points, members, visibility }) => {
+    async ({ node_id, shape, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, visibility }) => {
       try {
         const { marker } = await client.createMarker(node_id, {
           shape: shape ?? "pin",
@@ -613,8 +629,10 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           label,
           icon,
           color,
+          radius,
           points,
           members,
+          parentMarkerId: parent_marker_id,
           visibility: visibility ?? "members",
         });
         const vertexCount = parseMarkerPoints(marker.points)?.length ?? 0;
@@ -640,6 +658,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         label: z.string().nullable().optional(),
         icon: z.string().nullable().optional(),
         color: z.string().nullable().optional(),
+        radius: z.number().positive().nullable().optional().describe("Circle markers only, same pixel space as x/y."),
         points: z
           .string()
           .optional()
@@ -647,12 +666,38 @@ export function registerTools(server: McpServer, client: WorldClient): void {
             'Polygon/path markers only: vertices as "x,y x,y ..." in the map\'s pixel space. Replaces the whole shape; to remove one, delete the marker.',
           ),
         members: z.string().nullable().optional(),
+        parent_marker_id: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Groups this marker under another marker on the same map, or pass null to ungroup it."),
         visibility: fieldVisibilitySchema.optional(),
       },
     },
-    async ({ marker_id, ...input }) => {
+    // Deliberately NOT `async ({ marker_id, ...input }) => client.updateMarker(marker_id, input)`
+    // — every field above used to be spread straight through, which happened
+    // to work only because every OTHER field is a single word with no
+    // snake_case/camelCase difference to lose in translation. target_node_id
+    // is not: spread directly, it becomes an unrecognized key that Zod's
+    // updateMarkerInputSchema.parse() on the server silently drops, so a
+    // target_node_id update sent via MCP has never actually taken effect.
+    // Mapped explicitly here, matching place_marker's own pattern, so
+    // parent_marker_id (the same shape) doesn't repeat the same bug.
+    async ({ marker_id, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, visibility }) => {
       try {
-        const { marker } = await client.updateMarker(marker_id, input);
+        const { marker } = await client.updateMarker(marker_id, {
+          x,
+          y,
+          targetNodeId: target_node_id,
+          label,
+          icon,
+          color,
+          radius,
+          points,
+          members,
+          parentMarkerId: parent_marker_id,
+          visibility,
+        });
         return text(`Updated marker [${marker.id}].`);
       } catch (error) {
         return fail(error);

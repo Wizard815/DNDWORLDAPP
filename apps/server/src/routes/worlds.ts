@@ -58,8 +58,8 @@ export async function worldRoutes(app: FastifyInstance): Promise<void> {
 
   /** Wiki links with no destination yet — the world's to-do list. */
   app.get<{ Params: WorldParams }>("/api/v1/worlds/:worldId/unresolved-links", async (request) => {
-    viewerForWorld(request, request.params.worldId);
-    return { links: unresolvedLinks(request.params.worldId) };
+    const viewer = viewerForWorld(request, request.params.worldId);
+    return { links: unresolvedLinks(request.params.worldId, viewer) };
   });
 
   app.post<{ Params: WorldParams }>("/api/v1/worlds/:worldId/nodes", async (request, reply) => {

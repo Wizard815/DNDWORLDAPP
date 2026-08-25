@@ -182,7 +182,7 @@ function ShareNode({
 
         {node.children.length > 0 && (
           <section className="mt-10">
-            <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">Pages inside</h2>
+            <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">Child pages</h2>
             <ul className="grid gap-1 sm:grid-cols-2">
               {node.children.map((child) => (
                 <li key={child.id}>

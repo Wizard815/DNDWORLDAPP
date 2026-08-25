@@ -62,8 +62,14 @@ export const usernameSchema = z
   .max(32)
   .regex(/^[a-zA-Z0-9_.-]+$/, "Letters, numbers, underscore, period and hyphen only.");
 
-/** Shared by every "set this account's password" field. */
-export const passwordSchema = z.string().min(10).max(512);
+/**
+ * Shared by every "set this account's password" field. No minimum length beyond
+ * non-empty — this app is self-hosted with accounts created by a human (the
+ * owner at first-run, a DM for everyone after, see routes/auth.ts), not
+ * internet-facing signup, so the owner/DM is trusted to pick whatever password
+ * fits their table rather than the app second-guessing them.
+ */
+export const passwordSchema = z.string().min(1).max(512);
 
 export const setupInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -445,6 +451,26 @@ export function formatMarkerPoints(points: MarkerPoint[]): string {
   return points.map(([x, y]) => `${round(x)},${round(y)}`).join(" ");
 }
 
+/**
+ * The Leaflet `<TileLayer>` URL template for a map node's tile pyramid.
+ * Deliberately `{z}/{y}/{x}`, NOT the more-familiar-looking `{z}/{x}/{y}` —
+ * sharp's `tile({layout:"google"})` writes this pyramid to disk as
+ * `{z}/{row}/{col}.webp` (confirmed empirically by inspecting the actual
+ * output directories, not assumed from the "google layout" name), while
+ * Leaflet's own `{x}`/`{y}` placeholders are column/row respectively. Putting
+ * `{x}` in the outer slot silently transposed every non-square map (nearly
+ * every real one): a tile was either served from the wrong coordinates, or
+ * 404'd once the wider axis's index outran the narrower axis's directory
+ * count. Exported here, not inlined in `MapView.tsx`, specifically so a test
+ * can construct the exact same URL a real `<TileLayer>` would request rather
+ * than re-deriving the formula independently and drifting out of sync with
+ * it — see `apps/server/scripts/smoke.mjs`'s "tile coordinates are not
+ * transposed" section and docs/HANDOFF.md §7.8 for the full story.
+ */
+export function mapTileUrlTemplate(nodeId: string): string {
+  return `/tiles/${nodeId}/{z}/{y}/{x}.webp`;
+}
+
 /** A `points` field as it appears on marker *input*: a well-formed, non-empty vertex string (or absent). */
 const pointsSchema = z
   .string()
@@ -462,12 +488,16 @@ export const mapMarkerDtoSchema = z.object({
   label: z.string().nullable(),
   icon: z.string().nullable(),
   color: z.string().nullable(),
+  /** `circle` only, same pixel space as x/y/points — see migration 0009. */
+  radius: z.number().nullable(),
   members: z.string().nullable(),
   revealed: z.boolean(),
   /** Reuses fields' 3-value visibility scheme — no creator column here either to key a 'private' level off of. */
   visibility: fieldVisibilitySchema,
   targetNode: z.object({ id: z.string(), title: z.string(), icon: z.string().nullable() }).nullable(),
   parentMarkerId: z.string().nullable(),
+  /** Display category (Kanka's MapGroup) — organizational only, no visibility effect. See migration 0010. */
+  groupId: z.string().nullable(),
 });
 export type MapMarkerDto = z.infer<typeof mapMarkerDtoSchema>;
 
@@ -480,9 +510,11 @@ export const createMarkerInputSchema = z.object({
   label: z.string().max(300).nullable().optional(),
   icon: z.string().max(60).nullable().optional(),
   color: z.string().max(60).nullable().optional(),
+  radius: z.number().positive().nullable().optional(),
   members: z.string().max(2_000).nullable().optional(),
   visibility: fieldVisibilitySchema.default("members"),
   parentMarkerId: z.string().nullable().optional(),
+  groupId: z.string().nullable().optional(),
 });
 export type CreateMarkerInput = z.infer<typeof createMarkerInputSchema>;
 
@@ -495,12 +527,55 @@ export const updateMarkerInputSchema = z
     label: z.string().max(300).nullable(),
     icon: z.string().max(60).nullable(),
     color: z.string().max(60).nullable(),
+    radius: z.number().positive().nullable(),
     members: z.string().max(2_000).nullable(),
     revealed: z.boolean(),
     visibility: fieldVisibilitySchema,
+    parentMarkerId: z.string().nullable(),
+    groupId: z.string().nullable(),
   })
   .partial();
 export type UpdateMarkerInput = z.infer<typeof updateMarkerInputSchema>;
+
+// ---------------------------------------------------------------------------
+// Map groups (Kanka's MapGroup) — a named, colored, orderable category any
+// marker can belong to, nestable via parentGroupId. Distinct from a token's
+// own parentMarkerId (P4.5's party/squad hierarchy): this is pure display
+// organization, independent of shape or visibility.
+// ---------------------------------------------------------------------------
+
+export const mapGroupDtoSchema = z.object({
+  id: z.string(),
+  mapNodeId: z.string(),
+  parentGroupId: z.string().nullable(),
+  name: z.string(),
+  color: z.string().nullable(),
+  sortKey: z.string(),
+});
+export type MapGroupDto = z.infer<typeof mapGroupDtoSchema>;
+
+export const createMapGroupInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  color: z.string().max(60).nullable().optional(),
+  parentGroupId: z.string().nullable().optional(),
+});
+export type CreateMapGroupInput = z.infer<typeof createMapGroupInputSchema>;
+
+export const updateMapGroupInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    color: z.string().max(60).nullable(),
+    parentGroupId: z.string().nullable(),
+  })
+  .partial();
+export type UpdateMapGroupInput = z.infer<typeof updateMapGroupInputSchema>;
+
+/** Reorders a group among its siblings — same "put me between these two" shape as moveFieldInputSchema/moveNodeInputSchema. */
+export const moveMapGroupInputSchema = z.object({
+  afterId: z.string().nullable().optional(),
+  beforeId: z.string().nullable().optional(),
+});
+export type MoveMapGroupInput = z.infer<typeof moveMapGroupInputSchema>;
 
 // ---------------------------------------------------------------------------
 // Posts (Kanka's entity notes: a node's DM-only sections live here)

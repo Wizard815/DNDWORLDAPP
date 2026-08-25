@@ -122,6 +122,15 @@ export function getNodeRow(nodeId: string): NodeRow | null {
   return (selectNode.get(nodeId) as NodeRow | undefined) ?? null;
 }
 
+/** Non-throwing form of requireVisibleNode, for call sites that need to degrade
+ * gracefully rather than 404 — e.g. a marker or field that resolves its label
+ * from a target node it links to, where an invisible target should fall back
+ * to the marker/field's own override, not blow up the whole response. */
+export function isNodeVisible(nodeId: string, viewer: Viewer): boolean {
+  const read = readableSql("", viewer);
+  return db.prepare(`SELECT 1 FROM nodes WHERE id = ? AND ${read.sql}`).get(nodeId, ...read.params) !== undefined;
+}
+
 /**
  * Fetch a node the viewer is allowed to see. A hidden node is reported as "not
  * found" rather than "forbidden", so probing ids cannot enumerate DM content.
@@ -129,11 +138,7 @@ export function getNodeRow(nodeId: string): NodeRow | null {
 export function requireVisibleNode(nodeId: string, viewer: Viewer): NodeRow {
   const row = getNodeRow(nodeId);
   if (row === null) throw notFound("No such node.");
-  const read = readableSql("", viewer);
-  const allowed = db
-    .prepare(`SELECT 1 FROM nodes WHERE id = ? AND ${read.sql}`)
-    .get(nodeId, ...read.params);
-  if (allowed === undefined) throw notFound("No such node.");
+  if (!isNodeVisible(nodeId, viewer)) throw notFound("No such node.");
   return row;
 }
 
@@ -200,15 +205,22 @@ export function backlinksFor(nodeId: string, viewer: Viewer): Backlink[] {
   return rows.map((r) => ({ nodeId: r.id, title: r.title, icon: r.icon, label: r.label }));
 }
 
-/** Wiki links pointing at pages that do not exist yet — a to-do list, not an error. */
-export function unresolvedLinks(worldId: string): UnresolvedLink[] {
+/**
+ * Wiki links pointing at pages that do not exist yet — a to-do list, not an
+ * error. Scoped to links whose SOURCE node this viewer can read, same as
+ * backlinksFor() — otherwise the target_text of a link written on a dm-only
+ * page (or inside a :::secret block) would leak to every member.
+ */
+export function unresolvedLinks(worldId: string, viewer: Viewer): UnresolvedLink[] {
+  const vis = readableSql("n", viewer);
   const rows = db
     .prepare(
-      `SELECT target_text, COUNT(*) AS count FROM links
-       WHERE world_id = ? AND dst_node_id IS NULL
-       GROUP BY lower(target_text) ORDER BY count DESC, target_text LIMIT 200`,
+      `SELECT l.target_text, COUNT(*) AS count FROM links l
+       JOIN nodes n ON n.id = l.src_node_id
+       WHERE l.world_id = ? AND l.dst_node_id IS NULL AND n.is_archived = 0 AND ${vis.sql}
+       GROUP BY lower(l.target_text) ORDER BY count DESC, l.target_text LIMIT 200`,
     )
-    .all(worldId) as Array<{ target_text: string; count: number }>;
+    .all(worldId, ...vis.params) as Array<{ target_text: string; count: number }>;
   return rows.map((r) => ({ targetText: r.target_text, count: r.count }));
 }
 
@@ -253,10 +265,17 @@ export function searchNodes(
 // Links
 // ---------------------------------------------------------------------------
 
+/**
+ * Indexes wikilinks out of the SECRET-STRIPPED body, same as reindexFts below —
+ * a `[[Target]]` written inside a `:::secret` block must not become a `links`
+ * row at all, or it leaks the secret's target_text to every member via
+ * unresolvedLinks()/backlinksFor(), neither of which can see inside the block
+ * itself to re-check.
+ */
 function reindexLinks(row: NodeRow): void {
   deleteLinksFrom.run(row.id);
   const now = Date.now();
-  for (const link of parseWikilinks(row.body_md)) {
+  for (const link of parseWikilinks(stripSecrets(row.body_md))) {
     const key = linkKey(link.target);
     const target = findByTitleOrSlug.get(row.world_id, key, slugify(link.target)) as
       | { id: string }
@@ -432,6 +451,21 @@ export function moveNode(nodeId: string, viewer: Viewer, input: MoveNodeInput): 
     nodeId,
   );
   return selectNode.get(nodeId) as NodeRow;
+}
+
+/**
+ * One-time repair for links created before reindexLinks() stripped secret
+ * blocks (see the comment on reindexLinks itself): re-derives every node's
+ * `links` rows from its current body. Called once at boot, gated by the same
+ * `_migrations` ledger the SQL migrations use, under a name that is not a
+ * filename — this is a JS-driven data repair, not a schema change, so it does
+ * not belong in migrations/*.sql (rule 6.4).
+ */
+export function backfillLinksStrippedOfSecrets(): void {
+  const rows = db.prepare("SELECT * FROM nodes").all() as NodeRow[];
+  transaction(() => {
+    for (const row of rows) reindexLinks(row);
+  });
 }
 
 /** Archive rather than delete; children go with it. */
