@@ -350,7 +350,7 @@ const squadId = squadPlaced.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
 check("place_marker accepts parent_marker_id at creation", !squadPlaced.isError, squadPlaced.text);
 
 const mapWithGroup = await callTool("get_map", { node_id: mapNodeId });
-check("get_map shows the squad's group membership", mapWithGroup.text.includes(`"Scout Squad" at (6, 6) (group: [${partyId}])`), mapWithGroup.text);
+check("get_map shows the squad's party-group membership", mapWithGroup.text.includes(`"Scout Squad" at (6, 6) (party group: [${partyId}])`), mapWithGroup.text);
 
 const cycleRejected = await callTool("update_marker", { marker_id: partyId, parent_marker_id: squadId });
 check("update_marker rejects grouping a token under its own descendant", cycleRejected.isError, cycleRejected.text);
@@ -358,10 +358,53 @@ check("update_marker rejects grouping a token under its own descendant", cycleRe
 const ungrouped = await callTool("update_marker", { marker_id: squadId, parent_marker_id: null });
 check("update_marker can ungroup a token via parent_marker_id: null", !ungrouped.isError, ungrouped.text);
 const mapUngrouped = await callTool("get_map", { node_id: mapNodeId });
-check("get_map no longer shows a group for the ungrouped token", !mapUngrouped.text.includes(`"Scout Squad" at (6, 6) (group:`), mapUngrouped.text);
+check("get_map no longer shows a party group for the ungrouped token", !mapUngrouped.text.includes(`"Scout Squad" at (6, 6) (party group:`), mapUngrouped.text);
 
 await callTool("delete_marker", { marker_id: squadId });
 await callTool("delete_marker", { marker_id: partyId });
+
+// Map display groups (Kanka's own MapGroup) — a separate, purely organizational
+// feature from the party-group hierarchy above. Any shape can join one.
+console.log("\n== map display groups ==");
+const groupsEmpty = await callTool("list_map_groups", { node_id: mapNodeId });
+check("list_map_groups reports none yet", groupsEmpty.text.includes("No display groups"), groupsEmpty.text);
+
+const regionsGroup = await callTool("create_map_group", { node_id: mapNodeId, name: "Regions" });
+const regionsGroupId = regionsGroup.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+check("create_map_group creates a top-level group", !regionsGroup.isError && typeof regionsGroupId === "string", regionsGroup.text);
+
+const capitalGroup = await callTool("create_map_group", { node_id: mapNodeId, name: "Capital", parent_group_id: regionsGroupId });
+const capitalGroupId = capitalGroup.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+check("create_map_group nests a group under another", !capitalGroup.isError && typeof capitalGroupId === "string", capitalGroup.text);
+
+const groupsList = await callTool("list_map_groups", { node_id: mapNodeId });
+check(
+  "list_map_groups shows both groups with the nesting relationship",
+  groupsList.text.includes(`"Capital" (nested under [${regionsGroupId}])`),
+  groupsList.text,
+);
+
+const renamedGroup = await callTool("update_map_group", { group_id: capitalGroupId, name: "Capitals" });
+check("update_map_group renames a group", !renamedGroup.isError, renamedGroup.text);
+
+const pinInGroup = await callTool("place_marker", { node_id: mapNodeId, shape: "pin", x: 7, y: 7, label: "A capital city", group_id: capitalGroupId });
+const pinInGroupId = pinInGroup.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+check("place_marker accepts group_id (a plain pin, unrelated to party tokens)", !pinInGroup.isError, pinInGroup.text);
+
+const mapWithDisplayGroup = await callTool("get_map", { node_id: mapNodeId });
+check(
+  "get_map shows the pin's display group, labeled distinctly from a party group",
+  mapWithDisplayGroup.text.includes(`"A capital city" at (7, 7) (display group: [${capitalGroupId}])`),
+  mapWithDisplayGroup.text,
+);
+
+const movedGroup = await callTool("move_map_group", { group_id: capitalGroupId, after_id: null, before_id: null });
+check("move_map_group accepts a reorder call", !movedGroup.isError, movedGroup.text);
+
+await callTool("delete_marker", { marker_id: pinInGroupId });
+const groupDeleted = await callTool("delete_map_group", { group_id: capitalGroupId });
+check("delete_map_group removes a group", !groupDeleted.isError, groupDeleted.text);
+await callTool("delete_map_group", { group_id: regionsGroupId });
 
 console.log("\n== guard rails ==");
 const notYet = await callTool("add_event");

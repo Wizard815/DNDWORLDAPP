@@ -1,11 +1,14 @@
 import type {
   CreateFieldInput,
+  CreateMapGroupInput,
   CreateMarkerInput,
   CreateNodeInput,
   CreatePostInput,
   FieldDto,
   MapDto,
+  MapGroupDto,
   MapMarkerDto,
+  MoveMapGroupInput,
   MoveNodeInput,
   NodeDetail,
   NodeSummary,
@@ -14,6 +17,7 @@ import type {
   TemplateDto,
   UnresolvedLink,
   UpdateFieldInput,
+  UpdateMapGroupInput,
   UpdateMarkerInput,
   UpdateNodeInput,
   UpdatePostInput,
@@ -199,5 +203,25 @@ export class WorldClient {
 
   deleteMarker(markerId: string) {
     return this.request<{ ok: true }>("DELETE", `/markers/${markerId}`);
+  }
+
+  mapGroups(nodeId: string) {
+    return this.request<{ groups: MapGroupDto[] }>("GET", `/nodes/${nodeId}/map/groups`);
+  }
+
+  createMapGroup(nodeId: string, input: CreateMapGroupInput) {
+    return this.request<{ group: MapGroupDto }>("POST", `/nodes/${nodeId}/map/groups`, input);
+  }
+
+  updateMapGroup(groupId: string, input: UpdateMapGroupInput) {
+    return this.request<{ group: MapGroupDto }>("PATCH", `/map-groups/${groupId}`, input);
+  }
+
+  moveMapGroup(groupId: string, input: MoveMapGroupInput) {
+    return this.request<{ ok: true }>("POST", `/map-groups/${groupId}/move`, input);
+  }
+
+  deleteMapGroup(groupId: string) {
+    return this.request<{ ok: true }>("DELETE", `/map-groups/${groupId}`);
   }
 }

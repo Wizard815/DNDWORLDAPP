@@ -4,20 +4,18 @@ Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
 
-> **Status, 2026-08-25 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite,
+> **Status, 2026-09-14 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite,
 > P3's templates/typed fields, and P4.1–P4.3 and P4.5 of maps (source image + typed
 > markers with inheritance, background tiling for large images, labeled/colored
-> region/zone polygons with full vertex editing, and party/army tokens with
-> group-dominant visibility). Map display groups (Kanka's `MapGroup` — toggleable,
-> orderable marker categories, item 6 under P4 below) are server-complete but have no
-> client UI yet: mid-build, deliberately left there rather than rushed. No importer is
-> planned.**
+> region/zone polygons with full vertex editing, party/army tokens with
+> group-dominant visibility, and Kanka-style toggleable/orderable map display groups —
+> the last of these not itself a numbered P4.x phase, see item 6 under P4 below). No
+> importer is planned.**
 >
 > | | |
 > |---|---|
-> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands, page linking, inline DM-notes sections, columns, hover-to-link) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, typed/inheriting markers, drawable region/zone polygons (labeled, colored, with per-vertex dragging and click-to-split editing) and party/army tokens (grouping, group-dominant visibility) · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Document/Map/saved templates) · manually pinned pages |
-> | **In progress** | Map display groups (P4, item 6): schema + service + routes + API client done; no panel, no inspector control, no MCP tools yet |
-> | **Next** | Finish map display groups' client UI → P4.4 fog of war → P3's query views → P5 calendars and timelines → P6 play mode → P7 hardening |
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands, page linking, inline DM-notes sections, columns, hover-to-link) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, typed/inheriting markers, drawable region/zone polygons (labeled, colored, with per-vertex dragging and click-to-split editing), party/army tokens (grouping, group-dominant visibility), and Kanka-style map display groups (nested, orderable, per-viewer toggleable, with an MCP-exposed CRUD surface) · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Document/Map/saved templates) · manually pinned pages |
+> | **Next** | P4.4 fog of war → P3's query views → P5 calendars and timelines → P6 play mode → P7 hardening |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
 > Kanka day to day and will move content over by hand through Kanka's MCP and ours as it
@@ -209,8 +207,8 @@ map_layers    id, map_node_id, name, asset_id, is_overlay, opacity, sort_key, is
               -- table exists (P4.1 migration), unused until P4.6 (backlog). NOT the
               same thing as map_groups below despite the similar name — asset_id is
               NOT NULL, so this is alternate/overlay base IMAGES, not marker categories.
-map_groups    id, map_node_id, parent_group_id, name, color, sort_key  -- ✅ service +
-              routes built (P4, item 6), client UI not yet. Kanka's actual MapGroup:
+map_groups    id, map_node_id, parent_group_id, name, color, sort_key  -- ✅ built,
+              service + routes + client UI + MCP tools (P4, item 6). Kanka's actual MapGroup:
               a toggleable, orderable display category any marker can join, nestable
               via parent_group_id ("Regions" containing "Capital"/"City"/"Town"). No
               visibility column on purpose — purely organizational, distinct from a
@@ -422,30 +420,38 @@ import is wanted later, both are specified well enough to build from cold.
    field, and the same through `place_marker`/`update_marker` in the MCP server. See
    HANDOFF.md §7.8 for the full write-up, including a real pre-existing bug found and
    fixed along the way (`update_marker`'s `target_node_id` never worked over MCP).
-6. **Map display groups (Kanka's actual `MapGroup`) — server complete, client UI not
-   started.** A separate feature from #5 above, despite the similar name: item 5's
-   `parent_marker_id` is a *token's own* party/squad hierarchy (self-referential on
-   `map_markers`, tied to group-dominant *visibility*). This is Kanka's literal
-   `MapGroup` — a named, colored, orderable *display category* that any marker of any
-   shape can join (a region, a pin, anything), independent of visibility entirely.
-   Requested directly by the owner, referencing their own Kanka campaign's map groups
-   panel, to toggle whole categories of markers on/off and control their stacking/
-   "height" order. Built: migration `0010` (`map_groups` table, self-referential
-   `parent_group_id` for nesting like "Regions" containing "Capital"/"City"/"Town";
-   `map_markers.group_id`), the full CRUD service (`services/mapGroups.ts`) and routes
-   (`GET/POST /nodes/:id/map/groups`, `PATCH`/`DELETE /map-groups/:id`,
-   `POST /map-groups/:id/move` for z-order via the same fractional-index scheme as
-   everything else), and the `apps/web/src/api.ts` client methods. **Not built yet**:
-   any actual UI — no panel to see/create/toggle/reorder groups, no "assign this marker
-   to a group" control in the inspector, and no MCP tools for group CRUD. The
-   visibility-toggle design decision is already made and worth preserving: toggling a
-   group off is a **personal, per-viewer display preference** (client-side
+6. **Map display groups (Kanka's actual `MapGroup`) — ✅ built.** A separate feature
+   from #5 above, despite the similar name: item 5's `parent_marker_id` is a *token's
+   own* party/squad hierarchy (self-referential on `map_markers`, tied to
+   group-dominant *visibility*). This is Kanka's literal `MapGroup` — a named, colored,
+   orderable *display category* that any marker of any shape can join (a region, a pin,
+   anything), independent of visibility entirely. Requested directly by the owner,
+   referencing their own Kanka campaign's map groups panel, to toggle whole categories
+   of markers on/off and control their stacking/"height" order. Built end to end:
+   migration `0010` (`map_groups` table, self-referential `parent_group_id` for nesting
+   like "Regions" containing "Capital"/"City"/"Town"; `map_markers.group_id`), the full
+   CRUD service (`services/mapGroups.ts`) and routes (`GET/POST /nodes/:id/map/groups`,
+   `PATCH`/`DELETE /map-groups/:id`, `POST /map-groups/:id/move` for z-order via the
+   same fractional-index scheme as everything else), the `apps/web/src/api.ts` client
+   methods, a `MapGroupsPanel` (nested checklist, inline rename, ▲/▼ reorder, add/delete,
+   bottom-left so it doesn't collide with the marker inspector), a "Display group"
+   dropdown in the marker inspector (every shape, not just tokens), and MCP tools
+   (`list_map_groups`/`create_map_group`/`update_map_group`/`move_map_group`/
+   `delete_map_group`, plus `group_id` on `place_marker`/`update_marker`). Note:
+   `listMapGroups` is gated by `requireVisibleNode` (a *read*), not `requireMapNode` (an
+   *edit* check) — a read-only player must be able to list groups to use the personal
+   toggle below even without edit rights; this was a real bug, caught and fixed while
+   adding smoke-test coverage, not a hypothetical. The visibility-toggle design decision:
+   toggling a group off is a **personal, per-viewer display preference** (client-side
    `localStorage`, keyed per map node — same mechanism as `usePinned`), not a shared
    server-side setting, so a player decluttering their own screen never hides anything
-   for the DM or anyone else. Groups themselves (name/color/order/membership) ARE
-   shared map data, same as markers. See HANDOFF.md §7.8 for the fuller note on why
-   this needed a genuinely new table rather than reusing `map_layers` (P4.6 backlog,
-   image-bound by its `NOT NULL asset_id`) or #5's `parent_marker_id`.
+   for the DM or anyone else. Groups themselves (name/color/order/membership) ARE shared
+   map data, same as markers. Covered by both a `smoke.mjs` section (create → nest →
+   list → rename → move → cycle/self-parent rejection → delete-ungroups-not-orphans, for
+   both groups and markers) and MCP `integration-test.mjs` coverage. See HANDOFF.md §7.8
+   for the fuller note on why this needed a genuinely new table rather than reusing
+   `map_layers` (P4.6 backlog, image-bound by its `NOT NULL asset_id`) or #5's
+   `parent_marker_id`.
 7. **Layers — backlog.** Alternate base images / always-on overlays; deprioritized below
    1–6 per the owner's explicit ask.
 

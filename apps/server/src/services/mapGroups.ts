@@ -5,6 +5,7 @@ import type { MapGroupRow } from "../db/types.ts";
 import { badRequest, notFound } from "../lib/errors.ts";
 import { shortId } from "../lib/id.ts";
 import { keyAfterAll, keyBetween } from "../lib/sortkey.ts";
+import { requireVisibleNode } from "./nodes.ts";
 import { requireMapNode } from "./maps.ts";
 
 /**
@@ -44,9 +45,14 @@ function toDto(row: MapGroupRow): MapGroupDto {
   };
 }
 
-/** Reading groups is a read of the map's node, same as listMarkers()/getMap(). No visibility filter — groups carry none. */
+/**
+ * Reading groups is a read of the map's node, same as listMarkers()/getMap() — gated by
+ * requireVisibleNode, NOT requireMapNode. A read-only player must be able to list groups
+ * too, since the personal per-viewer visibility toggle (client-side, localStorage) is for
+ * every viewer, not just editors. No visibility filter beyond that — groups carry none.
+ */
 export function listMapGroups(mapNodeId: string, viewer: Viewer): MapGroupDto[] {
-  requireMapNode(mapNodeId, viewer);
+  requireVisibleNode(mapNodeId, viewer);
   return (selectGroupsForMap.all(mapNodeId) as MapGroupRow[]).map(toDto);
 }
 

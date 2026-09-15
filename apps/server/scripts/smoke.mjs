@@ -1337,6 +1337,93 @@ check(
 );
 await dm("DELETE", `/markers/${squad.body.marker.id}`);
 
+console.log("\n== map display groups ==");
+const emptyGroups = await dm("GET", `/nodes/${mapNode.id}/map/groups`);
+check("a map with no groups yet returns an empty list", emptyGroups.status === 200 && emptyGroups.body.groups.length === 0, emptyGroups.body);
+
+const playerCreateGroup = await player("POST", `/nodes/${mapNode.id}/map/groups`, { name: "Sneaky" });
+check("a player cannot create a group on a map they cannot edit", playerCreateGroup.status === 403, playerCreateGroup.body);
+
+const regions = await dm("POST", `/nodes/${mapNode.id}/map/groups`, { name: "Regions", color: "#3366cc" });
+check("a top-level group is created", regions.status === 201 && regions.body.group.name === "Regions" && regions.body.group.parentGroupId === null, regions.body);
+
+const capital = await dm("POST", `/nodes/${mapNode.id}/map/groups`, { name: "Capital", parentGroupId: regions.body.group.id });
+check("a group can be nested under another at creation", capital.status === 201 && capital.body.group.parentGroupId === regions.body.group.id, capital.body);
+
+const landmarks = await dm("POST", `/nodes/${mapNode.id}/map/groups`, { name: "Landmarks" });
+check("a second top-level group is created", landmarks.status === 201, landmarks.body);
+const statue = await dm("POST", `/nodes/${mapNode.id}/map/groups`, { name: "Statue", parentGroupId: landmarks.body.group.id });
+check("a child group is created under the second top-level group", statue.status === 201 && statue.body.group.parentGroupId === landmarks.body.group.id, statue.body);
+
+const groupsAfterCreate = (await dm("GET", `/nodes/${mapNode.id}/map/groups`)).body.groups;
+check(
+  "the group list now shows all four groups with nesting preserved",
+  groupsAfterCreate.length === 4 &&
+    groupsAfterCreate.some((g) => g.id === capital.body.group.id && g.parentGroupId === regions.body.group.id),
+  groupsAfterCreate,
+);
+
+const playerGroupList = await player("GET", `/nodes/${mapNode.id}/map/groups`);
+check(
+  "a read-only player CAN list groups (the per-viewer toggle needs this even without edit rights)",
+  playerGroupList.status === 200 && playerGroupList.body.groups.length === 4,
+  playerGroupList.body,
+);
+
+const badParentGroup = await dm("POST", `/nodes/${mapNode.id}/map/groups`, { name: "Orphan", parentGroupId: "nonexistent" });
+check("a group cannot be created under a nonexistent parent", badParentGroup.status === 404, badParentGroup.body);
+
+const renamedGroup = await dm("PATCH", `/map-groups/${capital.body.group.id}`, { name: "Capital City" });
+check("a group can be renamed", renamedGroup.status === 200 && renamedGroup.body.group.name === "Capital City", renamedGroup.body);
+
+const selfParentGroup = await dm("PATCH", `/map-groups/${regions.body.group.id}`, { parentGroupId: regions.body.group.id });
+check("a group cannot be its own parent", selfParentGroup.status === 400, selfParentGroup.body);
+const cycleGroup = await dm("PATCH", `/map-groups/${regions.body.group.id}`, { parentGroupId: capital.body.group.id });
+check("a group cannot be grouped under its own descendant (would cycle)", cycleGroup.status === 400, cycleGroup.body);
+
+const playerRenameGroup = await player("PATCH", `/map-groups/${regions.body.group.id}`, { name: "snooped" });
+check("a player cannot rename a group on a map they cannot edit", playerRenameGroup.status === 403, playerRenameGroup.body);
+
+const movedLandmarks = await dm("POST", `/map-groups/${landmarks.body.group.id}/move`, { beforeId: regions.body.group.id });
+check("a top-level group can be moved before another", movedLandmarks.status === 200, movedLandmarks.body);
+const groupsAfterMove = (await dm("GET", `/nodes/${mapNode.id}/map/groups`)).body.groups;
+const topLevelOrder = groupsAfterMove.filter((g) => g.parentGroupId === null).sort((a, b) => (a.sortKey < b.sortKey ? -1 : 1));
+check(
+  "the moved group now sorts before the one it was placed in front of",
+  topLevelOrder[0]?.id === landmarks.body.group.id && topLevelOrder[1]?.id === regions.body.group.id,
+  topLevelOrder,
+);
+
+const markerInGroup = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: "pin", x: 50, y: 50, label: "Town Hall", groupId: capital.body.group.id, visibility: "members",
+});
+check("a marker can be placed directly into a display group", markerInGroup.status === 201 && markerInGroup.body.marker.groupId === capital.body.group.id, markerInGroup.body);
+
+const playerDeleteGroup = await player("DELETE", `/map-groups/${landmarks.body.group.id}`);
+check("a player cannot delete a group on a map they cannot edit", playerDeleteGroup.status === 403, playerDeleteGroup.body);
+
+const deletedLandmarks = await dm("DELETE", `/map-groups/${landmarks.body.group.id}`);
+check("a group with a child group can be deleted", deletedLandmarks.status === 200, deletedLandmarks.body);
+const statueAfterParentDeleted = (await dm("GET", `/nodes/${mapNode.id}/map/groups`)).body.groups.find((g) => g.id === statue.body.group.id);
+check(
+  "deleting a parent group ungroups its child group instead of deleting or orphaning it",
+  statueAfterParentDeleted !== undefined && statueAfterParentDeleted.parentGroupId === null,
+  statueAfterParentDeleted,
+);
+
+const deletedCapital = await dm("DELETE", `/map-groups/${capital.body.group.id}`);
+check("a group with a marker in it can be deleted", deletedCapital.status === 200, deletedCapital.body);
+const markerAfterGroupDeleted = (await dm("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers.find((m) => m.id === markerInGroup.body.marker.id);
+check(
+  "deleting a group ungroups its markers instead of deleting or orphaning them",
+  markerAfterGroupDeleted !== undefined && markerAfterGroupDeleted.groupId === null,
+  markerAfterGroupDeleted,
+);
+
+await dm("DELETE", `/markers/${markerInGroup.body.marker.id}`);
+await dm("DELETE", `/map-groups/${statue.body.group.id}`);
+await dm("DELETE", `/map-groups/${regions.body.group.id}`);
+
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);
 check("archive succeeds", archived.status === 200, archived.body);

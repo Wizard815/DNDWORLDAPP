@@ -567,9 +567,11 @@ export function registerTools(server: McpServer, client: WorldClient): void {
                 m.points !== null && m.points !== ""
                   ? ` [${parseMarkerPoints(m.points)?.length ?? 0} vertices]`
                   : "";
-              // Party/army tokens (P4.5): which group this one belongs to, if any.
-              const group = m.parentMarkerId !== null ? ` (group: [${m.parentMarkerId}])` : "";
-              return `- [${m.id}] ${m.shape} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${vertices}${target}${vis}${group}`;
+              // Two distinct, unrelated groupings — see place_marker's group_id
+              // description for why these are kept separate rather than merged.
+              const party = m.parentMarkerId !== null ? ` (party group: [${m.parentMarkerId}])` : "";
+              const displayGroup = m.groupId !== null ? ` (display group: [${m.groupId}])` : "";
+              return `- [${m.id}] ${m.shape} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${vertices}${target}${vis}${party}${displayGroup}`;
             }),
           );
         }
@@ -616,10 +618,17 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           .describe(
             "Groups this marker under another marker on the same map — a party/army token splitting into sub-groups. Group visibility dominates: a marker under a dm-only parent stays dm-only regardless of its own visibility.",
           ),
+        group_id: z
+          .string()
+          .nullable()
+          .optional()
+          .describe(
+            "Puts this marker in a display category from list_map_groups/create_map_group — any shape can join one. This is NOT the same as parent_marker_id (a token's own party/squad hierarchy): a display group is purely organizational (name, color, draw order) and has no effect on visibility.",
+          ),
         visibility: fieldVisibilitySchema.optional().describe("public | members | dm. Default members."),
       },
     },
-    async ({ node_id, shape, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, visibility }) => {
+    async ({ node_id, shape, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, group_id, visibility }) => {
       try {
         const { marker } = await client.createMarker(node_id, {
           shape: shape ?? "pin",
@@ -633,6 +642,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           points,
           members,
           parentMarkerId: parent_marker_id,
+          groupId: group_id,
           visibility: visibility ?? "members",
         });
         const vertexCount = parseMarkerPoints(marker.points)?.length ?? 0;
@@ -671,6 +681,11 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           .nullable()
           .optional()
           .describe("Groups this marker under another marker on the same map, or pass null to ungroup it."),
+        group_id: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Puts this marker in a display category, or pass null to ungroup it. Not the same as parent_marker_id — see place_marker's description."),
         visibility: fieldVisibilitySchema.optional(),
       },
     },
@@ -682,8 +697,8 @@ export function registerTools(server: McpServer, client: WorldClient): void {
     // updateMarkerInputSchema.parse() on the server silently drops, so a
     // target_node_id update sent via MCP has never actually taken effect.
     // Mapped explicitly here, matching place_marker's own pattern, so
-    // parent_marker_id (the same shape) doesn't repeat the same bug.
-    async ({ marker_id, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, visibility }) => {
+    // parent_marker_id/group_id (the same shape) don't repeat the same bug.
+    async ({ marker_id, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, group_id, visibility }) => {
       try {
         const { marker } = await client.updateMarker(marker_id, {
           x,
@@ -696,6 +711,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           points,
           members,
           parentMarkerId: parent_marker_id,
+          groupId: group_id,
           visibility,
         });
         return text(`Updated marker [${marker.id}].`);
@@ -716,6 +732,120 @@ export function registerTools(server: McpServer, client: WorldClient): void {
       try {
         await client.deleteMarker(marker_id);
         return text(`Deleted marker [${marker_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Map groups (Kanka's own MapGroup) — a named, colored, orderable display
+  // category any marker can join, nestable via parent_group_id. NOT the same
+  // as a token's own parent_marker_id (P4.5's party/squad hierarchy): a group
+  // has no visibility of its own and any shape can join one. See place_marker's
+  // group_id description for the same distinction from the tool-call side.
+  // ---------------------------------------------------------------------------
+
+  server.registerTool(
+    "list_map_groups",
+    {
+      title: "List a map's display groups",
+      description:
+        "All display groups on a map page, with their nesting and draw order. Use before place_marker/update_marker's group_id, or before create_map_group to see what already exists.",
+      inputSchema: { node_id: z.string().describe("The map page's id.") },
+    },
+    async ({ node_id }) => {
+      try {
+        const { groups } = await client.mapGroups(node_id);
+        if (groups.length === 0) return text(`No display groups on [${node_id}] yet.`);
+        return text(
+          groups
+            .map((g) => `- [${g.id}] "${g.name}"${g.parentGroupId !== null ? ` (nested under [${g.parentGroupId}])` : ""}`)
+            .join("\n"),
+        );
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "create_map_group",
+    {
+      title: "Create a display group on a map",
+      description: "Add a named category markers can be sorted into (e.g. 'Regions', 'Capital', 'City', 'Town'). Nestable via parent_group_id.",
+      inputSchema: {
+        node_id: z.string().describe("The map page's id."),
+        name: z.string().min(1).describe("The group's name."),
+        color: z.string().optional().describe("A display color for this group's swatch."),
+        parent_group_id: z.string().nullable().optional().describe("Nests this group under another group on the same map."),
+      },
+    },
+    async ({ node_id, name, color, parent_group_id }) => {
+      try {
+        const { group } = await client.createMapGroup(node_id, { name, color, parentGroupId: parent_group_id });
+        return text(`Created group "${group.name}" [${group.id}] on [${node_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_map_group",
+    {
+      title: "Rename, recolor, or re-nest a display group",
+      description: "Change a group's name, color, or parent group. Use the id from list_map_groups or create_map_group.",
+      inputSchema: {
+        group_id: z.string(),
+        name: z.string().min(1).optional(),
+        color: z.string().nullable().optional(),
+        parent_group_id: z.string().nullable().optional().describe("Pass null to un-nest it back to top-level."),
+      },
+    },
+    async ({ group_id, name, color, parent_group_id }) => {
+      try {
+        const { group } = await client.updateMapGroup(group_id, { name, color, parentGroupId: parent_group_id });
+        return text(`Updated group [${group.id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "move_map_group",
+    {
+      title: "Reorder a display group",
+      description:
+        "Changes a group's draw order among its siblings (groups nested under the same parent, or all top-level groups). A group later in the order paints on top. Pass the id of the sibling this one should now come after and/or before.",
+      inputSchema: {
+        group_id: z.string(),
+        after_id: z.string().nullable().optional().describe("This group should come right after the sibling with this id."),
+        before_id: z.string().nullable().optional().describe("This group should come right before the sibling with this id."),
+      },
+    },
+    async ({ group_id, after_id, before_id }) => {
+      try {
+        await client.moveMapGroup(group_id, { afterId: after_id, beforeId: before_id });
+        return text(`Reordered group [${group_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_map_group",
+    {
+      title: "Delete a display group",
+      description: "Removes a group. Its markers are ungrouped (not deleted), and any group nested under it moves to top-level.",
+      inputSchema: { group_id: z.string() },
+    },
+    async ({ group_id }) => {
+      try {
+        await client.deleteMapGroup(group_id);
+        return text(`Deleted group [${group_id}].`);
       } catch (error) {
         return fail(error);
       }

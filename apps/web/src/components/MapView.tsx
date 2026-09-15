@@ -3,7 +3,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, CircleMarker, ImageOverlay, MapContainer, Marker, Polygon, Polyline, TileLayer, useMap, useMapEvents } from "react-leaflet";
-import type { FieldVisibility, MapMarkerDto, MarkerPoint, NodeDetail, NodeSummary } from "@dndworldapp/schema";
+import type { FieldVisibility, MapGroupDto, MapMarkerDto, MarkerPoint, NodeDetail, NodeSummary } from "@dndworldapp/schema";
 import { formatMarkerPoints, mapTileUrlTemplate, parseMarkerPoints } from "@dndworldapp/schema";
 import { ApiError, api } from "../api.ts";
 import { navigate } from "../lib/nav.ts";
@@ -756,67 +756,99 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
           }}
         />
       )}
-      {node.canEdit && (
-        <div className="absolute right-3 top-3 z-[1000] flex gap-1 rounded-md border border-[#33363d] bg-[#1d1f23]/95 p-1 shadow-lg">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={upload.isPending}
-            title="Replace this map's source image"
-            className="rounded px-2 py-1 text-xs text-[#b6b8bf] hover:bg-[#26282e] disabled:opacity-50"
-          >
-            {upload.isPending ? "Uploading…" : "🖼 Replace image"}
-          </button>
-          <div className="mx-0.5 w-px self-stretch bg-[#33363d]" />
-          {ADDABLE_SHAPES.map((shape) =>
-            (DRAW_SHAPES as readonly string[]).includes(shape) ? (
-              <button
-                key={shape}
-                type="button"
-                onClick={() => startDraft(shape as DrawShape)}
-                className={`rounded px-2 py-1 text-xs ${
-                  draft?.shape === shape ? "bg-[#8b6cf0] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
-                }`}
-              >
-                ✏ {SHAPE_LABEL[shape]}
-              </button>
-            ) : (
-              <button
-                key={shape}
-                type="button"
-                onClick={() => setDropShape(dropShape === shape ? null : shape)}
-                className={`rounded px-2 py-1 text-xs ${
-                  dropShape === shape ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
-                }`}
-              >
-                + {SHAPE_LABEL[shape]}
-              </button>
-            ),
-          )}
-          {draft !== null && (
-            <>
-              <button
-                type="button"
-                onClick={() => finishDraft(draft.points)}
-                className="rounded bg-[#3f7d4e] px-2 py-1 text-xs text-white hover:bg-[#4a9160]"
-              >
-                Done
-              </button>
-              <button
-                type="button"
-                onClick={cancelDraft}
-                className="rounded px-2 py-1 text-xs text-[#c98b8b] hover:bg-[#26282e]"
-              >
-                Cancel
-              </button>
-            </>
-          )}
-        </div>
-      )}
+      {/*
+        Unconditional now, not gated behind node.canEdit — the "🗂 Groups"
+        toggle is a personal display preference (which categories of markers
+        YOU currently see), useful to a player as much as a DM, so it can't
+        live inside the edit-only block the way "Replace image"/shape-adder/
+        Done-Cancel legitimately do.
+      */}
+      <div className="absolute right-3 top-3 z-[1000] flex gap-1 rounded-md border border-[#33363d] bg-[#1d1f23]/95 p-1 shadow-lg">
+        <button
+          type="button"
+          onClick={() => setGroupsPanelOpen(!groupsPanelOpen)}
+          title="Show/hide marker groups"
+          className={`rounded px-2 py-1 text-xs ${
+            groupsPanelOpen ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+          }`}
+        >
+          🗂 Groups
+        </button>
+        {node.canEdit && (
+          <>
+            <div className="mx-0.5 w-px self-stretch bg-[#33363d]" />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={upload.isPending}
+              title="Replace this map's source image"
+              className="rounded px-2 py-1 text-xs text-[#b6b8bf] hover:bg-[#26282e] disabled:opacity-50"
+            >
+              {upload.isPending ? "Uploading…" : "🖼 Replace image"}
+            </button>
+            <div className="mx-0.5 w-px self-stretch bg-[#33363d]" />
+            {ADDABLE_SHAPES.map((shape) =>
+              (DRAW_SHAPES as readonly string[]).includes(shape) ? (
+                <button
+                  key={shape}
+                  type="button"
+                  onClick={() => startDraft(shape as DrawShape)}
+                  className={`rounded px-2 py-1 text-xs ${
+                    draft?.shape === shape ? "bg-[#8b6cf0] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+                  }`}
+                >
+                  ✏ {SHAPE_LABEL[shape]}
+                </button>
+              ) : (
+                <button
+                  key={shape}
+                  type="button"
+                  onClick={() => setDropShape(dropShape === shape ? null : shape)}
+                  className={`rounded px-2 py-1 text-xs ${
+                    dropShape === shape ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+                  }`}
+                >
+                  + {SHAPE_LABEL[shape]}
+                </button>
+              ),
+            )}
+            {draft !== null && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => finishDraft(draft.points)}
+                  className="rounded bg-[#3f7d4e] px-2 py-1 text-xs text-white hover:bg-[#4a9160]"
+                >
+                  Done
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelDraft}
+                  className="rounded px-2 py-1 text-xs text-[#c98b8b] hover:bg-[#26282e]"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </div>
       {uploadError !== null && (
         <div className="absolute right-3 top-14 z-[1000] max-w-xs rounded-md border border-[#33363d] bg-[#1d1f23]/95 px-2.5 py-1.5 text-xs text-[#e0888a] shadow-lg">
           {uploadError}
         </div>
+      )}
+      {groupsPanelOpen && (
+        <MapGroupsPanel
+          groups={groups}
+          hiddenGroups={hiddenGroups}
+          canEdit={node.canEdit}
+          onClose={() => setGroupsPanelOpen(false)}
+          onCreate={(name, parentGroupId) => createGroup.mutate({ name, parentGroupId })}
+          onRename={(id, name) => updateGroup.mutate({ id, name })}
+          onMove={(id, input) => moveGroup.mutate({ id, ...input })}
+          onDelete={(id) => removeGroup.mutate(id)}
+        />
       )}
 
       <MapContainer
@@ -953,6 +985,7 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
           marker={selected}
           allNodes={allNodes}
           markers={markers}
+          groups={groups}
           canEdit={node.canEdit}
           onClose={() => setSelectedId(null)}
           onSave={(input) => update.mutate({ id: selected.id, ...input })}
@@ -1031,10 +1064,214 @@ function useFavoriteColors() {
   };
 }
 
+/**
+ * Kanka's own MapGroup panel — a nested checklist of display categories.
+ * Checking/unchecking is purely local (see useHiddenMapGroups); everything
+ * else (name, color swatch, nesting, order) is shared map data, edited only
+ * when `canEdit`. "Later sort_key paints on top" is stated plainly in the UI
+ * rather than encoded into an "up means what" convention that would need
+ * memorizing — the ▲/▼ buttons just say what they do in their title.
+ */
+function MapGroupsPanel({
+  groups,
+  hiddenGroups,
+  canEdit,
+  onClose,
+  onCreate,
+  onRename,
+  onMove,
+  onDelete,
+}: {
+  groups: MapGroupDto[];
+  hiddenGroups: { hiddenIds: Set<string>; toggle: (id: string) => void };
+  canEdit: boolean;
+  onClose: () => void;
+  onCreate: (name: string, parentGroupId: string | null) => void;
+  onRename: (id: string, name: string) => void;
+  onMove: (id: string, input: { afterId: string | null; beforeId: string | null }) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [addingChildTo, setAddingChildTo] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [addingTopLevel, setAddingTopLevel] = useState(false);
+
+  function siblingsOf(parentGroupId: string | null): MapGroupDto[] {
+    return groups
+      .filter((g) => g.parentGroupId === parentGroupId)
+      .slice()
+      .sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
+  }
+
+  function move(group: MapGroupDto, direction: "earlier" | "later"): void {
+    const siblings = siblingsOf(group.parentGroupId);
+    const idx = siblings.findIndex((g) => g.id === group.id);
+    if (idx === -1) return;
+    if (direction === "earlier") {
+      if (idx === 0) return;
+      const prev = siblings[idx - 1]!;
+      const prevPrev = siblings[idx - 2] ?? null;
+      onMove(group.id, { afterId: prevPrev?.id ?? null, beforeId: prev.id });
+    } else {
+      if (idx === siblings.length - 1) return;
+      const next = siblings[idx + 1]!;
+      const nextNext = siblings[idx + 2] ?? null;
+      onMove(group.id, { afterId: next.id, beforeId: nextNext?.id ?? null });
+    }
+  }
+
+  function submitNewChild(parentGroupId: string | null): void {
+    if (newName.trim().length === 0) return;
+    onCreate(newName.trim(), parentGroupId);
+    setNewName("");
+    setAddingChildTo(null);
+    setAddingTopLevel(false);
+  }
+
+  function renderGroup(group: MapGroupDto, depth: number) {
+    const siblings = siblingsOf(group.parentGroupId);
+    const idx = siblings.findIndex((g) => g.id === group.id);
+    const children = siblingsOf(group.id);
+    return (
+      <div key={group.id}>
+        <div
+          className="group flex items-center gap-1.5 rounded px-1 py-1 text-xs text-[#b6b8bf] hover:bg-[#232529]"
+          style={{ paddingLeft: `${depth * 14 + 4}px` }}
+        >
+          <input
+            type="checkbox"
+            checked={!hiddenGroups.hiddenIds.has(group.id)}
+            onChange={() => hiddenGroups.toggle(group.id)}
+            className="shrink-0 accent-[#3d5ab5]"
+          />
+          {group.color !== null && (
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-[#17181b]" style={{ background: group.color }} />
+          )}
+          {renamingId === group.id ? (
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onBlur={() => {
+                if (renameValue.trim().length > 0) onRename(group.id, renameValue.trim());
+                setRenamingId(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+                if (e.key === "Escape") setRenamingId(null);
+              }}
+              className="min-w-0 flex-1 rounded border border-[#4a4d55] bg-[#17181b] px-1 text-[#f0f1f4] outline-none"
+            />
+          ) : (
+            <span
+              className={`min-w-0 flex-1 truncate ${canEdit ? "cursor-pointer" : ""}`}
+              onClick={() => {
+                if (!canEdit) return;
+                setRenamingId(group.id);
+                setRenameValue(group.name);
+              }}
+            >
+              {group.name}
+            </span>
+          )}
+          {canEdit && (
+            <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+              <button type="button" title="Paint earlier (further back)" onClick={() => move(group, "earlier")} disabled={idx <= 0} className="px-1 text-[#7a7d86] hover:text-[#d7d8dc] disabled:opacity-30">
+                ▲
+              </button>
+              <button type="button" title="Paint later (further forward)" onClick={() => move(group, "later")} disabled={idx === siblings.length - 1} className="px-1 text-[#7a7d86] hover:text-[#d7d8dc] disabled:opacity-30">
+                ▼
+              </button>
+              <button type="button" title="Add a group nested under this one" onClick={() => { setAddingChildTo(group.id); setNewName(""); }} className="px-1 text-[#7a7d86] hover:text-[#d7d8dc]">
+                +
+              </button>
+              <button type="button" title="Delete this group (markers are ungrouped, not deleted)" onClick={() => onDelete(group.id)} className="px-1 text-[#c98b8b] hover:text-[#e0888a]">
+                ✕
+              </button>
+            </div>
+          )}
+        </div>
+        {addingChildTo === group.id && (
+          <div className="flex items-center gap-1" style={{ paddingLeft: `${(depth + 1) * 14 + 4}px` }}>
+            <input
+              autoFocus
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitNewChild(group.id);
+                if (e.key === "Escape") setAddingChildTo(null);
+              }}
+              placeholder="New group name"
+              className="min-w-0 flex-1 rounded border border-[#33363d] bg-[#17181b] px-1.5 py-0.5 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+            />
+            <button type="button" onClick={() => submitNewChild(group.id)} className="rounded bg-[#3d5ab5] px-1.5 py-0.5 text-[10px] text-white">
+              Add
+            </button>
+          </div>
+        )}
+        {children.map((child) => renderGroup(child, depth + 1))}
+      </div>
+    );
+  }
+
+  const topLevel = siblingsOf(null);
+
+  return (
+    <div className="absolute bottom-3 left-3 z-[1000] w-64 rounded-md border border-[#33363d] bg-[#1d1f23] p-3 shadow-2xl">
+      <div className="mb-1 flex items-center">
+        <h3 className="text-sm font-semibold text-[#f0f1f4]">Groups</h3>
+        <button type="button" onClick={onClose} className="ml-auto text-xs text-[#7a7d86] hover:text-[#d7d8dc]">
+          Close
+        </button>
+      </div>
+      <p className="mb-2 text-[10px] text-[#7a7d86]">
+        Checking a group only changes what you see. Later in the list paints on top.
+      </p>
+      {topLevel.length === 0 ? (
+        <p className="py-2 text-xs text-[#7a7d86]">No groups yet.</p>
+      ) : (
+        <div className="max-h-64 overflow-y-auto">{topLevel.map((g) => renderGroup(g, 0))}</div>
+      )}
+      {canEdit &&
+        (addingTopLevel ? (
+          <div className="mt-2 flex items-center gap-1">
+            <input
+              autoFocus
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitNewChild(null);
+                if (e.key === "Escape") setAddingTopLevel(false);
+              }}
+              placeholder="New group name"
+              className="min-w-0 flex-1 rounded border border-[#33363d] bg-[#17181b] px-1.5 py-0.5 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+            />
+            <button type="button" onClick={() => submitNewChild(null)} className="rounded bg-[#3d5ab5] px-1.5 py-0.5 text-[10px] text-white">
+              Add
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setAddingTopLevel(true);
+              setNewName("");
+            }}
+            className="mt-2 w-full rounded border border-[#33363d] px-2 py-1 text-xs text-[#b6b8bf] hover:bg-[#232529]"
+          >
+            + New group
+          </button>
+        ))}
+    </div>
+  );
+}
+
 function MarkerInspector({
   marker,
   allNodes,
   markers,
+  groups,
   canEdit,
   onClose,
   onSave,
@@ -1044,6 +1281,7 @@ function MarkerInspector({
   marker: MapMarkerDto;
   allNodes: NodeSummary[];
   markers: MapMarkerDto[];
+  groups: MapGroupDto[];
   canEdit: boolean;
   onClose: () => void;
   onSave: (input: Parameters<typeof api.updateMarker>[1]) => void;
@@ -1287,6 +1525,24 @@ function MarkerInspector({
                 />
               </label>
             </>
+          )}
+
+          {groups.length > 0 && (
+            <label className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">
+              Display group
+              <select
+                value={marker.groupId ?? ""}
+                onChange={(e) => onSave({ groupId: e.target.value.length > 0 ? e.target.value : null })}
+                className="mt-1 w-full rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc]"
+              >
+                <option value="">— ungrouped —</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
 
           <label className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">

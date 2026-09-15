@@ -1,6 +1,6 @@
 # HANDOFF — read this first
 
-Written 2026-08-21, last updated 2026-08-23, for whoever (human or agent) picks this up
+Written 2026-08-21, last updated 2026-09-14, for whoever (human or agent) picks this up
 next.
 
 This document is the operating manual: what exists, why it is shaped this way, which
@@ -51,18 +51,24 @@ If you are about to add a table called `characters`, or a nav section called
 **P0, P1 and P2 are complete, plus a P2.4 editor rewrite, P3's templates/typed fields, and
 P4.1–P4.3 and P4.5 of maps (source image + typed markers with inheritance, background
 tiling for large images, labeled/colored region/zone polygons with full per-vertex
-editing, and party/army tokens with group-dominant visibility — fog and layers, P4.4 and
-P4.6, are not built yet).** No bulk importer is planned — see §9.4.
+editing, party/army tokens with group-dominant visibility, and Kanka-style map display
+groups — fog and layers, P4.4 and P4.6, are not built yet).** No bulk importer is
+planned — see §9.4.
 
 Verified by:
 - `npm test` — 31 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 193 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 254 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
-  for P3 (see §7.7) and the `== maps ==` section added for P4.1 (see §7.8), now extended
-  with the P4.3 polygon/region block and its DM-leak assertion.
+  for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
+  P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
+  section, and a `== map display groups ==` section (create/nest/list/rename/move/delete,
+  cycle and self-parent rejection, delete-ungroups-not-orphans for both groups and
+  markers, and a player-can-list-groups-without-edit-rights check — see the "Resolved"
+  bullet under Known open items for why that last one is a real bug, not a formality).
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All
-  pass (57 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow).
+  pass (58 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
+  `== map display groups ==` section for the 5 new group-CRUD tools).
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
 - Driven by hand in a browser: login → tree → page → posts → rendered wiki links →
@@ -131,16 +137,22 @@ to fix it; it just stopped being true once the renderer changed.
   assign/re-apply. Fields render inline with no Edit/Save toggle, same as everything
   else. See §7.7.
 - **Maps: source image, tiling, typed/inheriting markers, editable region polygons,
-  party/army tokens** (P4, sub-phases 1–3 and 5) — a `kind="map"` node renders through
-  Leaflet `CRS.Simple`, swaps to a `sharp`-generated tile pyramid past 2000px, and
-  carries `pin`/`label`/`circle`/`token` markers that link to any node and inherit its
-  title/icon unless overridden, plus drawable, labeled/colored `polygon`/`path`
-  region/zone shapes with full editing (per-vertex dragging, click-a-line-to-split,
-  freehand draw, redraw from the inspector, server-validated vertex counts). `token`
-  markers can be grouped under another token via a self-referential `parent_marker_id`
-  (a party splitting into squads), with group-dominant visibility — hiding the parent
-  hides every descendant regardless of its own visibility setting. "+ New map" in the
-  sidebar, "Add a map inside" in a node's "⋯" menu, a "🖼 Replace image" button in the
+  party/army tokens, map display groups** (P4, sub-phases 1–3 and 5, plus item 6) — a
+  `kind="map"` node renders through Leaflet `CRS.Simple`, swaps to a `sharp`-generated
+  tile pyramid past 2000px, and carries `pin`/`label`/`circle`/`token` markers that link
+  to any node and inherit its title/icon unless overridden, plus drawable,
+  labeled/colored `polygon`/`path` region/zone shapes with full editing (per-vertex
+  dragging, click-a-line-to-split, freehand draw, redraw from the inspector,
+  server-validated vertex counts). `token` markers can be grouped under another token via
+  a self-referential `parent_marker_id` (a party splitting into squads), with
+  group-dominant visibility — hiding the parent hides every descendant regardless of its
+  own visibility setting. Separately, any marker of any shape can join a Kanka-style
+  `map_groups` display category (nestable, colored, orderable, no visibility effect of
+  its own) via a "🗂 Groups" toggle and panel in the map toolbar (nested checklist,
+  inline rename, ▲/▼ reorder, add/delete) and a "Display group" dropdown in the marker
+  inspector; whether a viewer has a given group toggled on/off is a personal,
+  client-side-only preference (`localStorage`), never sent to the server. "+ New map" in
+  the sidebar, "Add a map inside" in a node's "⋯" menu, a "🖼 Replace image" button in the
   map toolbar to swap a map's source image after the fact. See §7.8.
 
 ### Not started
@@ -151,25 +163,37 @@ engine (table/board/gallery), statblocks, initiative, realtime. No importer is p
 
 ### Known open items (check these before starting new work)
 
-- **In progress, 2026-08-25 — map display groups (Kanka's `MapGroup`), server side
-  only.** Requested directly by the owner, referencing their own Kanka campaign's map
-  groups panel (toggle categories of markers on/off, control their stacking order).
-  Migration `0010` (`map_groups` table + `map_markers.group_id`),
-  `services/mapGroups.ts` (full CRUD, cycle-checked nesting via `parent_group_id`,
-  fractional-index `sort_key` doubling as z-order), the routes in `routes/maps.ts`, and
-  the `apps/web/src/api.ts` client methods are all done and typecheck/smoke-test clean.
-  **The client has no UI for any of this yet** — no panel to see/create/toggle/reorder
-  groups, no "assign to a group" control in the marker inspector, and the MCP server
-  has no group tools. This was a deliberate stopping point mid-feature, not an
-  oversight — pick up by building `MapView.tsx`'s groups panel next (a toggle button in
-  the map toolbar, a nested checklist with up/down reorder, a "Group" dropdown in
-  `MarkerInspector` alongside the existing "Group (parent token)" one — these are two
-  different dropdowns for two different features, see PLAN.md item 6's note on why).
-  The one design decision already made and worth preserving: a group's on/off toggle is
-  **personal, per-viewer, client-side-only** (`localStorage`, same mechanism as
-  `usePinned`) — the owner chose this explicitly over a shared server-side toggle, so a
-  player decluttering their own view never hides anything for anyone else. Groups
-  themselves (name/color/order/membership) remain shared map data like markers.
+- **Resolved 2026-09-14 — map display groups (Kanka's `MapGroup`) finished end to end.**
+  Picked up exactly where `docs/NEXT-STEPS.md` left off (server side, plus the
+  `MapView.tsx` query/mutation plumbing, had already landed): the map toolbar's
+  "🗂 Groups" toggle is now unconditional (a read-only player can declutter their own
+  view; only the upload/shape/Done-Cancel controls inside stay `canEdit`-gated), a
+  `MapGroupsPanel` component (nested checklist, checkbox toggle, color swatch,
+  inline rename, ▲/▼ reorder, +/✕ add-child/delete, bottom-left so it doesn't collide
+  with the marker inspector's bottom-right spot), and a "Display group" dropdown in
+  `MarkerInspector` — separate from the pre-existing "Group (parent token)" dropdown,
+  applies to every shape, sets `groupId` not `parentMarkerId`. MCP got five new tools
+  (`list_map_groups`/`create_map_group`/`update_map_group`/`move_map_group`/
+  `delete_map_group`) plus a `group_id` field on `place_marker`/`update_marker` (mapped
+  explicitly in the handler, not spread — see the `update_marker`/`target_node_id` bug
+  earlier in this same doc for exactly why implicit spreading of snake_case tool args
+  into a camelCase Zod schema is dangerous). `get_map`'s marker text formatting used the
+  bare word "group" for a token's `parentMarkerId` before `groupId` existed; now
+  disambiguated as "party group" vs. "display group."
+  **A real bug was caught while adding test coverage, not a hypothetical**:
+  `listMapGroups` was gated by `requireMapNode` (which demands *edit* rights), so a
+  read-only player could never even list groups — defeating the entire point of the
+  personal per-viewer toggle, since the client can't render checkboxes for groups it
+  can't fetch. Fixed by switching it to `requireVisibleNode` (a read), matching
+  `listMarkers`/`getMap`; create/update/move/delete correctly remain on `requireMapNode`.
+  Covered by a new `smoke.mjs` `== map display groups ==` section and a new MCP
+  `integration-test.mjs` section — see §3 for counts. All of `npm run typecheck`,
+  `npm run build`, `npm test`, `npm run smoke`, and `npm run test:mcp` pass, run against
+  an isolated throwaway server/data dir. The design decision from the prior session
+  stands and was not re-litigated: a group's on/off toggle is **personal, per-viewer,
+  client-side-only** (`localStorage`, same mechanism as `usePinned`), never a
+  server-side setting; groups themselves (name/color/order/membership) remain shared
+  map data like markers.
 - **Resolved 2026-08-24**: the broader best-practices/other-bugs audit that had been
   owed since an earlier session (redirected onto the UI-feedback batch in §7.9, then a
   push-and-stop, then the P4.3-patch evaluation) finally ran — see
