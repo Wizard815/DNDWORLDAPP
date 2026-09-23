@@ -4,18 +4,18 @@ Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
 
-> **Status, 2026-09-14 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite,
-> P3's templates/typed fields, and P4.1–P4.3 and P4.5 of maps (source image + typed
-> markers with inheritance, background tiling for large images, labeled/colored
+> **Status, 2026-09-23 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite,
+> P3's templates/typed fields, inline `#tag`s, and P4.1–P4.3 and P4.5 of maps (source image +
+> typed markers with inheritance, background tiling for large images, labeled/colored
 > region/zone polygons with full vertex editing, party/army tokens with
-> group-dominant visibility, and Kanka-style toggleable/orderable map display groups —
-> the last of these not itself a numbered P4.x phase, see item 6 under P4 below). No
-> importer is planned.**
+> group-dominant visibility, Kanka-style toggleable/orderable map display groups, a
+> marker browse/search panel, and a collapsible edit toolbar — none of these its own
+> numbered P4.x phase, see item 6 under P4 below). No importer is planned.**
 >
 > | | |
 > |---|---|
-> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands, page linking, inline DM-notes sections, columns, hover-to-link) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, typed/inheriting markers, drawable region/zone polygons (labeled, colored, with per-vertex dragging and click-to-split editing), party/army tokens (grouping, group-dominant visibility), and Kanka-style map display groups (nested, orderable, per-viewer toggleable, with an MCP-exposed CRUD surface) · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Document/Map/saved templates) · manually pinned pages |
-> | **Next** | P4.4 fog of war → P3's query views → P5 calendars and timelines → P6 play mode → P7 hardening |
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands with submenus, page linking, inline DM-notes sections, multi-layout columns, hover-to-link, inline `#tag`s with a reverse-lookup Tags panel) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, typed/inheriting markers, drawable region/zone polygons (labeled, colored, with per-vertex dragging and click-to-split editing), party/army tokens (grouping, group-dominant visibility), Kanka-style map display groups (nested, orderable, per-viewer toggleable, with an MCP-exposed CRUD surface), a searchable marker browse/jump-to panel, and a collapsible edit toolbar · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Document/Map/saved templates) · manually pinned pages · resizable/collapsible sidebar and right-hand panel |
+> | **Next** | See `docs/ROADMAP-2026-09-23.md` for current ordering and the reasoning behind it — P3's relations + graph view, then icons/ToC/index, then API realtime groundwork, then a new DM desktop companion app and eventual player app, ahead of P4.4/P5/P6/P7 below. Map editor polish (see `docs/NEXT-STEPS.md` §1a) is in progress: marker browse panel and edit-toolbar collapse are done; icon library, marker templates, zoom-visibility layers, and distance measurement are still open, then fog of war |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
 > Kanka day to day and will move content over by hand through Kanka's MCP and ours as it

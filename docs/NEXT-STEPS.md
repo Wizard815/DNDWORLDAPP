@@ -1,10 +1,12 @@
 # NEXT-STEPS — pick up here
 
-Written 2026-08-25, updated 2026-09-14. Section 1 (map display groups) is now **done** —
+Written 2026-08-25, updated 2026-09-23. Section 1 (map display groups) is now **done** —
 see `docs/HANDOFF.md`'s "Known open items" (the "Resolved 2026-09-14" entry) for the full
 write-up of what got built and a real permission bug caught along the way. It's kept
 below, struck through in spirit but left intact, as a record of the task list that was
-actually followed — skip straight to **§2, the roadmap**, for where to pick up next.
+actually followed. **§1a is where map-editor-polish work is currently in progress** — see
+that section for what's done vs. still open. Skip to **§2, the roadmap**, for everything
+after that.
 
 ## 1. Map display groups (Kanka's `MapGroup`) — ✅ done, 2026-09-14
 
@@ -52,18 +54,59 @@ mutations next to it correctly are.
   (alternate/overlay *images*, `asset_id NOT NULL`) that happens to share the word
   "layer/group" loosely with Kanka's real `MapGroup`. They are not interchangeable.
 
-## 2. The roadmap, in order — pick up here next
+## 1a. Map-editor polish, then fog of war — in progress, 2026-09-23
 
-Per `docs/PLAN.md`'s own ordering, once map groups are finished:
+Confirmed with the owner: all five polish items below, in this order, then fog of war
+(P4.4, design already outlined in `docs/ROADMAP-2026-09-23.md`). Alongside these, three
+UI complaints from the owner's own testing got fixed the same session (not on the
+original polish list, but blocking enough to do first): the shape-adder/Replace-image
+toolbar now collapses behind a "✏️ Edit" toggle instead of always showing (unconditional
+`node.canEdit` clutter on a map you're just viewing); and the map container now caps at
+`maxHeight: 75vh` so a tall/portrait map's toolbar and `MarkerInspector` stay reachable
+without page-scroll on a full-screen browser — safe to reintroduce now because the two
+zoom bugs that made a mismatched container shape look "broken" earlier (`zoomSnap`, the
+zoom-out floor) are both already fixed independently. See `MapView.tsx`'s own comments
+at the `editToolbarOpen` state and the root container's `style` for the full reasoning.
 
-1. **P4.4 — Fog of war.** DungeonBoard-style freehand reveal/hide mask, plus toggling a
+1. ~~Marker list/browse panel~~ — ✅ done. `MarkerListPanel` in `MapView.tsx`: a "📋
+   Markers" toolbar toggle opens a searchable flat list of every marker on the map;
+   clicking one selects it (opens `MarkerInspector`, same as clicking it on the map) and
+   pans the map to it via a new `mapInstanceRef`.
+2. **Searchable icon library** — not started. A third icon source alongside emoji and
+   image-upload, ~5,500 icons (Font Awesome + game-icons.net style per `ttrpg-maps`),
+   live search.
+3. **Reusable marker templates** — not started. Named presets of icon/color/shape.
+4. **Visibility-by-zoom layers** — not started. A marker fades in/out past a per-marker
+   zoom threshold, via a dual-handle range slider in `MarkerInspector`.
+5. **Distance-measurement tool** — not started. Calibrate a scale, then point-to-point or
+   freehand measurement with unit conversion. Genuinely missing today, not a redesign.
+
+After these five: **P4.4 fog of war** — see `docs/ROADMAP-2026-09-23.md`'s fog-of-war
+design section for the two-technique plan (`map_markers.revealed` upgraded to a 3-state
+room reveal, `maps.fog_enabled`/`fog_mask_updated_at` for a freehand pixel mask), ship
+flat feathered-edge fog first, defer animated cloud-drift, DM/player view split required.
+
+## 2. The roadmap, in order — superseded, see docs/ROADMAP-2026-09-23.md
+
+This section's ordering is stale as of 2026-09-23 — a much larger scope decision (tags
+shipped, then relations + a graph view, then a whole second/third app: a DM desktop
+companion and eventual player app) landed after this list was written. `docs/ROADMAP-
+2026-09-23.md` is the current source of truth for ordering and the research behind it;
+this list is kept only as a record of what the plan looked like before that redo:
+
+1. ~~P4.4 — Fog of war.~~ DungeonBoard-style freehand reveal/hide mask, plus toggling a
    `polygon` marker's existing `revealed` flag (already wired in the schema, unused
    until fog lands — see `map_markers.revealed` and `maps.fog_enabled`/
-   `fog_mask_updated_at`, both reserved since P4.1).
-2. **P3's query views** — table/board/gallery, the last unbuilt piece of P3.
-3. **P5 — Calendars, events, timelines.**
-4. **P6 — Play mode** (statblocks, initiative, encounters).
-5. **P7 — Hardening** (realtime, Obsidian import/export, webhooks, backup/restore UI).
+   `fog_mask_updated_at`, both reserved since P4.1). Still on the list, just resequenced
+   behind P3's relations/graph work — see the new doc.
+2. ~~P3's query views~~ — table/board/gallery, the last unbuilt piece of P3. Still
+   unbuilt; not resequenced, just not the very next thing either.
+3. ~~P5 — Calendars, events, timelines.~~
+4. ~~P6 — Play mode~~ (statblocks, initiative, encounters).
+5. ~~P7 — Hardening~~ (realtime, Obsidian import/export, webhooks, backup/restore UI).
+   Note: the new doc pulls the *realtime* piece of this forward, ahead of the desktop
+   companion app, since live-session features need it — see
+   `docs/ROADMAP-2026-09-23.md` §5/§8.
 
 ## 3. Standing verification habit, worth repeating for whatever comes next
 
