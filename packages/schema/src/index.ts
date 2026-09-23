@@ -213,6 +213,14 @@ export const breadcrumbEntrySchema = z.object({
   icon: z.string().nullable(),
 });
 
+/** A `#tag` reference — the tag itself is a real node (kind "tag"), same "everything is a node" rule as any wikilink target. */
+export const tagRefSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  icon: z.string().nullable(),
+});
+export type TagRef = z.infer<typeof tagRefSchema>;
+
 export const nodeDetailSchema = nodeSummarySchema.extend({
   worldId: z.string(),
   bodyMd: z.string(),
@@ -220,6 +228,7 @@ export const nodeDetailSchema = nodeSummarySchema.extend({
   breadcrumb: z.array(breadcrumbEntrySchema),
   children: z.array(nodeSummarySchema),
   backlinks: z.array(backlinkSchema),
+  tags: z.array(tagRefSchema),
   canEdit: z.boolean(),
 });
 export type NodeDetail = z.infer<typeof nodeDetailSchema>;

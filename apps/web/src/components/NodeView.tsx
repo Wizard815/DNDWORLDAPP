@@ -4,6 +4,7 @@ import type { FieldDto, FieldType, NodeDetail, NodeSummary, Visibility } from "@
 import { ApiError, api } from "../api.ts";
 import { Editor } from "../editor/Editor.tsx";
 import { navigate } from "../lib/nav.ts";
+import { useResizablePanel } from "../lib/useResizablePanel.ts";
 import { Access } from "./Access.tsx";
 import { IconPicker } from "./IconPicker.tsx";
 import { MapView } from "./MapView.tsx";
@@ -95,7 +96,17 @@ export function NodeView({
       </header>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-8 py-6">
+        {/*
+         * Maps skip the max-w-3xl reading-width cap that documents use — a map
+         * should use however much of the pane is actually available, the same
+         * way every map editor referenced during the redesign pass (Kanka,
+         * World Anvil, LegendKeeper) does. Capping it artificially narrower
+         * than the pane, while MapView.tsx sizes its own aspect ratio from the
+         * real image, was the other half of the "black bar on one side" bug —
+         * the container's shape didn't match the image's, so Leaflet centered
+         * it and left the mismatch as empty space.
+         */}
+        <div className={node.kind === "map" ? "w-full px-8 py-6" : "mx-auto w-full max-w-3xl px-8 py-6"}>
           <div className="mb-4 flex items-center gap-2">
             <IconPicker
               value={node.icon}
@@ -138,8 +149,9 @@ export function NodeView({
                 </button>
                 {menuOpen && (
                   <>
-                    <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg">
+                    {/* z-[20xx], not z-10/20: must clear MapView's in-map overlays (z-[1000]) when this page is a map — app chrome always wins over map content. */}
+                    <div className="fixed inset-0 z-[2010]" onClick={() => setMenuOpen(false)} />
+                    <div className="absolute right-0 z-[2020] mt-1 w-52 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg">
                       <button
                         type="button"
                         onClick={() => {
@@ -243,7 +255,7 @@ export function NodeView({
 
           {sourceOpen && (
             <div
-              className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[8vh]"
+              className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[8vh]"
               onClick={() => setSourceOpen(false)}
             >
               <div
@@ -268,7 +280,7 @@ export function NodeView({
           )}
 
           {node.kind === "map" ? (
-            <div className="h-[75vh] overflow-hidden rounded-md border border-[#26282d]">
+            <div className="overflow-hidden rounded-md border border-[#26282d]">
               <MapView node={node} allNodes={allNodes} />
             </div>
           ) : (
@@ -351,7 +363,7 @@ function TemplatePicker({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[8vh]" onClick={onClose}>
+    <div className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[8vh]" onClick={onClose}>
       <div
         className="w-full max-w-sm rounded-lg border border-[#33363d] bg-[#1d1f23] p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -405,9 +417,69 @@ export function Backlinks({
     queryFn: () => api.unresolvedLinks(node.worldId),
   });
   const links = wanted.data?.links ?? [];
+  const panel = useResizablePanel({ storageKey: "dwa:rightPanel", defaultWidth: 280, minWidth: 220, maxWidth: 480 });
+
+  if (panel.collapsed) {
+    return (
+      <aside className="hidden h-screen w-8 shrink-0 flex-col items-center border-l border-[#26282d] bg-[#1a1c20] py-3 lg:flex">
+        <button
+          type="button"
+          onClick={panel.toggleCollapsed}
+          className="rounded p-1 text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+          title="Show panel"
+          aria-label="Show panel"
+        >
+          «
+        </button>
+      </aside>
+    );
+  }
 
   return (
-    <aside className="hidden h-screen w-[280px] shrink-0 overflow-y-auto border-l border-[#26282d] bg-[#1a1c20] px-4 py-4 lg:block">
+    <aside
+      style={{ width: panel.width }}
+      className="relative hidden h-screen shrink-0 overflow-y-auto border-l border-[#26282d] bg-[#1a1c20] px-4 py-4 lg:block"
+    >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize panel"
+        tabIndex={0}
+        onPointerDown={(e) => panel.startResize(e, "right")}
+        onDoubleClick={panel.resetWidth}
+        onKeyDown={(e) => panel.handleKeyDown(e, "right")}
+        className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-[#4a4d55] focus:bg-[#4a4d55] focus:outline-none"
+      />
+      <button
+        type="button"
+        onClick={panel.toggleCollapsed}
+        className="absolute right-2 top-2 rounded p-1 text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+        title="Hide panel"
+        aria-label="Hide panel"
+      >
+        »
+      </button>
+      {node.tags.length > 0 && (
+        <>
+          <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">Tags</h2>
+          <div className="mb-6 flex flex-wrap gap-1.5">
+            {node.tags.map((tag) => (
+              <a
+                key={tag.id}
+                href={`/n/${tag.id}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate(`/n/${tag.id}`);
+                }}
+                className="tag-chip"
+              >
+                #{tag.title}
+              </a>
+            ))}
+          </div>
+        </>
+      )}
+
       <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">
         Mentioned in
       </h2>

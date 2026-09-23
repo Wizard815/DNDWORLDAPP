@@ -226,6 +226,9 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         if (node.children.length > 0) {
           parts.push("", `## Pages inside`, ...node.children.map((c) => `- ${c.title} [${c.id}]`));
         }
+        if (node.tags.length > 0) {
+          parts.push("", `## Tags`, node.tags.map((t) => `#${t.title} [${t.id}]`).join(", "));
+        }
         if (node.backlinks.length > 0) {
           parts.push("", `## Linked from`, ...node.backlinks.map((b) => `- ${b.title} [${b.nodeId}]`));
         }

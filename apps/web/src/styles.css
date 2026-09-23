@@ -44,13 +44,6 @@ body {
   background: #1a1c20 !important;
   color: #5c5f67 !important;
 }
-.leaflet-control-attribution {
-  background: rgb(23 24 27 / 85%) !important;
-  color: #7a7d86 !important;
-}
-.leaflet-control-attribution a {
-  color: #9db8ff !important;
-}
 
 /* Wiki links: an existing page reads as a link, a missing one as a to-do. */
 .wikilink {
@@ -64,6 +57,25 @@ body {
 .wikilink-missing {
   color: #c98b8b;
   border-bottom: 1px dashed rgb(201 139 139 / 50%);
+}
+
+/* #tagname — a small pill, not an underlined link, so it reads as a label/category rather than a page reference. */
+.tag-chip {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.05em 0.6em;
+  font-size: 0.9em;
+  color: #b8a9e0;
+  background: rgb(157 130 224 / 12%);
+  text-decoration: none;
+}
+a.tag-chip:hover {
+  background: rgb(157 130 224 / 22%);
+}
+.tag-chip-pending {
+  color: #8d9099;
+  background: rgb(141 144 153 / 10%);
+  cursor: default;
 }
 
 .prose-body {
@@ -211,12 +223,25 @@ body {
 }
 
 /* /layout columns. A visible border regardless of content, not just when
-   empty — otherwise there is nothing to show a writer where a column is. */
+   empty — otherwise there is nothing to show a writer where a column is.
+   Width split comes from the layout attribute ColumnsView.tsx's toolbar
+   sets, not a single fixed 1fr 1fr — see Columns.ts's COLUMN_LAYOUTS. */
 [data-columns] {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 1.5em;
   margin: 1em 0;
+}
+[data-columns][data-layout="1-1"] {
+  grid-template-columns: 1fr 1fr;
+}
+[data-columns][data-layout="1-1-1"] {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+[data-columns][data-layout="1-2"] {
+  grid-template-columns: 1fr 2fr;
+}
+[data-columns][data-layout="2-1"] {
+  grid-template-columns: 2fr 1fr;
 }
 [data-column] {
   border: 1px dashed #2c2f36;
@@ -232,7 +257,7 @@ body {
 }
 @media (max-width: 640px) {
   [data-columns] {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
   }
 }
 

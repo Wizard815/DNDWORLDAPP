@@ -39,7 +39,7 @@ export function AutoLinkPopover({
     <div
       ref={ref}
       style={{ position: "fixed", left: style?.left ?? -9999, top: style?.top ?? -9999 }}
-      className="z-30 flex items-center gap-2 rounded-md border border-[#33363d] bg-[#22242a] px-2.5 py-1.5 text-xs shadow-lg"
+      className="z-[2030] flex items-center gap-2 rounded-md border border-[#33363d] bg-[#22242a] px-2.5 py-1.5 text-xs shadow-lg"
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >

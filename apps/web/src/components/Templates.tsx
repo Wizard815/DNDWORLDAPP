@@ -58,7 +58,7 @@ export function Templates({ worldId, onClose }: { worldId: string; onClose: () =
   const selected = templates.find((t) => t.id === selectedId) ?? null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[6vh]" onClick={onClose}>
+    <div className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[6vh]" onClick={onClose}>
       <div
         className="flex max-h-[86vh] w-full max-w-4xl overflow-hidden rounded-lg border border-[#33363d] bg-[#1d1f23] shadow-2xl"
         onClick={(e) => e.stopPropagation()}

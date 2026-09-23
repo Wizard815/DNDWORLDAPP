@@ -125,17 +125,23 @@ export function App() {
   }, []);
 
   /**
-   * Flips the module-level flag api.ts reads on every request, then throws away
-   * everything cached so far — a stale "what I could edit" from before the
-   * toggle would be actively misleading, not just outdated.
+   * Flips the module-level flag api.ts reads on every request, refetches
+   * everything, and only *then* flips the React state that keys NodeView —
+   * a stale "what I could edit" from before the toggle would be actively
+   * misleading, not just outdated. The state flip has to wait for the
+   * refetch to land: NodeView's Editor freezes its content at mount (see
+   * Editor.tsx's own comment on why), so re-keying it before the fresh,
+   * role-filtered body has actually arrived would just remount it with the
+   * same stale content — which is exactly the bug this used to have (a DM's
+   * own secret blocks kept showing under "View as a player" until a manual
+   * reload actually re-fetched first).
    */
-  const toggleViewAsPlayer = useCallback(() => {
-    setViewAsPlayerState((prev) => {
-      setViewAsPlayer(!prev);
-      void queryClient.invalidateQueries();
-      return !prev;
-    });
-  }, [queryClient]);
+  const toggleViewAsPlayer = useCallback(async () => {
+    const next = !viewAsPlayer;
+    setViewAsPlayer(next);
+    await queryClient.invalidateQueries();
+    setViewAsPlayerState(next);
+  }, [queryClient, viewAsPlayer]);
 
   const refreshTree = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["tree"] });
@@ -242,11 +248,21 @@ export function App() {
 
         {node.data !== undefined ? (
           <>
+            {/*
+             * key includes viewAsPlayer: NodeView mounts an Editor whose
+             * useEditor() call intentionally freezes its initial `content`
+             * (empty deps array, so typing isn't disrupted by unrelated
+             * re-renders), so toggling the preview role needs a real remount
+             * to pick up the freshly-refetched, role-filtered body — same as
+             * a page navigation already does. Safe against the "remounts
+             * with still-stale data" race because toggleViewAsPlayer only
+             * flips this state after its refetch has actually resolved.
+             */}
             <NodeView
-              key={node.data.node.id}
+              key={`${node.data.node.id}:${viewAsPlayer}`}
               node={node.data.node}
               allNodes={nodes}
-              isGameMaster={isGameMaster}
+              isGameMaster={isGameMaster && !viewAsPlayer}
               onChanged={refreshTree}
               onOpenCreateChooser={(parentId) => setCreateChooser({ parentId })}
               onCreateNamed={(title) =>

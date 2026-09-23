@@ -5,6 +5,7 @@ import type {
   NodeDetail,
   NodeSummary,
   SearchHit,
+  TagRef,
   UnresolvedLink,
   UpdateNodeInput,
 } from "@dndworldapp/schema";
@@ -17,6 +18,7 @@ import { shortId } from "../lib/id.ts";
 import { containsSecret, redactForViewer, stripSecrets } from "../lib/secrets.ts";
 import { keyAfterAll, keyBetween } from "../lib/sortkey.ts";
 import { slugify, uniqueSlug } from "../lib/slug.ts";
+import { parseTags } from "../lib/tags.ts";
 import { linkKey, parseWikilinks } from "../lib/wikilinks.ts";
 import { canEditNode } from "./acl.ts";
 import { assertTemplateInWorld, assignTemplateFields } from "./templates.ts";
@@ -65,6 +67,14 @@ const findByTitleOrSlug = db.prepare(
 const resolvePending = db.prepare(`
   UPDATE links SET dst_node_id = ?
   WHERE world_id = ? AND dst_node_id IS NULL AND (lower(target_text) = ? OR lower(target_text) = ?)
+`);
+const deleteTagsFrom = db.prepare("DELETE FROM node_tags WHERE node_id = ?");
+const insertNodeTag = db.prepare("INSERT OR IGNORE INTO node_tags (node_id, tag_node_id) VALUES (?, ?)");
+const findTagNode = db.prepare("SELECT id FROM nodes WHERE world_id = ? AND kind = 'tag' AND lower(title) = ?");
+const selectTagsFor = db.prepare(`
+  SELECT n.id, n.title, n.icon FROM node_tags nt JOIN nodes n ON n.id = nt.tag_node_id
+  WHERE nt.node_id = ? AND n.is_archived = 0
+  ORDER BY n.title
 `);
 const unresolveStale = db.prepare(`
   UPDATE links SET dst_node_id = NULL
@@ -166,6 +176,7 @@ export function getNodeDetail(nodeId: string, viewer: Viewer): NodeDetail {
     breadcrumb: breadcrumbFor(row),
     children: children.map(rowToSummary),
     backlinks: backlinksFor(nodeId, viewer),
+    tags: tagsFor(nodeId),
     canEdit: canEditNode(row, viewer),
   };
 }
@@ -186,16 +197,27 @@ export function breadcrumbFor(row: NodeRow): Array<{ id: string; title: string; 
   return trail;
 }
 
+/**
+ * "Mentioned in" — everywhere this node is wikilinked to, UNIONed with
+ * everywhere it's used as a `#tag` (only ever non-empty when nodeId is
+ * itself a tag node, but no special-casing needed: node_tags only ever
+ * points at tag nodes in the first place, so the second half is naturally
+ * empty for anything else). One combined query, one panel on the client.
+ */
 export function backlinksFor(nodeId: string, viewer: Viewer): Backlink[] {
   const vis = readableSql("n", viewer);
   const rows = db
     .prepare(
-      `SELECT DISTINCT n.id, n.title, n.icon, l.label
+      `SELECT n.id, n.title, n.icon, l.label
        FROM links l JOIN nodes n ON n.id = l.src_node_id
        WHERE l.dst_node_id = ? AND n.is_archived = 0 AND ${vis.sql}
-       ORDER BY n.title`,
+       UNION
+       SELECT n.id, n.title, n.icon, NULL AS label
+       FROM node_tags nt JOIN nodes n ON n.id = nt.node_id
+       WHERE nt.tag_node_id = ? AND n.is_archived = 0 AND ${vis.sql}
+       ORDER BY title`,
     )
-    .all(nodeId, ...vis.params) as Array<{
+    .all(nodeId, ...vis.params, nodeId, ...vis.params) as Array<{
     id: string;
     title: string;
     icon: string | null;
@@ -292,6 +314,61 @@ function resettleLinksFor(row: NodeRow): void {
 }
 
 /**
+ * A `#tag` node is created the first time anyone writes that tag anywhere in
+ * the world, exactly like a wikilink's "create on demand" — except a tag
+ * always resolves, so there is no "unresolved tag" concept to maintain. The
+ * node's title is the tag text itself, lowercased: canonical casing (like a
+ * hashtag) rather than whichever of possibly several different-cased
+ * mentions happened to write it first.
+ */
+function findOrCreateTagNode(worldId: string, name: string, createdBy: string | null, now: number): string {
+  const existing = findTagNode.get(worldId, name) as { id: string } | undefined;
+  if (existing !== undefined) return existing.id;
+
+  const id = shortId();
+  insertNode.run({
+    id,
+    worldId,
+    parentId: null,
+    templateId: null,
+    kind: "tag",
+    title: name,
+    slug: uniqueSlug(name, (s) => slugTaken.get(worldId, s) !== undefined),
+    bodyMd: "",
+    icon: "🏷️",
+    sortKey: nextSortKey(worldId, null, null),
+    visibility: "members",
+    createdBy,
+    now,
+  });
+  return id;
+}
+
+/**
+ * Indexes `#tag` mentions out of the SECRET-STRIPPED body, same reasoning as
+ * reindexLinks — a tag written only inside a `:::secret` block must not
+ * surface as a real node_tags row, or its mere existence leaks something
+ * about DM-only content to every member browsing the tag's own page.
+ */
+function reindexTags(row: NodeRow): void {
+  deleteTagsFrom.run(row.id);
+  const now = Date.now();
+  for (const name of parseTags(stripSecrets(row.body_md))) {
+    const tagNodeId = findOrCreateTagNode(row.world_id, name, row.created_by, now);
+    insertNodeTag.run(row.id, tagNodeId);
+  }
+}
+
+/** A node's own tags, for the client's "Tags" panel. */
+export function tagsFor(nodeId: string): TagRef[] {
+  return (selectTagsFor.all(nodeId) as Array<{ id: string; title: string; icon: string | null }>).map((r) => ({
+    id: r.id,
+    title: r.title,
+    icon: r.icon,
+  }));
+}
+
+/**
  * Maintains nodes_fts. Was a SQL trigger until secret blocks arrived — a trigger
  * cannot run stripSecrets(), and indexing the raw body would let a search
  * snippet leak secret text to a player. So this runs in JS, explicitly, after
@@ -343,6 +420,7 @@ export function createNode(worldId: string, viewer: Viewer, input: CreateNodeInp
     const created = selectNode.get(id) as NodeRow;
     reindexLinks(created);
     resettleLinksFor(created);
+    reindexTags(created);
     reindexFts(created);
     if (templateId !== null) assignTemplateFields(id, worldId, templateId);
     return created;
@@ -393,7 +471,10 @@ export function updateNode(nodeId: string, viewer: Viewer, input: UpdateNodeInpu
     );
 
     const updated = selectNode.get(nodeId) as NodeRow;
-    if (input.bodyMd !== undefined) reindexLinks(updated);
+    if (input.bodyMd !== undefined) {
+      reindexLinks(updated);
+      reindexTags(updated);
+    }
     if (renaming) resettleLinksFor(updated);
     if (input.bodyMd !== undefined || renaming) reindexFts(updated);
     if (templateChanged) assignTemplateFields(nodeId, existing.world_id, templateId);

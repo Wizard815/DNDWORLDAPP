@@ -2,6 +2,8 @@ import { Extension } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
 import { PluginKey } from "@tiptap/pm/state";
 import Suggestion from "@tiptap/suggestion";
+import { COLUMN_LAYOUTS } from "./Columns.ts";
+import type { ColumnLayout } from "./Columns.ts";
 import { SlashCommandList } from "./SlashCommandList.tsx";
 import { createSuggestionRenderer } from "./suggestionPopup.tsx";
 
@@ -10,7 +12,14 @@ export interface SlashCommandItem {
   description: string;
   icon: string;
   searchTerms?: string[];
-  command: (editor: Editor) => unknown;
+  /** Leaf items run this. Parent items (see `submenu`) never do. */
+  command?: (editor: Editor) => unknown;
+  /**
+   * Selecting a parent item shows these instead of running anything — the
+   * "Columns" item uses this for "which layout," so the choice appears only
+   * after Columns is already picked, not as five separate top-level entries.
+   */
+  submenu?: SlashCommandItem[];
 }
 
 export interface SlashCommandBridge {
@@ -95,22 +104,28 @@ function createItems(bridge: SlashCommandBridge): SlashCommandItem[] {
   },
   {
     title: "Columns",
-    description: "Two side-by-side columns, for images next to text",
+    description: "Side-by-side columns — pick how many, and how wide",
     icon: "▥",
     searchTerms: ["layout", "side by side"],
-    command: (editor) => {
-      editor
-        .chain()
-        .focus()
-        .insertContent({
-          type: "columns",
-          content: [
-            { type: "column", content: [{ type: "paragraph" }] },
-            { type: "column", content: [{ type: "paragraph" }] },
-          ],
-        })
-        .run();
-    },
+    submenu: (Object.keys(COLUMN_LAYOUTS) as ColumnLayout[]).map((key) => ({
+      title: COLUMN_LAYOUTS[key].label,
+      description: `${COLUMN_LAYOUTS[key].columns} columns`,
+      icon: { "1-1": "▥", "1-1-1": "▦", "1-2": "◧", "2-1": "◨" }[key],
+      command: (editor) => {
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "columns",
+            attrs: { layout: key },
+            content: Array.from({ length: COLUMN_LAYOUTS[key].columns }, () => ({
+              type: "column",
+              content: [{ type: "paragraph" }],
+            })),
+          })
+          .run();
+      },
+    })),
   },
   {
     title: "Heading 1",
@@ -198,6 +213,9 @@ export const SlashCommand = Extension.create<{ bridge: SlashCommandBridge }>({
           );
         },
         command: ({ editor, range, props }: { editor: Editor; range: { from: number; to: number }; props: SlashCommandItem }) => {
+          // SlashCommandList only ever forwards leaf items here — one with a
+          // `submenu` instead drills down in place and never reaches this.
+          if (props.command === undefined) return;
           editor.chain().focus().deleteRange(range).run();
           void props.command(editor);
         },

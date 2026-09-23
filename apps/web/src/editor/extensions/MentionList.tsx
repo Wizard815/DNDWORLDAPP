@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 export interface MentionItem {
   /** The wikilink target text to insert — an existing page's title, or a brand-new one to create. */
@@ -16,11 +16,15 @@ interface Props {
   command: (item: MentionItem) => void;
 }
 
-/** Popup for both `@` (existing pages only) and `[[` (existing, or type a new one). */
+/** Popup for `@`, `[[` (existing, or type a new one), and `#` (same, for tags). */
 export const MentionList = forwardRef<MentionListHandle, Props>(function MentionList({ items, command }, ref) {
   const [index, setIndex] = useState(0);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => setIndex(0), [items]);
+  useEffect(() => {
+    itemRefs.current[index]?.scrollIntoView({ block: "nearest" });
+  }, [index, items]);
 
   useImperativeHandle(ref, () => ({
     onKeyDown({ event }) {
@@ -55,6 +59,9 @@ export const MentionList = forwardRef<MentionListHandle, Props>(function Mention
         {items.map((item, i) => (
           <li key={`${item.isCreate ? "create:" : ""}${item.target}`}>
             <button
+              ref={(el) => {
+                itemRefs.current[i] = el;
+              }}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => command(item)}

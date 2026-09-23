@@ -203,23 +203,69 @@ function MapOptionsSync({
   maxZoom,
   maxBounds,
   maxBoundsViscosity,
+  fitBounds,
 }: {
   minZoom: number;
   maxZoom: number;
   maxBounds: L.LatLngBounds;
   maxBoundsViscosity: number;
+  fitBounds: L.LatLngBoundsLiteral;
 }) {
   const map = useMap();
   useEffect(() => {
-    map.setMinZoom(minZoom);
     map.setMaxZoom(maxZoom);
-  }, [map, minZoom, maxZoom]);
+  }, [map, maxZoom]);
   useEffect(() => {
     map.setMaxBounds(maxBounds);
     // No setter exists for this one; Leaflet's own drag-constraint code just
     // reads the option straight off `map.options` every time it needs it.
     map.options.maxBoundsViscosity = maxBoundsViscosity;
   }, [map, maxBounds, maxBoundsViscosity]);
+
+  /**
+   * The stored `minZoom` (usually 0) is the coarsest *tile* the pyramid has —
+   * a single 256×256 root tile, one per map regardless of its real shape.
+   * For anything non-square, sharp still has to pad that lone tile out to a
+   * square (tiles are always square), so zoom 0 always contains real,
+   * baked-in padding pixels on one axis. That's not a fit/CSS problem —
+   * it's actual tile content — so no amount of fitBounds/zoomSnap tuning
+   * touches it. The fix is to never let the view reach a zoom that coarse in
+   * the first place: raise the effective floor to whatever zoom exactly
+   * fits the real image into the *current* container, so "zoomed all the
+   * way out" always means "the whole image, no padding" instead of "the
+   * padded root tile." Recomputed on every resize since the fit zoom is a
+   * function of the container's current size.
+   */
+  useEffect(() => {
+    function syncFloorAndFit(alsoFit: boolean): void {
+      map.invalidateSize();
+      const fitZoom = map.getBoundsZoom(fitBounds);
+      map.setMinZoom(Math.max(minZoom, fitZoom));
+      if (alsoFit) map.fitBounds(fitBounds);
+    }
+    // Same "only applied once, at construction" gotcha as the rest of this
+    // component: MapContainer's own `bounds` prop calls fitBounds() exactly
+    // once, against whatever the container measured at that instant — which
+    // loses a race against the CSS `aspect-ratio` layout pass on its wrapper
+    // (the container isn't shaped like the image yet when Leaflet first
+    // measures it), leaving the initial view fit to a too-wide guess and the
+    // real image letterboxed inside it. invalidateSize() first so Leaflet
+    // re-measures the now-correctly-shaped container before refitting.
+    syncFloorAndFit(true);
+
+    // A later resize of the container alone — dragging the sidebar, not the
+    // window — needs the same re-measurement so Leaflet's internal size
+    // cache and the zoom floor don't go stale. trackResize only listens for
+    // window resizes. Deliberately just re-floors, not a re-fit: refitting
+    // on every sidebar drag would fight a DM's own pan/zoom mid-session.
+    const container = map.getContainer();
+    const observer = new ResizeObserver(() => syncFloorAndFit(false));
+    observer.observe(container);
+    return () => observer.disconnect();
+    // fitBounds is itself memoized off the map's real width/height, so the
+    // initial fit only re-fires on mount and when the image actually
+    // changes (e.g. "Replace image") — not on every unrelated re-render.
+  }, [map, minZoom, fitBounds]);
   return null;
 }
 
@@ -517,7 +563,18 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
   const hiddenGroups = useHiddenMapGroups(node.id);
 
   const [dropShape, setDropShape] = useState<AddableShape | null>(null);
-  const [groupsPanelOpen, setGroupsPanelOpen] = useState(false);
+  // "Groups" (visibility filter) and "Markers" (browse/jump-to) share one
+  // bottom-left slot — they're both read-oriented side panels, not edit
+  // tools, so showing both at once would just be two lists competing for
+  // the same corner. Opening one closes the other.
+  const [openPanel, setOpenPanel] = useState<"groups" | "markers" | null>(null);
+  // Collapsed by default — "Groups" is a personal display toggle everyone
+  // sees, but the shape-adder/Replace-image/Done-Cancel controls are DM
+  // clutter on a map you're just looking at, not building. Forced open
+  // (see the `|| draft !== null` checks below) while a draft is mid-draw so
+  // its own Done/Cancel buttons stay reachable even if this gets collapsed.
+  const [editToolbarOpen, setEditToolbarOpen] = useState(false);
+  const mapInstanceRef = useRef<L.Map | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ shape: DrawShape; points: MarkerPoint[]; anchor: { x: number; y: number } | null; replaceId: string | null } | null>(null);
@@ -704,12 +761,12 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
   );
 
   if (mapQuery.isLoading) {
-    return <div className="h-full p-8 text-sm text-[#7a7d86]">Loading…</div>;
+    return <div className="h-64 p-8 text-sm text-[#7a7d86]">Loading…</div>;
   }
 
   if (map === null || map === undefined) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-8">
+      <div className="flex h-64 flex-col items-center justify-center gap-3 p-8">
         <p className="text-sm text-[#7a7d86]">No map image set yet.</p>
         {node.canEdit && (
           <>
@@ -742,7 +799,29 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
   const computedMaxZoom = map.tilingStatus === "ready" ? map.maxZoom : map.maxZoom + 6;
 
   return (
-    <div className="relative h-full">
+    <div
+      className="relative w-full"
+      // The container's shape matches the image's aspect ratio (width stays
+      // the definite dimension, height follows from it) — that's what fixed
+      // the original "black bar" bug, where a fixed height independent of
+      // the image's real shape left Leaflet's fitBounds centering the image
+      // with a gap on one axis that read as a stray dark bar.
+      //
+      // maxHeight caps that computed height for tall/portrait images so the
+      // toolbar and MarkerInspector — both anchored to this box's own
+      // top/bottom corners — stay reachable without scrolling on a full-
+      // screen browser (reported directly: both required a scrollbar to
+      // reach). This DOES reintroduce a width/height mismatch for anything
+      // portrait enough to hit the cap, which sounds like the same bug —
+      // but it isn't anymore: what actually made a mismatched box look
+      // broken was two independent zoom bugs (default zoomSnap=1, and the
+      // uncapped zoom-out floor exposing zoom-0's mandatory square root
+      // tile), both fixed elsewhere in this file (zoomSnap={0} below, and
+      // MapOptionsSync's getBoundsZoom-based minZoom floor). With those
+      // fixed, a mismatched box just pillarboxes cleanly like any
+      // object-fit:contain viewer — no bug, just expected letterboxing.
+      style={{ aspectRatio: `${map.width} / ${map.height}`, maxHeight: "75vh" }}
+    >
       {node.canEdit && (
         <input
           ref={fileInputRef}
@@ -757,24 +836,52 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
         />
       )}
       {/*
-        Unconditional now, not gated behind node.canEdit — the "🗂 Groups"
-        toggle is a personal display preference (which categories of markers
-        YOU currently see), useful to a player as much as a DM, so it can't
-        live inside the edit-only block the way "Replace image"/shape-adder/
-        Done-Cancel legitimately do.
+        Unconditional now, not gated behind node.canEdit — "🗂 Groups" and "📋
+        Markers" are both personal browse/display tools (which categories of
+        markers YOU currently see, finding a marker by name), useful to a
+        player as much as a DM, so neither can live inside the edit-only
+        block the way "Replace image"/shape-adder/Done-Cancel legitimately do.
       */}
       <div className="absolute right-3 top-3 z-[1000] flex gap-1 rounded-md border border-[#33363d] bg-[#1d1f23]/95 p-1 shadow-lg">
         <button
           type="button"
-          onClick={() => setGroupsPanelOpen(!groupsPanelOpen)}
+          onClick={() => setOpenPanel(openPanel === "groups" ? null : "groups")}
           title="Show/hide marker groups"
           className={`rounded px-2 py-1 text-xs ${
-            groupsPanelOpen ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+            openPanel === "groups" ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
           }`}
         >
           🗂 Groups
         </button>
+        <button
+          type="button"
+          onClick={() => setOpenPanel(openPanel === "markers" ? null : "markers")}
+          title="Browse markers on this map"
+          className={`rounded px-2 py-1 text-xs ${
+            openPanel === "markers" ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+          }`}
+        >
+          📋 Markers
+        </button>
         {node.canEdit && (
+          <>
+            <div className="mx-0.5 w-px self-stretch bg-[#33363d]" />
+            <button
+              type="button"
+              onClick={() => setEditToolbarOpen(!editToolbarOpen)}
+              // A draft in progress keeps its Done/Cancel controls reachable
+              // even if this gets collapsed mid-draw — see the `|| draft
+              // !== null` on the block below, not just this highlight.
+              title="Show/hide map editing controls"
+              className={`rounded px-2 py-1 text-xs ${
+                editToolbarOpen || draft !== null ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+              }`}
+            >
+              ✏️ Edit
+            </button>
+          </>
+        )}
+        {node.canEdit && (editToolbarOpen || draft !== null) && (
           <>
             <div className="mx-0.5 w-px self-stretch bg-[#33363d]" />
             <button
@@ -838,23 +945,47 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
           {uploadError}
         </div>
       )}
-      {groupsPanelOpen && (
+      {openPanel === "groups" && (
         <MapGroupsPanel
           groups={groups}
           hiddenGroups={hiddenGroups}
           canEdit={node.canEdit}
-          onClose={() => setGroupsPanelOpen(false)}
+          onClose={() => setOpenPanel(null)}
           onCreate={(name, parentGroupId) => createGroup.mutate({ name, parentGroupId })}
           onRename={(id, name) => updateGroup.mutate({ id, name })}
           onMove={(id, input) => moveGroup.mutate({ id, ...input })}
           onDelete={(id) => removeGroup.mutate(id)}
         />
       )}
+      {openPanel === "markers" && (
+        <MarkerListPanel
+          markers={markers}
+          groups={groups}
+          scale={scale}
+          onClose={() => setOpenPanel(null)}
+          onSelect={(marker) => {
+            setSelectedId(marker.id);
+            const anchor =
+              marker.shape === "polygon" || marker.shape === "path" ? anchorFor(marker) : { x: marker.x, y: marker.y };
+            if (anchor !== null) mapInstanceRef.current?.panTo(pixelToLatLng(anchor.x, anchor.y, scale));
+          }}
+        />
+      )}
 
       <MapContainer
         key={node.id}
+        ref={mapInstanceRef}
         crs={PIXEL_CRS}
         bounds={bounds!}
+        // The actual cause of the "black bar": Leaflet's default zoomSnap=1
+        // only ever lands on whole zoom levels, and this container's pixel
+        // size essentially never exactly matches what a whole zoom level's
+        // tile grid needs — so fitBounds() picks the largest whole zoom that
+        // still fits, centers it, and leaves the leftover width or height as
+        // plain container background. zoomSnap={0} lets it land on whatever
+        // fractional zoom actually fills the container exactly, the same
+        // technique every CRS.Simple single-image viewer needs.
+        zoomSnap={0}
         maxBounds={panBounds!}
         maxBoundsViscosity={0.8}
         minZoom={map.minZoom}
@@ -868,12 +999,16 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
         // hard wall stopping them from zooming in at all.
         maxZoom={computedMaxZoom}
         className="h-full w-full bg-[#17181b]"
+        // Tiles are the DM's own uploaded map image, not a third-party
+        // source (OSM etc.) that requires attribution — nothing to credit.
+        attributionControl={false}
       >
         <MapOptionsSync
           minZoom={map.minZoom}
           maxZoom={computedMaxZoom}
           maxBounds={panBounds!}
           maxBoundsViscosity={0.8}
+          fitBounds={bounds!}
         />
         {map.tilingStatus === "ready" ? (
           <TileLayer
@@ -886,6 +1021,16 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
             maxZoom={map.maxZoom}
             tileSize={256}
             noWrap
+            // sharp's tiler pads every zoom level out to a square grid
+            // (`.tile()`'s own requirement) with transparent pixels beyond
+            // the real image — for any non-square map, that padding is real
+            // tile content, not a layout bug, and shows through as a "black"
+            // bar (actually the map container's own dark background) unless
+            // something stops Leaflet from requesting/rendering tiles past
+            // the actual image. `bounds` is exactly that: it's a real
+            // TileLayer option, not just a MapContainer one — it skips any
+            // tile whose geographic extent falls outside it.
+            bounds={bounds!}
           />
         ) : (
           <ImageOverlay url={map.assetUrl} bounds={bounds!} />
@@ -1263,6 +1408,90 @@ function MapGroupsPanel({
             + New group
           </button>
         ))}
+    </div>
+  );
+}
+
+/**
+ * A flat, searchable browse list of every marker on the map — the thing
+ * `MapGroupsPanel` deliberately isn't (that's a *category* filter, not a
+ * finder). Clicking a row selects the marker (opens `MarkerInspector`, same
+ * as clicking it on the map) and pans the map to it, so a marker buried
+ * somewhere on a large image is reachable by name instead of by scrolling
+ * around looking for it.
+ */
+function MarkerListPanel({
+  markers,
+  groups,
+  scale,
+  onClose,
+  onSelect,
+}: {
+  markers: MapMarkerDto[];
+  groups: MapGroupDto[];
+  scale: number;
+  onClose: () => void;
+  onSelect: (marker: MapMarkerDto) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const groupsById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
+
+  function nameOf(marker: MapMarkerDto): string {
+    return marker.label ?? marker.targetNode?.title ?? SHAPE_LABEL[marker.shape] ?? marker.shape;
+  }
+  function iconTextOf(marker: MapMarkerDto): string {
+    // Same fallback order as `iconFor`'s on-map badge — a token defaults to
+    // the flag, everything else (including region/path, which don't render
+    // a point badge on the map at all) to a generic pin.
+    return marker.icon ?? marker.targetNode?.icon ?? (marker.shape === "token" ? DEFAULT_TOKEN_ICON : "📍");
+  }
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return markers
+      .filter((m) => q.length === 0 || nameOf(m).toLowerCase().includes(q))
+      .slice()
+      .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markers, query]);
+
+  return (
+    <div className="absolute bottom-3 left-3 z-[1000] w-72 rounded-md border border-[#33363d] bg-[#1d1f23] p-3 shadow-2xl">
+      <div className="mb-2 flex items-center">
+        <h3 className="text-sm font-semibold text-[#f0f1f4]">Markers</h3>
+        <button type="button" onClick={onClose} className="ml-auto text-xs text-[#7a7d86] hover:text-[#d7d8dc]">
+          Close
+        </button>
+      </div>
+      <input
+        autoFocus
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Find a marker by name…"
+        className="mb-2 w-full rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+      />
+      {markers.length === 0 ? (
+        <p className="py-2 text-xs text-[#7a7d86]">No markers on this map yet.</p>
+      ) : filtered.length === 0 ? (
+        <p className="py-2 text-xs text-[#7a7d86]">No markers match "{query}".</p>
+      ) : (
+        <div className="max-h-64 space-y-0.5 overflow-y-auto">
+          {filtered.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => onSelect(m)}
+              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs text-[#d7d8dc] hover:bg-[#26282e]"
+            >
+              <span className="w-4 shrink-0 text-center">{iconTextOf(m)}</span>
+              <span className="min-w-0 flex-1 truncate">{nameOf(m)}</span>
+              {m.groupId !== null && groupsById.get(m.groupId) !== undefined && (
+                <span className="shrink-0 truncate text-[10px] text-[#7a7d86]">{groupsById.get(m.groupId)!.name}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

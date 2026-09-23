@@ -168,9 +168,11 @@ export function getSharedNode(token: string, nodeId: string): NodeDetail | null 
     templateId: row.template_id,
     breadcrumb,
     children: scope.nodes.filter((n) => n.parentId === nodeId),
-    // Backlinks can point at nodes outside the shared scope; omit rather than
-    // risk leaking a title through them.
+    // Backlinks (and tags — a tag node is just another node) can point
+    // outside the shared scope; omit rather than risk leaking a title
+    // through them.
     backlinks: [],
+    tags: [],
     canEdit: false,
   };
 }

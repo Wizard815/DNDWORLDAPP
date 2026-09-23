@@ -16,6 +16,9 @@ import { SecretBlock } from "./extensions/SecretBlock.ts";
 import { Section } from "./extensions/Section.ts";
 import { SlashCommand } from "./extensions/SlashCommand.ts";
 import type { SlashCommandBridge } from "./extensions/SlashCommand.ts";
+import { TagLink } from "./extensions/TagLink.ts";
+import { createTagSuggestionExtension } from "./extensions/TagSuggestion.ts";
+import type { TagSuggestionBridge } from "./extensions/TagSuggestion.ts";
 import { WikiLink } from "./extensions/WikiLink.ts";
 import { MentionExtension, WikiLinkBracketExtension } from "./extensions/WikiLinkSuggestion.ts";
 import type { WikiLinkBridge } from "./extensions/WikiLinkSuggestion.ts";
@@ -69,6 +72,11 @@ export function Editor({ nodeId, worldId, bodyMd, allNodes, editable, onCreateNa
     },
   }).current;
 
+  const tagBridge = useRef<TagSuggestionBridge>({
+    getAllNodes: () => allNodesRef.current,
+  }).current;
+  const TagSuggestionExtension = useRef(createTagSuggestionExtension(tagBridge)).current;
+
   // Hover state for the auto-link popover. The plugin clears it the instant
   // the mouse leaves the underlined word, which would close the popover
   // before a real mouse can reach its "Link" button — so a `null` report is
@@ -109,6 +117,7 @@ export function Editor({ nodeId, worldId, bodyMd, allNodes, editable, onCreateNa
           placeholder: "Write here. Type / for commands, [[ or @ to link a page.",
         }),
         WikiLink,
+        TagLink,
         SecretBlock,
         Section,
         Columns,
@@ -117,8 +126,20 @@ export function Editor({ nodeId, worldId, bodyMd, allNodes, editable, onCreateNa
         SlashCommand.configure({ bridge: slashCommandBridge }),
         MentionExtension.configure({ char: "@", allowCreate: false, bridge: wikiLinkBridge }),
         WikiLinkBracketExtension.configure({ char: "[[", allowCreate: true, bridge: wikiLinkBridge }),
+        TagSuggestionExtension,
       ],
       onUpdate({ editor: ed }) {
+        // The markdown extension's own initial parse fires one onUpdate right
+        // after mount, before any real edit — its round-tripped getMarkdown()
+        // rarely matches the stored bodyMd byte-for-byte (blank-line/escaping
+        // differences), which used to slip past saveBody's equality check and
+        // schedule a pointless autosave on every mount (visible as a "saving…"
+        // flash with nothing typed). Skip exactly that first, mount-triggered
+        // update; every update after it is a real one.
+        if (!hasEditedRef.current) {
+          hasEditedRef.current = true;
+          return;
+        }
         scheduleAutosave(ed);
       },
       editorProps: {
@@ -147,6 +168,7 @@ export function Editor({ nodeId, worldId, bodyMd, allNodes, editable, onCreateNa
   // rather than dropping the edit on the floor.
   const saveTimer = useRef<number | null>(null);
   const pendingEditorRef = useRef<NonNullable<typeof editor> | null>(null);
+  const hasEditedRef = useRef(false);
 
   function scheduleAutosave(ed: NonNullable<typeof editor>): void {
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);

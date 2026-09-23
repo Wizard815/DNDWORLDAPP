@@ -243,6 +243,89 @@ check("player cannot edit a DM-authored page", playerEdit.status === 403, player
 const playerSearch = (await player("GET", `/worlds/${worldId}/search?q=Crimson`)).body.hits;
 check("DM-only content does not leak through search", playerSearch.length === 0, playerSearch);
 
+console.log("\n== tags (#hashtag) ==");
+const tagPage = (await dm("POST", `/worlds/${worldId}/nodes`, {
+  title: "Bandit Camp",
+  parentId: rootId,
+  bodyMd: "Home to the #goblin raiders and their #goblin-chief.",
+})).body.node;
+const tagPageDetail = (await dm("GET", `/nodes/${tagPage.id}`)).body.node;
+check(
+  "both distinct #tags in the body show up on the page",
+  tagPageDetail.tags.length === 2 &&
+    tagPageDetail.tags.some((t) => t.title === "goblin") &&
+    tagPageDetail.tags.some((t) => t.title === "goblin-chief"),
+  tagPageDetail.tags,
+);
+
+const goblinTagId = tagPageDetail.tags.find((t) => t.title === "goblin").id;
+const goblinTagNode = (await dm("GET", `/nodes/${goblinTagId}`)).body.node;
+check("the tag itself is a real node, kind 'tag'", goblinTagNode.kind === "tag", goblinTagNode);
+check(
+  "the tag's own page lists every page that used it, via the same backlinks panel",
+  goblinTagNode.backlinks.some((b) => b.nodeId === tagPage.id),
+  goblinTagNode.backlinks,
+);
+
+const secondTagPage = (await dm("POST", `/worlds/${worldId}/nodes`, {
+  title: "Another Goblin Page",
+  parentId: rootId,
+  bodyMd: "Also about #Goblin (different case).",
+})).body.node;
+const secondTagDetail = (await dm("GET", `/nodes/${secondTagPage.id}`)).body.node;
+check(
+  "a different-cased mention of the same tag reuses the existing tag node, not a duplicate",
+  secondTagDetail.tags.length === 1 && secondTagDetail.tags[0].id === goblinTagId,
+  secondTagDetail.tags,
+);
+
+await dm("PATCH", `/nodes/${tagPage.id}`, { bodyMd: "No more tags mentioned here." });
+const afterRemoval = (await dm("GET", `/nodes/${tagPage.id}`)).body.node;
+check("editing a #tag out of the body removes the association", afterRemoval.tags.length === 0, afterRemoval.tags);
+const tagNodeStillExists = await dm("GET", `/nodes/${goblinTagId}`);
+check("the tag node itself still exists — unlinked, not deleted", tagNodeStillExists.status === 200, tagNodeStillExists.body);
+
+// New leak surface: a #tag written only inside a :::secret block must not
+// become a real node_tags association, or its mere existence (via the tag's
+// own "mentioned in" list) would reveal something about DM-only content —
+// same reasoning as reindexLinks's secret-stripping, see nodes.ts.
+const secretTagPage = (await dm("POST", `/worlds/${worldId}/nodes`, {
+  title: "Hidden Plot Page",
+  parentId: rootId,
+  visibility: "members",
+  bodyMd: "Public text.\n\n:::secret\n\nThe true culprit is tagged #hiddenvillain.\n\n:::",
+})).body.node;
+const secretTagDetail = (await dm("GET", `/nodes/${secretTagPage.id}`)).body.node;
+check(
+  "a #tag written only inside a :::secret block does not become a real tag association",
+  secretTagDetail.tags.length === 0,
+  secretTagDetail.tags,
+);
+
+// New leak surface: a tag's own "mentioned in" list must respect the
+// visibility of whatever it's listing, exactly like wikilink backlinks do.
+const dmOnlyTaggedPage = (await dm("POST", `/worlds/${worldId}/nodes`, {
+  title: "Zathrax's Vault (DM only)",
+  parentId: rootId,
+  visibility: "dm",
+  bodyMd: "Contains the #maguffin.",
+})).body.node;
+const dmOnlyTagDetail = (await dm("GET", `/nodes/${dmOnlyTaggedPage.id}`)).body.node;
+const maguffinTagId = dmOnlyTagDetail.tags.find((t) => t.title === "maguffin").id;
+const maguffinAsPlayer = await player("GET", `/nodes/${maguffinTagId}`);
+check("a player can see the tag node itself — it isn't dm-only", maguffinAsPlayer.status === 200, maguffinAsPlayer.body);
+check(
+  "but a dm-only page that used the tag is NOT listed in the tag's backlinks for a player",
+  !maguffinAsPlayer.body.node.backlinks.some((b) => b.nodeId === dmOnlyTaggedPage.id),
+  maguffinAsPlayer.body.node.backlinks,
+);
+const maguffinAsDm = (await dm("GET", `/nodes/${maguffinTagId}`)).body.node;
+check(
+  "the DM does see the dm-only page in the tag's backlinks",
+  maguffinAsDm.backlinks.some((b) => b.nodeId === dmOnlyTaggedPage.id),
+  maguffinAsDm.backlinks,
+);
+
 console.log("\n== leak-surface regressions (docs/AUDIT-2026-08-24.md) ==");
 
 // F1a/F1b: unresolved-links used to have no viewer at all, and reindexLinks

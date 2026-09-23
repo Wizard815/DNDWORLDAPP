@@ -45,8 +45,8 @@ export function IconPicker({
 
       {open && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 z-20 mt-1 w-64 rounded-md border border-[#33363d] bg-[#22242a] p-3 shadow-lg">
+          <div className="fixed inset-0 z-[2010]" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 z-[2020] mt-1 w-64 rounded-md border border-[#33363d] bg-[#22242a] p-3 shadow-lg">
             <div className="mb-2 grid grid-cols-6 gap-1">
               {PRESETS.map((icon) => (
                 <button

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MoveNodeInput, NodeSummary } from "@dndworldapp/schema";
 import { api } from "../api.ts";
 import { navigate } from "../lib/nav.ts";
+import { useResizablePanel } from "../lib/useResizablePanel.ts";
 
 const KIND_GLYPH: Record<string, string> = {
   document: "📄",
@@ -80,6 +81,7 @@ export function Sidebar({
 }: Props) {
   const [dmMenuOpen, setDmMenuOpen] = useState(false);
   const [filter, setFilter] = useState("");
+  const panel = useResizablePanel({ storageKey: "dwa:sidebar", defaultWidth: 290, minWidth: 200, maxWidth: 480 });
   const { expanded, toggle, setExpanded } = useExpanded(worldName);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; mode: DropMode } | null>(null);
@@ -322,7 +324,7 @@ export function Sidebar({
           {menuForId === node.id && menuPos !== null && (
             <>
               <div
-                className="fixed inset-0 z-30"
+                className="fixed inset-0 z-[2030]"
                 onClick={(e) => {
                   e.stopPropagation();
                   closeMenu();
@@ -336,7 +338,7 @@ export function Sidebar({
               <div
                 onClick={(e) => e.stopPropagation()}
                 style={{ top: menuPos.y, left: menuPos.x }}
-                className="fixed z-40 w-48 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg"
+                className="fixed z-[2040] w-48 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg"
               >
                 <button
                   type="button"
@@ -383,8 +385,27 @@ export function Sidebar({
 
   const roots = byParent.get(null) ?? [];
 
+  if (panel.collapsed) {
+    return (
+      <aside className="flex h-full w-8 shrink-0 flex-col items-center border-r border-[#26282d] bg-[#1a1c20] py-3">
+        <button
+          type="button"
+          onClick={panel.toggleCollapsed}
+          className="rounded p-1 text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+          title="Show sidebar"
+          aria-label="Show sidebar"
+        >
+          »
+        </button>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="flex h-full w-[290px] shrink-0 flex-col border-r border-[#26282d] bg-[#1a1c20]">
+    <aside
+      style={{ width: panel.width }}
+      className="relative flex h-full shrink-0 flex-col border-r border-[#26282d] bg-[#1a1c20]"
+    >
       <div className="flex items-center gap-2 px-3 py-3">
         <span className="truncate text-sm font-semibold text-[#f0f1f4]">{worldName}</span>
         <button
@@ -394,6 +415,15 @@ export function Sidebar({
           title="Search (Ctrl+K)"
         >
           Ctrl K
+        </button>
+        <button
+          type="button"
+          onClick={panel.toggleCollapsed}
+          className="rounded p-1 text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+          title="Hide sidebar"
+          aria-label="Hide sidebar"
+        >
+          «
         </button>
       </div>
 
@@ -434,8 +464,8 @@ export function Sidebar({
           </button>
           {dmMenuOpen && (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setDmMenuOpen(false)} />
-              <div className="absolute bottom-full left-0 z-20 mb-1 w-full overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg">
+              <div className="fixed inset-0 z-[2010]" onClick={() => setDmMenuOpen(false)} />
+              <div className="absolute bottom-full left-0 z-[2020] mb-1 w-full overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg">
                 <button
                   type="button"
                   onClick={() => {
@@ -492,6 +522,18 @@ export function Sidebar({
           Sign out
         </button>
       </div>
+
+      {/* Drag to resize; the sidebar is docked to the left, so dragging right grows it. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        tabIndex={0}
+        onPointerDown={(e) => panel.startResize(e, "left")}
+        onDoubleClick={panel.resetWidth}
+        onKeyDown={(e) => panel.handleKeyDown(e, "left")}
+        className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-[#4a4d55] focus:bg-[#4a4d55] focus:outline-none"
+      />
     </aside>
   );
 }

@@ -52,7 +52,8 @@ export function QuickSwitcher({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[12vh]"
+      // z-[2050], not z-50: must clear MapView's in-map overlays (z-[1000]) when the current page is a map.
+      className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[12vh]"
       onClick={onClose}
     >
       <div

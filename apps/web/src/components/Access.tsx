@@ -59,7 +59,7 @@ export function Access({
   const members = membersData?.members ?? [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[8vh]" onClick={onClose}>
+    <div className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[8vh]" onClick={onClose}>
       <div
         className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-lg border border-[#33363d] bg-[#1d1f23] p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}

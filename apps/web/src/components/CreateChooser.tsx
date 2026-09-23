@@ -37,7 +37,7 @@ export function CreateChooser({
   const templates = data?.templates ?? [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[10vh]" onClick={onClose}>
+    <div className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[10vh]" onClick={onClose}>
       <div
         className="w-full max-w-lg rounded-lg border border-[#33363d] bg-[#1d1f23] p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
