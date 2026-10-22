@@ -5,6 +5,7 @@ import { nodeGlyph } from "../lib/kinds.ts";
 import { navigate } from "../lib/nav.ts";
 import { THEMES, type ThemeId } from "../lib/theme.ts";
 import { useResizablePanel } from "../lib/useResizablePanel.ts";
+import { ConfirmDialog } from "./ConfirmDialog.tsx";
 
 type DropMode = "before" | "after" | "into";
 
@@ -21,8 +22,12 @@ interface Props {
   onOpenTokens: () => void;
   onOpenMembers: () => void;
   onOpenTemplates: () => void;
+  /** Owner/DM: the Archived & Trash panel. */
+  onOpenRemoved: () => void;
   onSignOut: () => void;
   isGameMaster: boolean;
+  /** False for a read-only guest: no new/rename/archive/move, no member or token panels. */
+  canCreate: boolean;
   viewAsPlayer: boolean;
   onToggleViewAsPlayer: () => void;
   theme: ThemeId;
@@ -80,8 +85,10 @@ export function Sidebar({
   onOpenTokens,
   onOpenMembers,
   onOpenTemplates,
+  onOpenRemoved,
   onSignOut,
   isGameMaster,
+  canCreate,
   viewAsPlayer,
   onToggleViewAsPlayer,
   theme,
@@ -142,9 +149,15 @@ export function Sidebar({
   const visible = useMemo(() => {
     const needle = filter.trim().toLowerCase();
     if (needle.length === 0) return null;
+    // "#tag" filters by tag instead of title (prefix match, so "#sess" finds #session).
+    const tagNeedle = needle.startsWith("#") ? needle.slice(1) : null;
     const keep = new Set<string>();
     for (const node of nodes) {
-      if (!node.title.toLowerCase().includes(needle)) continue;
+      const matches =
+        tagNeedle !== null
+          ? tagNeedle.length === 0 || node.tagNames.some((t) => t.toLowerCase().startsWith(tagNeedle))
+          : node.title.toLowerCase().includes(needle);
+      if (!matches) continue;
       keep.add(node.id);
       let parent = node.parentId;
       while (parent !== null && !keep.has(parent)) {
@@ -235,15 +248,20 @@ export function Sidebar({
     }
   }
 
-  /** Archiving takes the subtree with it, so confirm first using childCount alone (no need to fetch full detail). */
-  function requestArchive(node: NodeSummary): void {
+  /** Both removals take the subtree with them, so confirm first (childCount is enough — no detail fetch). */
+  const [pendingRemoval, setPendingRemoval] = useState<{ node: NodeSummary; action: "archive" | "trash" } | null>(null);
+  function requestRemoval(node: NodeSummary, action: "archive" | "trash"): void {
     closeMenu();
-    const inside = node.childCount > 0 ? ` and the ${node.childCount} page(s) inside it` : "";
-    if (!window.confirm(`Archive "${node.title}"${inside}?`)) return;
-    void api.archiveNode(node.id).then(
+    setPendingRemoval({ node, action });
+  }
+  function confirmRemoval(): void {
+    if (pendingRemoval === null) return;
+    const { node, action } = pendingRemoval;
+    setPendingRemoval(null);
+    void (action === "archive" ? api.archiveNode(node.id) : api.trashNode(node.id)).then(
       onChanged,
       () => {
-        /* server rejected it (not this viewer's to archive) — nothing to undo client-side */
+        /* server rejected it (not this viewer's to remove) — nothing to undo client-side */
       },
     );
   }
@@ -260,7 +278,7 @@ export function Sidebar({
     return (
       <div key={node.id}>
         <div
-          draggable={!isRenaming}
+          draggable={canCreate && !isRenaming}
           onDragStart={(e) => {
             setDragId(node.id);
             e.dataTransfer.effectAllowed = "move";
@@ -328,7 +346,7 @@ export function Sidebar({
               ★
             </span>
           )}
-          {node.visibility === "dm" && (
+          {node.effectiveVisibility === "dm" && (
             <span className="ml-auto shrink-0 text-[10px] text-secret" title="DM only">
               ●
             </span>
@@ -364,23 +382,27 @@ export function Sidebar({
                 style={{ top: menuPos.y, left: menuPos.x }}
                 className="fixed z-[2040] w-48 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-pop"
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeMenu();
-                    onOpenCreateChooser(node.id);
-                  }}
-                  className="menu-item"
-                >
-                  Add a page under…
-                </button>
-                <button
-                  type="button"
-                  onClick={() => startRename(node)}
-                  className="menu-item"
-                >
-                  Rename
-                </button>
+                {canCreate && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeMenu();
+                        onOpenCreateChooser(node.id);
+                      }}
+                      className="menu-item"
+                    >
+                      Add a page under…
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startRename(node)}
+                      className="menu-item"
+                    >
+                      Rename
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -391,13 +413,26 @@ export function Sidebar({
                 >
                   {isPinned ? "Unpin" : "Pin"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => requestArchive(node)}
-                  className="menu-item menu-item-danger"
-                >
-                  Archive{node.childCount > 0 && ` (+${node.childCount})`}
-                </button>
+                {canCreate && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => requestRemoval(node, "archive")}
+                      title="Keep it, out of the way, until you restore it"
+                      className="menu-item"
+                    >
+                      Archive{node.childCount > 0 && ` (+${node.childCount})`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => requestRemoval(node, "trash")}
+                      title="Move to the trash — deleted for good after 30 days"
+                      className="menu-item menu-item-danger"
+                    >
+                      Delete{node.childCount > 0 && ` (+${node.childCount})`}
+                    </button>
+                  </>
+                )}
               </div>
             </>
           )}
@@ -410,7 +445,10 @@ export function Sidebar({
   // Tags auto-create as top-level pages (see the server's tag indexer); listing
   // each one beside the world's real root pages buried the tree under a pile
   // of #labels, so top-level tags get their own collapsible group instead.
-  const allRoots = byParent.get(null) ?? [];
+  // A page can be visible while the page above it isn't (a Players page inside a
+  // DM-only folder) — it comes down with a parentId the viewer can't see, so
+  // show it at the top level rather than nowhere.
+  const allRoots = [...(byParent.get(null) ?? []), ...nodes.filter((n) => n.parentId !== null && !byId.has(n.parentId))];
   const roots = allRoots.filter((n) => n.kind !== "tag");
   const rootTags = allRoots.filter((n) => n.kind === "tag").sort((a, b) => a.title.localeCompare(b.title));
   const showTags = tagsOpen || (visible !== null && rootTags.some((t) => visible.has(t.id)));
@@ -485,7 +523,7 @@ export function Sidebar({
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter the tree"
+          placeholder="Filter the tree, or #tag"
           aria-label="Filter the tree by name"
           className="mx-3 mb-2 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-fg placeholder:text-fg-faint outline-none hover:border-line focus:border-line-strong focus:bg-surface"
         />
@@ -514,13 +552,15 @@ export function Sidebar({
         </div>
 
         <div className="space-y-0.5 border-t border-divider p-2">
-          <button
-            type="button"
-            onClick={() => onOpenCreateChooser(null)}
-            className="mb-1 flex w-full items-center justify-center gap-1.5 rounded-md bg-accent px-2 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover"
-          >
-            + New page
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              onClick={() => onOpenCreateChooser(null)}
+              className="mb-1 flex w-full items-center justify-center gap-1.5 rounded-md bg-accent px-2 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover"
+            >
+              + New page
+            </button>
+          )}
           <div className="relative">
             {viewAsPlayer && (
               <button
@@ -540,26 +580,30 @@ export function Sidebar({
               <>
                 <div className="fixed inset-0 z-[2010]" onClick={() => setDmMenuOpen(false)} />
                 <div className="absolute bottom-full left-0 z-[2050] mb-1 w-full overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-pop">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDmMenuOpen(false);
-                      onOpenMembers();
-                    }}
-                    className="menu-item"
-                  >
-                    Members
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDmMenuOpen(false);
-                      onOpenTokens();
-                    }}
-                    className="menu-item"
-                  >
-                    API tokens
-                  </button>
+                  {canCreate && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDmMenuOpen(false);
+                          onOpenMembers();
+                        }}
+                        className="menu-item"
+                      >
+                        Members
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDmMenuOpen(false);
+                          onOpenTokens();
+                        }}
+                        className="menu-item"
+                      >
+                        API tokens
+                      </button>
+                    </>
+                  )}
                   {isGameMaster && (
                     <button
                       type="button"
@@ -570,6 +614,18 @@ export function Sidebar({
                       className="menu-item"
                     >
                       Templates
+                    </button>
+                  )}
+                  {isGameMaster && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDmMenuOpen(false);
+                        onOpenRemoved();
+                      }}
+                      className="menu-item"
+                    >
+                      Archived &amp; Trash
                     </button>
                   )}
                   {isGameMaster && (
@@ -619,7 +675,22 @@ export function Sidebar({
           </button>
         </div>
 
-        {/* Drag to resize; the sidebar is docked to the left, so dragging right grows it. */}
+        {pendingRemoval !== null && (
+        <ConfirmDialog
+          title={`${pendingRemoval.action === "archive" ? "Archive" : "Delete"} "${pendingRemoval.node.title}"?`}
+          body={
+            (pendingRemoval.node.childCount > 0 ? `The ${pendingRemoval.node.childCount} page(s) inside it go with it. ` : "") +
+            (pendingRemoval.action === "archive"
+              ? "It stays in Archived & Trash until you restore it."
+              : "It goes to the trash and is deleted for good after 30 days unless you restore it.")
+          }
+          confirmLabel={pendingRemoval.action === "archive" ? "Archive" : "Delete"}
+          danger={pendingRemoval.action === "trash"}
+          onConfirm={confirmRemoval}
+          onCancel={() => setPendingRemoval(null)}
+        />
+      )}
+      {/* Drag to resize; the sidebar is docked to the left, so dragging right grows it. */}
         <div
           role="separator"
           aria-orientation="vertical"

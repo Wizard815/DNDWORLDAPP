@@ -23,6 +23,15 @@ export const VISIBILITIES = ["public", "members", "dm", "private"] as const;
 export type Visibility = (typeof VISIBILITIES)[number];
 export const visibilitySchema = z.enum(VISIBILITIES);
 
+/**
+ * What a page *says* about itself: one of the four levels, or 'inherit' — the
+ * default — meaning "same as my parent". The resolved level every read path
+ * actually compares against is `effectiveVisibility` (migration 0016).
+ */
+export const NODE_VISIBILITIES = [...VISIBILITIES, "inherit"] as const;
+export type NodeVisibility = (typeof NODE_VISIBILITIES)[number];
+export const nodeVisibilitySchema = z.enum(NODE_VISIBILITIES);
+
 export const ROLES = ["owner", "dm", "player", "guest"] as const;
 export type Role = (typeof ROLES)[number];
 export const roleSchema = z.enum(ROLES);
@@ -156,7 +165,8 @@ export const createNodeInputSchema = z.object({
   templateId: z.string().nullable().optional(),
   /** A single emoji. Rendered verbatim by the client. */
   icon: z.string().max(60).nullable().optional(),
-  visibility: visibilitySchema.optional(),
+  /** Default 'inherit' — the parent's level, or 'members' at the top. */
+  visibility: nodeVisibilitySchema.optional(),
   bodyMd: z.string().max(2_000_000).optional(),
 });
 export type CreateNodeInput = z.infer<typeof createNodeInputSchema>;
@@ -166,7 +176,7 @@ export const updateNodeInputSchema = z
     title: z.string().trim().min(1).max(300),
     bodyMd: z.string().max(2_000_000),
     icon: z.string().max(60).nullable(),
-    visibility: visibilitySchema,
+    visibility: nodeVisibilitySchema,
     templateId: z.string().nullable(),
     isArchived: z.boolean(),
   })
@@ -191,13 +201,32 @@ export const nodeSummarySchema = z.object({
   slug: z.string(),
   icon: z.string().nullable(),
   kind: nodeKindSchema,
-  visibility: visibilitySchema,
+  visibility: nodeVisibilitySchema,
+  /** The level that actually applies — the page's own, or the nearest ancestor's when 'inherit'. */
+  effectiveVisibility: visibilitySchema,
   sortKey: z.string(),
   childCount: z.number().int(),
   isArchived: z.boolean(),
   updatedAt: z.number().int(),
+  /** Tag names (lowercase) this page carries, for filtering the tree without another request. */
+  tagNames: z.array(z.string()),
 });
 export type NodeSummary = z.infer<typeof nodeSummarySchema>;
+
+/** A page in the DM's Archived & Trash panel — the top of a removed subtree. See migration 0015. */
+export const removedNodeSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  icon: z.string().nullable(),
+  kind: nodeKindSchema,
+  parentId: z.string().nullable(),
+  parentTitle: z.string().nullable(),
+  childCount: z.number().int(),
+  removedAt: z.number().int(),
+  /** Trash only: when it was trashed; purged 30 days after. */
+  deletedAt: z.number().int().nullable(),
+});
+export type RemovedNode = z.infer<typeof removedNodeSchema>;
 
 export const backlinkSchema = z.object({
   nodeId: z.string(),
@@ -625,6 +654,9 @@ export const markerPresetDtoSchema = z.object({
   icon: z.string().nullable(),
   color: z.string().nullable(),
   radius: z.number().nullable(),
+  visibility: fieldVisibilitySchema,
+  minZoom: z.number().nullable(),
+  maxZoom: z.number().nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -636,6 +668,9 @@ export const createMarkerPresetInputSchema = z.object({
   icon: z.string().max(60).nullable().optional(),
   color: z.string().max(60).nullable().optional(),
   radius: z.number().positive().nullable().optional(),
+  visibility: fieldVisibilitySchema.default("members"),
+  minZoom: markerZoomSchema.nullable().optional(),
+  maxZoom: markerZoomSchema.nullable().optional(),
 });
 export type CreateMarkerPresetInput = z.infer<typeof createMarkerPresetInputSchema>;
 
@@ -646,6 +681,9 @@ export const updateMarkerPresetInputSchema = z
     icon: z.string().max(60).nullable(),
     color: z.string().max(60).nullable(),
     radius: z.number().positive().nullable(),
+    visibility: fieldVisibilitySchema,
+    minZoom: markerZoomSchema.nullable(),
+    maxZoom: markerZoomSchema.nullable(),
   })
   .partial();
 export type UpdateMarkerPresetInput = z.infer<typeof updateMarkerPresetInputSchema>;

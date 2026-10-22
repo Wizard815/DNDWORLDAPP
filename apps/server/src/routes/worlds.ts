@@ -10,6 +10,7 @@ import {
   updateMarkerPresetInputSchema,
   updateTemplateInputSchema,
 } from "@dndworldapp/schema";
+import { isGuestAccount } from "../auth/guest.ts";
 import { canCreate, isGameMaster } from "../auth/policy.ts";
 import { badRequest, forbidden } from "../lib/errors.ts";
 import { requireUser, viewerForWorld } from "../http/context.ts";
@@ -21,7 +22,7 @@ import {
   listMarkerPresets,
   updateMarkerPreset,
 } from "../services/markerPresets.ts";
-import { createNode, getTree, searchNodes, unresolvedLinks } from "../services/nodes.ts";
+import { createNode, getTree, listRemoved, searchNodes, unresolvedLinks } from "../services/nodes.ts";
 import { createTemplate, deleteTemplate, listTemplates, updateTemplate } from "../services/templates.ts";
 import {
   addOrCreateMember,
@@ -53,9 +54,16 @@ export async function worldRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/v1/worlds", async (request) => {
     const user = requireUser(request);
+    if (isGuestAccount(user)) throw forbidden("Guests cannot create worlds.");
     const input = createWorldInputSchema.parse(request.body);
     const world = createWorld(user.id, input.name);
     return { world: { id: world.id, name: world.name, slug: world.slug, role: "owner" } };
+  });
+
+  app.get<{ Params: WorldParams }>("/api/v1/worlds/:worldId/removed", async (request) => {
+    const viewer = viewerForWorld(request, request.params.worldId);
+    if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can see archived and trashed pages.");
+    return listRemoved(request.params.worldId);
   });
 
   app.get<{ Params: WorldParams }>("/api/v1/worlds/:worldId/tree", async (request) => {

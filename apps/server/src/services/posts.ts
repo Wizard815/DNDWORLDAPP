@@ -1,11 +1,11 @@
 import type { CreatePostInput, PostDto, UpdatePostInput } from "@dndworldapp/schema";
 import { db } from "../db/index.ts";
 import type { PostRow } from "../db/types.ts";
-import { canEdit, canSeeSecrets, visibilitySqlFor } from "../auth/policy.ts";
+import { canEdit, visibilitySqlFor } from "../auth/policy.ts";
 import type { Viewer } from "../auth/viewer.ts";
 import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { shortId } from "../lib/id.ts";
-import { containsSecret, redactForViewer } from "../lib/secrets.ts";
+import { containsHiddenSecret, redactForViewer } from "../lib/secrets.ts";
 import { keyAfterAll } from "../lib/sortkey.ts";
 import { canEditNode } from "./acl.ts";
 import { requireVisibleNode } from "./nodes.ts";
@@ -33,7 +33,7 @@ function toDto(row: PostRow, viewer: Viewer): PostDto {
     id: row.id,
     nodeId: row.node_id,
     title: row.title,
-    bodyMd: redactForViewer(row.body_md, canSeeSecrets(viewer.role)),
+    bodyMd: redactForViewer(row.body_md, viewer.role),
     visibility: row.visibility,
     sortKey: row.sort_key,
     createdAt: row.created_at,
@@ -95,7 +95,7 @@ export function updatePost(postId: string, viewer: Viewer, input: UpdatePostInpu
   if (!canEdit(viewer.role, existing.created_by, viewer.userId)) {
     throw forbidden("You cannot edit this section.");
   }
-  if (input.bodyMd !== undefined && !canSeeSecrets(viewer.role) && containsSecret(existing.body_md)) {
+  if (input.bodyMd !== undefined && containsHiddenSecret(existing.body_md, viewer.role)) {
     throw badRequest(
       "This section has a DM-only secret block. Only the owner or a DM can edit its body.",
     );

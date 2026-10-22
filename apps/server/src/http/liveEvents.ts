@@ -13,12 +13,15 @@ import { publish, publishForNode } from "../services/events.ts";
 declare module "fastify" {
   interface FastifyRequest {
     liveEventNodeId?: string | null;
+    /** For DELETE …/forever: the world, looked up before the row is gone. */
+    liveEventWorldId?: string | null;
   }
 }
 
 const markerMap = db.prepare("SELECT map_node_id AS nodeId FROM map_markers WHERE id = ?");
 const groupMap = db.prepare("SELECT map_node_id AS nodeId FROM map_groups WHERE id = ?");
 const postNode = db.prepare("SELECT node_id AS nodeId FROM posts WHERE id = ?");
+const nodeWorld = db.prepare("SELECT world_id AS worldId FROM nodes WHERE id = ?");
 
 const WRITE_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
@@ -52,7 +55,12 @@ function touchesTree(body: unknown): boolean {
 export function registerLiveEvents(app: FastifyInstance): void {
   app.addHook("preHandler", async (request) => {
     if (!WRITE_METHODS.has(request.method)) return;
-    request.liveEventNodeId = ownerOf(pathOf(request));
+    const path = pathOf(request);
+    request.liveEventNodeId = ownerOf(path);
+    const forever = /^\/api\/v1\/nodes\/([^/]+)\/forever$/.exec(path);
+    if (forever !== null) {
+      request.liveEventWorldId = (nodeWorld.get(forever[1]!) as { worldId: string } | undefined)?.worldId ?? null;
+    }
   });
 
   app.addHook("onResponse", async (request, reply) => {
@@ -76,7 +84,10 @@ export function registerLiveEvents(app: FastifyInstance): void {
     const [, nodeId, sub] = node as unknown as [string, string, string | undefined];
     if (sub === "map") {
       publishForNode(nodeId, { type: "map.changed", nodeId });
-    } else if (sub === "move" || (sub === undefined && request.method === "DELETE")) {
+    } else if (sub === "forever") {
+      // The row is gone, so publishForNode can't find its world any more.
+      if (request.liveEventWorldId) publish(request.liveEventWorldId, { type: "tree.changed" });
+    } else if (sub === "move" || sub === "trash" || sub === "restore" || (sub === undefined && request.method === "DELETE")) {
       publishForNode(nodeId, { type: "tree.changed" });
     } else {
       // A page's own edit, or its posts/fields/ACL/template: the page changed,

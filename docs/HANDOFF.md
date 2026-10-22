@@ -1555,6 +1555,61 @@ Three additions the owner asked for after comparing this app to a LegendKeeper t
 
 ---
 
+### 7.11 Guest login
+
+`POST /api/v1/auth/guest` (no body) signs into a shared account with username `guest`
+whose `password_hash` is the literal `locked$guest` — not a real scrypt hash, so
+`verifyPassword` can never accept a password for it, and that string doubles as the
+marker `isGuestAccount()` uses (`auth/guest.ts`). Every guest login re-inserts the
+membership with role `guest` (`setMemberRole`), so promoting that account in the Members
+panel does nothing lasting. The world it opens is the oldest one (`firstWorld()`). The
+login screen shows the button when `GET /setup/status` says `guestLogin: true`
+(`env.guestLogin`, off with `GUEST_LOGIN=off`). The guest account is also refused world
+creation and API tokens. The client hides every create/rename/archive/member/token
+control for the `guest` role (`canCreate` prop through App → Sidebar/NodeView).
+
+Caveat worth telling the owner again: a guest only reaches a page whose whole ancestor
+chain is readable to guests (Public, or an explicit guest ACL grant), so a world's root
+page must be Public for guest login to show anything.
+
+### 7.12 Archive and Trash
+
+`nodes.deleted_at` (migration 0015). Archive = `is_archived = 1`; Trash = `is_archived
+= 1 AND deleted_at = <when>`. Trash setting `is_archived` too is what keeps every
+existing `is_archived = 0` filter correct without a second predicate. Restore clears
+both over the subtree; a page restored while its parent is still removed is re-parented
+to the top level rather than stranded invisible. `DELETE /nodes/:id/forever` is the only
+hard delete (owner/DM, trash only) — FK cascades (`foreign_keys` is ON) take children,
+links, tags, markers, posts, fields, ACL and share links. `purgeTrash()` runs at boot
+and daily (`TRASH_RETENTION_MS` = 30 days). Fog masks/tiles on disk are not cleaned up
+by a hard delete yet. `isNodeVisible()` now also requires `is_archived = 0`, so removed
+pages 404 by id; `PATCH … { isArchived: false }` still restores for old clients.
+
+### 7.13 Inherited visibility
+
+`nodes.visibility` gained `'inherit'` (the default for new pages); migration 0016 adds
+`effective_visibility` / `effective_owner_id`, and `readableSql()` (plus share links'
+guest check) compares against those, never the raw column. `recomputeEffective(nodeId)`
+re-resolves a subtree top-down after creation, a visibility change, a move, or a
+restore. `effective_owner_id` exists for inherited `private`: the creator of the page
+that *set* private, so children inherited into it are private to that same person.
+Existing pages were backfilled with their explicit level, so nothing changed for them.
+
+A readable page whose parent isn't readable (Players page inside a DM-only folder) comes
+down the tree with a `parentId` the viewer can't see; `Sidebar` lists such pages at the
+top level. `NodeSummary.tagNames` (from a `group_concat` subquery in `getTree`) is what
+`#tag` filtering in the sidebar and Ctrl+K uses.
+
+### 7.14 Secret block audiences
+
+`:::secret` takes an optional `{visibility="dm|members|public"}` (default dm). The
+server's `redactForViewer(body, role)` removes blocks the role can't read and keeps the
+others **with their fence** so the editor still renders them as blocks; `stripSecrets()`
+(search index, link/tag scanning) keeps only public blocks; `containsHiddenSecret(body,
+role)` is the "don't let an edit silently drop what you can't see" guard. The "DM Notes"
+and "Section" slash entries are gone; the `postSection` extension stays so existing
+`:::post` embeds still render.
+
 ## 8. Environment notes and gotchas
 
 ### 8.1 `node:sqlite`, not better-sqlite3
@@ -1744,6 +1799,16 @@ Things worth stealing from LegendKeeper that are **not built yet** (details in
   or nobody will use them, including the owner.
 
 ---
+
+- **Pages inherit visibility by default; an explicit level on a page applies to its
+  subtree until something below overrides it.** A page may be *more* open than its
+  parent (that is the point) — the viewer then sees it without the folder around it.
+- **Two removals, not one.** Archive is indefinite; Trash is 30 days then gone. Both
+  recoverable from DM Menu → Archived & Trash. No other delete path exists.
+- **No browser `confirm()`/`alert()`.** The Claude desktop app's browser pane (where the
+  owner tests) cancels them silently; use `ConfirmDialog`.
+- **Map edit mode gates all map editing.** Outside it the map is read-only for everyone,
+  including people with edit rights; clicking a marker shows the summary card.
 
 ## 11. Commands
 

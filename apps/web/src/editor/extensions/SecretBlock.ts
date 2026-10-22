@@ -14,6 +14,8 @@ import { SecretBlockView } from "./SecretBlockView.tsx";
 const markdownSpec = createBlockMarkdownSpec({
   nodeName: "secretBlock",
   name: "secret",
+  defaultAttributes: { visibility: "dm" },
+  allowedAttributes: ["visibility"],
 });
 
 export const SecretBlock = Node.create({
@@ -23,6 +25,17 @@ export const SecretBlock = Node.create({
   defining: true,
 
   ...markdownSpec,
+
+  addAttributes() {
+    return {
+      /** Who may read it: "dm" (default), "members", or "public" — see apps/server/src/lib/secrets.ts. */
+      visibility: {
+        default: "dm",
+        parseHTML: (element) => element.getAttribute("data-visibility") ?? "dm",
+        renderHTML: (attributes) => ({ "data-visibility": attributes.visibility as string }),
+      },
+    };
+  },
 
   parseHTML() {
     return [{ tag: "div[data-secret-block]" }];

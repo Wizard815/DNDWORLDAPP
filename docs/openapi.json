@@ -94,10 +94,14 @@
                   "properties": {
                     "needsSetup": {
                       "type": "boolean"
+                    },
+                    "guestLogin": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "needsSetup"
+                    "needsSetup",
+                    "guestLogin"
                   ]
                 }
               }
@@ -216,6 +220,85 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/UserDto"
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/guest": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "One-click read-only sign-in as the shared guest (public pages only; no editing)",
+        "security": [],
         "responses": {
           "200": {
             "description": "Success",
@@ -581,6 +664,105 @@
                   },
                   "required": [
                     "world"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/worlds/{worldId}/removed": {
+      "get": {
+        "tags": [
+          "worlds"
+        ],
+        "summary": "Archived and trashed pages (owner/DM only)",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "World id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "archived": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RemovedNode"
+                      }
+                    },
+                    "trashed": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RemovedNode"
+                      }
+                    }
+                  },
+                  "required": [
+                    "archived",
+                    "trashed"
                   ]
                 }
               }
@@ -2505,6 +2687,250 @@
           "nodes"
         ],
         "summary": "Archive a page and everything inside it",
+        "parameters": [
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nodes/{nodeId}/trash": {
+      "post": {
+        "tags": [
+          "nodes"
+        ],
+        "summary": "Move a page and everything inside it to the trash (purged after 30 days)",
+        "parameters": [
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nodes/{nodeId}/restore": {
+      "post": {
+        "tags": [
+          "nodes"
+        ],
+        "summary": "Bring an archived or trashed page (and everything inside it) back",
+        "description": "If its parent is still removed, the page comes back as a top-level page.",
+        "parameters": [
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nodes/{nodeId}/forever": {
+      "delete": {
+        "tags": [
+          "nodes"
+        ],
+        "summary": "Delete a trashed page for good (owner/DM only; no undo)",
         "parameters": [
           {
             "name": "nodeId",
@@ -5854,6 +6280,16 @@
               "public",
               "members",
               "dm",
+              "private",
+              "inherit"
+            ]
+          },
+          "effectiveVisibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "members",
+              "dm",
               "private"
             ]
           },
@@ -5868,6 +6304,12 @@
           },
           "updatedAt": {
             "type": "integer"
+          },
+          "tagNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -5878,10 +6320,12 @@
           "icon",
           "kind",
           "visibility",
+          "effectiveVisibility",
           "sortKey",
           "childCount",
           "isArchived",
-          "updatedAt"
+          "updatedAt",
+          "tagNames"
         ],
         "additionalProperties": false
       },
@@ -5923,6 +6367,16 @@
               "public",
               "members",
               "dm",
+              "private",
+              "inherit"
+            ]
+          },
+          "effectiveVisibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "members",
+              "dm",
               "private"
             ]
           },
@@ -5937,6 +6391,12 @@
           },
           "updatedAt": {
             "type": "integer"
+          },
+          "tagNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "worldId": {
             "type": "string"
@@ -6012,6 +6472,16 @@
                     "public",
                     "members",
                     "dm",
+                    "private",
+                    "inherit"
+                  ]
+                },
+                "effectiveVisibility": {
+                  "type": "string",
+                  "enum": [
+                    "public",
+                    "members",
+                    "dm",
                     "private"
                   ]
                 },
@@ -6026,6 +6496,12 @@
                 },
                 "updatedAt": {
                   "type": "integer"
+                },
+                "tagNames": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               },
               "required": [
@@ -6036,10 +6512,12 @@
                 "icon",
                 "kind",
                 "visibility",
+                "effectiveVisibility",
                 "sortKey",
                 "childCount",
                 "isArchived",
-                "updatedAt"
+                "updatedAt",
+                "tagNames"
               ],
               "additionalProperties": false
             }
@@ -6109,10 +6587,12 @@
           "icon",
           "kind",
           "visibility",
+          "effectiveVisibility",
           "sortKey",
           "childCount",
           "isArchived",
           "updatedAt",
+          "tagNames",
           "worldId",
           "bodyMd",
           "templateId",
@@ -6853,6 +7333,22 @@
             "type": "number",
             "nullable": true
           },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "members",
+              "dm"
+            ]
+          },
+          "minZoom": {
+            "type": "number",
+            "nullable": true
+          },
+          "maxZoom": {
+            "type": "number",
+            "nullable": true
+          },
           "createdAt": {
             "type": "number"
           },
@@ -6868,8 +7364,68 @@
           "icon",
           "color",
           "radius",
+          "visibility",
+          "minZoom",
+          "maxZoom",
           "createdAt",
           "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "RemovedNode": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "document",
+              "map",
+              "timeline",
+              "calendar",
+              "board",
+              "view",
+              "tag"
+            ]
+          },
+          "parentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "childCount": {
+            "type": "integer"
+          },
+          "removedAt": {
+            "type": "integer"
+          },
+          "deletedAt": {
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "icon",
+          "kind",
+          "parentId",
+          "parentTitle",
+          "childCount",
+          "removedAt",
+          "deletedAt"
         ],
         "additionalProperties": false
       },
@@ -7049,7 +7605,8 @@
               "public",
               "members",
               "dm",
-              "private"
+              "private",
+              "inherit"
             ]
           },
           "bodyMd": {
@@ -7082,7 +7639,8 @@
               "public",
               "members",
               "dm",
-              "private"
+              "private",
+              "inherit"
             ]
           },
           "templateId": {
@@ -7790,6 +8348,27 @@
             "exclusiveMinimum": true,
             "minimum": 0,
             "nullable": true
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "members",
+              "dm"
+            ],
+            "default": "members"
+          },
+          "minZoom": {
+            "type": "number",
+            "minimum": -8,
+            "maximum": 8,
+            "nullable": true
+          },
+          "maxZoom": {
+            "type": "number",
+            "minimum": -8,
+            "maximum": 8,
+            "nullable": true
           }
         },
         "required": [
@@ -7830,6 +8409,26 @@
             "type": "number",
             "exclusiveMinimum": true,
             "minimum": 0,
+            "nullable": true
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "members",
+              "dm"
+            ]
+          },
+          "minZoom": {
+            "type": "number",
+            "minimum": -8,
+            "maximum": 8,
+            "nullable": true
+          },
+          "maxZoom": {
+            "type": "number",
+            "minimum": -8,
+            "maximum": 8,
             "nullable": true
           }
         },

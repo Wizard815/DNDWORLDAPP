@@ -24,6 +24,10 @@ export function QuickSwitcher({
   const titleMatches = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (needle.length === 0) return nodes.slice(0, 10);
+    if (needle.startsWith("#")) {
+      const tag = needle.slice(1);
+      return nodes.filter((n) => n.tagNames.some((t) => t.toLowerCase().startsWith(tag))).slice(0, 10);
+    }
     return nodes.filter((n) => n.title.toLowerCase().includes(needle)).slice(0, 10);
   }, [query, nodes]);
 
@@ -84,7 +88,7 @@ export function QuickSwitcher({
               onClose();
             }
           }}
-          placeholder="Jump to a page, or search everything…"
+          placeholder="Jump to a page, #tag, or search everything…"
           className="w-full border-b border-selected bg-transparent px-4 py-3 text-sm outline-none"
         />
 
@@ -101,7 +105,7 @@ export function QuickSwitcher({
               >
                 <span>{node.icon ?? "📄"}</span>
                 <span className="truncate">{node.title}</span>
-                {node.visibility === "dm" && (
+                {node.effectiveVisibility === "dm" && (
                   <span className="ml-auto text-[10px] text-secret">DM</span>
                 )}
               </button>

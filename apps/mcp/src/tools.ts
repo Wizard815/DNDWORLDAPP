@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { fieldVisibilitySchema, markerShapeSchema, parseMarkerPoints, visibilitySchema } from "@dndworldapp/schema";
+import { fieldVisibilitySchema, markerShapeSchema, nodeVisibilitySchema, parseMarkerPoints, visibilitySchema } from "@dndworldapp/schema";
 import type { MarkerPresetDto, NodeSummary } from "@dndworldapp/schema";
 import { ApiError, type WorldClient } from "./client.ts";
 
@@ -185,7 +185,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         const { node } = await client.node(node_id);
         const parts = [
           `# ${node.title} [${node.id}]`,
-          `kind: ${node.kind} · visibility: ${node.visibility} · editable: ${node.canEdit}`,
+          `kind: ${node.kind} · visibility: ${node.visibility}${node.visibility === "inherit" ? ` (→ ${node.effectiveVisibility})` : ""} · editable: ${node.canEdit}`,
           node.breadcrumb.length > 0
             ? `path: ${[...node.breadcrumb.map((c) => c.title), node.title].join(" / ")}`
             : "path: (root)",
@@ -303,7 +303,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         parent_id: z.string().nullable().optional().describe("Page to nest under. Omit for top level."),
         body_md: z.string().optional().describe("Markdown body."),
         icon: z.string().optional().describe("A single emoji."),
-        visibility: visibilitySchema.optional().describe("public | members | dm | private. Default members."),
+        visibility: nodeVisibilitySchema.optional().describe("public | members | dm | private | inherit. Default inherit — the parent's level."),
       },
     },
     async ({ title, world_id, parent_id, body_md, icon, visibility }) => {
@@ -335,7 +335,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         title: z.string().min(1).max(300).optional(),
         body_md: z.string().optional(),
         icon: z.string().nullable().optional(),
-        visibility: visibilitySchema.optional(),
+        visibility: nodeVisibilitySchema.optional().describe("public | members | dm | private | inherit (the parent's level)."),
       },
     },
     async ({ node_id, title, body_md, icon, visibility }) => {
@@ -757,9 +757,9 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           members,
           parentMarkerId: parent_marker_id,
           groupId: group_id,
-          visibility: visibility ?? "members",
-          minZoom: min_zoom,
-          maxZoom: max_zoom,
+          visibility: visibility ?? preset?.visibility ?? "members",
+          minZoom: min_zoom ?? preset?.minZoom ?? undefined,
+          maxZoom: max_zoom ?? preset?.maxZoom ?? undefined,
         });
         const vertexCount = parseMarkerPoints(marker.points)?.length ?? 0;
         return text(

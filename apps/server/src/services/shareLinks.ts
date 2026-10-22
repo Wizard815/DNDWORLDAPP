@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { NodeDetail, NodeSummary, ShareLinkDto } from "@dndworldapp/schema";
-import { canSeeSecrets, nodeAclSql, visibilitySqlFor } from "../auth/policy.ts";
+import { nodeAclSql, visibilitySqlFor } from "../auth/policy.ts";
 import type { Viewer } from "../auth/viewer.ts";
 import { db } from "../db/index.ts";
 import type { NodeRow } from "../db/types.ts";
@@ -89,7 +89,7 @@ function resolveShareRoot(token: string): NodeRow | null {
 /** `alias`-qualified "a guest could read this row" — public, or a guest-role ACL grant. */
 function guestReadableSql(alias: string): { sql: string; params: Array<string | null> } {
   const prefix = `${alias}.`;
-  const vis = visibilitySqlFor(GUEST.role, GUEST.userId, `${prefix}visibility`, `${prefix}created_by`);
+  const vis = visibilitySqlFor(GUEST.role, GUEST.userId, `${prefix}effective_visibility`, `${prefix}effective_owner_id`);
   const acl = nodeAclSql(`${prefix}id`, GUEST.role, GUEST.userId, "read");
   return { sql: `(${vis.sql} OR ${acl.sql})`, params: [...vis.params, ...acl.params] };
 }
@@ -164,7 +164,7 @@ export function getSharedNode(token: string, nodeId: string): NodeDetail | null 
   return {
     ...summary,
     worldId: row.world_id,
-    bodyMd: redactForViewer(row.body_md, canSeeSecrets(GUEST.role)),
+    bodyMd: redactForViewer(row.body_md, null),
     templateId: row.template_id,
     breadcrumb,
     children: scope.nodes.filter((n) => n.parentId === nodeId),

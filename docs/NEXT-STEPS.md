@@ -5,7 +5,67 @@ ordering lives in [ROADMAP-2026-09-23.md](ROADMAP-2026-09-23.md); what is alread
 lives in [HANDOFF.md](HANDOFF.md) §3 and [PLAN.md](PLAN.md)'s status table. Finished work
 is not kept here — `git log` and HANDOFF have it.
 
-## Just done (2026-10-22)
+## Open, in order (2026-10-22)
+
+1. **Marker clustering** (Kanka-style: one badge with a count that splits as you zoom
+   in). Research done: use `react-leaflet-cluster` **2.x** — the line that targets
+   react-leaflet 4 / React 18 (4.x needs react-leaflet 5). It wraps Leaflet.markercluster;
+   polygons/paths/circles stay outside the cluster group, only point markers go in.
+2. **Map icons the owner actually wants.** The bundled library (game-icons + Font
+   Awesome) works but reads as "terrible for D&D maps" — thin monochrome glyphs in a
+   colored circle. No open-licensed fantasy-cartography SVG set turned up (Inkwell Ideas'
+   free sets are PNG + attribution; Kenney's CC0 "cartography pack" is PNG tiles; the
+   itch.io sets are personal-use only). Two realistic moves, either or both:
+   (a) let a marker's icon be an **uploaded image** (Kanka's model) so any purchased or
+   free PNG pack can be used; (b) render library icons larger, optionally without the
+   circle, in the marker's color. Decide with the owner before building.
+3. **Tags → relations → graph.** Tags stay pages for now (filterable via `#tag` in the
+   sidebar filter and Ctrl+K). The owner wants tags to be part of the relations/graph
+   work, not a separate system — design that together (ROADMAP §3).
+4. P3 query views, P5 calendars/timelines, P6 play mode, P7 hardening — unchanged.
+
+## Just done (2026-10-22, second pass)
+
+Everything below came from one round of the owner's testing notes.
+
+### Guest login
+"Guest Login" under Sign in: one click into a shared, password-less `guest` account whose
+membership is forced to the read-only `guest` role every time (sees Public pages only,
+never DM/players content or secret blocks, cannot edit/create/upload/mint tokens).
+`GUEST_LOGIN=off` removes the button. HANDOFF §7.11.
+
+### Map edit mode, pin summaries, presets, fog
+- "✏️ Edit" is a real mode now: off, nothing drags and clicking a marker shows a summary
+  card (icon, title, the first lines of the linked page, "Open page →"); on, the inspector
+  and dragging come back. The Markers panel says "hidden at this zoom" and zooms to the
+  marker when clicked.
+- Presets now save visibility and the zoom range too (migration 0014).
+- Fog: one Paint brush (left reveals, right hides) plus Dim and Move map; round or square
+  brush; Ctrl+Z / Ctrl+Y undo and redo strokes; no text selection while dragging.
+
+### Archive and Trash (migration 0015)
+Two removals, both recoverable: Archive keeps a page until restored; Delete moves it to
+the trash, purged for good after 30 days (at boot and daily). DM Menu → "Archived & Trash"
+lists both with Restore / Trash / Delete now. Archived pages are no longer readable by
+URL. Browser `confirm()` dialogs are gone (the Claude desktop browser pane cancels them
+silently) — an in-app `ConfirmDialog` instead. HANDOFF §7.12.
+
+### Inherited visibility (migration 0016)
+A page's visibility can be "Inherit" (the default for new pages): the nearest ancestor's
+level applies, and a page can override for itself and everything under it — a DM-only
+folder with one Players page inside is now expressible. The resolved level is
+materialized (`effective_visibility`) and every read path uses it. A 🔐 button next to
+the visibility picker opens the per-person/per-role Access grants. HANDOFF §7.13.
+
+### Editor
+- One **Secret** block with an audience dropdown (DM only / Players / Everyone) replaces
+  Secret + DM Notes + Section. Stored as `:::secret {visibility="members"}`; the server
+  strips what the viewer can't read and keeps the rest with its fence.
+- One **Link a page** command: `@` picks a page or creates one by typing a new name; `[[`
+  still works as a typing shortcut.
+- `#tag` in the sidebar filter and Ctrl+K filters pages by tag (tree rows carry `tagNames`).
+
+## Previously done (2026-10-22, first pass)
 
 ### Fog of war follow-ups and live updates
 

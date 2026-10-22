@@ -66,6 +66,21 @@ export function roleFor(worldId: string, userId: string | null): Role | null {
   return row?.role ?? null;
 }
 
+const selectFirstWorld = db.prepare("SELECT * FROM worlds ORDER BY created_at LIMIT 1");
+
+/** The world the one-click guest login opens: the oldest one. */
+export function firstWorld(): WorldRow | null {
+  return (selectFirstWorld.get() as WorldRow | undefined) ?? null;
+}
+
+/** Forces `role` even if the membership already exists with a higher one. */
+export function setMemberRole(worldId: string, userId: string, role: Role): void {
+  db.prepare(
+    "INSERT INTO memberships (world_id, user_id, role, created_at) VALUES (?, ?, ?, ?) " +
+      "ON CONFLICT (world_id, user_id) DO UPDATE SET role = excluded.role",
+  ).run(worldId, userId, role, Date.now());
+}
+
 export function addMember(worldId: string, userId: string, role: Role): void {
   insertMembership.run(worldId, userId, role, Date.now());
 }

@@ -41,6 +41,7 @@ const MapMarkerDto = ref("MapMarkerDto", S.mapMarkerDtoSchema);
 const ApiError = ref("ApiError", S.apiErrorSchema);
 const IconHit = ref("IconHit", S.iconHitSchema);
 const MarkerPresetDto = ref("MarkerPresetDto", S.markerPresetDtoSchema);
+const RemovedNode = ref("RemovedNode", S.removedNodeSchema);
 
 const SetupInput = ref("SetupInput", S.setupInputSchema);
 const LoginInput = ref("LoginInput", S.loginInputSchema);
@@ -114,7 +115,9 @@ const paths: Json = {
       tags: ["setup"],
       summary: "Whether this server still needs its first account",
       security: [],
-      responses: { 200: ok(obj({ needsSetup: { type: "boolean" } }, ["needsSetup"])) },
+      responses: {
+        200: ok(obj({ needsSetup: { type: "boolean" }, guestLogin: { type: "boolean" } }, ["needsSetup", "guestLogin"])),
+      },
     },
   },
   "/setup": {
@@ -135,6 +138,14 @@ const paths: Json = {
       summary: "Sign in and receive a session cookie",
       security: [],
       requestBody: body(LoginInput),
+      responses: { 200: ok(obj({ user: UserDto }, ["user"])), ...ERRORS },
+    },
+  },
+  "/auth/guest": {
+    post: {
+      tags: ["auth"],
+      summary: "One-click read-only sign-in as the shared guest (public pages only; no editing)",
+      security: [],
       responses: { 200: ok(obj({ user: UserDto }, ["user"])), ...ERRORS },
     },
   },
@@ -171,6 +182,14 @@ const paths: Json = {
       summary: "Create a world, with a root page",
       requestBody: body(CreateWorldInput),
       responses: { 200: ok(obj({ world: WorldDto }, ["world"])), ...ERRORS },
+    },
+  },
+  "/worlds/{worldId}/removed": {
+    get: {
+      tags: ["worlds"],
+      summary: "Archived and trashed pages (owner/DM only)",
+      parameters: [pathParam("worldId", "World id")],
+      responses: { 200: ok(obj({ archived: arr(RemovedNode), trashed: arr(RemovedNode) }, ["archived", "trashed"])), ...ERRORS },
     },
   },
   "/worlds/{worldId}/tree": {
@@ -366,6 +385,31 @@ const paths: Json = {
     delete: {
       tags: ["nodes"],
       summary: "Archive a page and everything inside it",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/trash": {
+    post: {
+      tags: ["nodes"],
+      summary: "Move a page and everything inside it to the trash (purged after 30 days)",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/restore": {
+    post: {
+      tags: ["nodes"],
+      summary: "Bring an archived or trashed page (and everything inside it) back",
+      description: "If its parent is still removed, the page comes back as a top-level page.",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/forever": {
+    delete: {
+      tags: ["nodes"],
+      summary: "Delete a trashed page for good (owner/DM only; no undo)",
       parameters: [pathParam("nodeId", "Node id")],
       responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
     },

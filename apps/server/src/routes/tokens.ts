@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { createTokenInputSchema } from "@dndworldapp/schema";
 import { createToken, listTokens, revokeTokenForUser, toTokenDto } from "../auth/tokens.ts";
 import { requireUser, viewerForWorld } from "../http/context.ts";
-import { notFound } from "../lib/errors.ts";
+import { isGuestAccount } from "../auth/guest.ts";
+import { forbidden, notFound } from "../lib/errors.ts";
 
 /**
  * Token management is deliberately session-only — see the guard in index.ts.
@@ -16,6 +17,7 @@ export async function tokenRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/v1/tokens", async (request, reply) => {
     const user = requireUser(request);
+    if (isGuestAccount(user)) throw forbidden("Guests cannot create API tokens.");
     const input = createTokenInputSchema.parse(request.body ?? {});
 
     // Pinning to a world you are not a member of would mint a dead token.

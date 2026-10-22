@@ -9,6 +9,7 @@ import Fastify from "fastify";
 import { ZodError } from "zod";
 import { isGameMaster } from "./auth/policy.ts";
 import { purgeExpiredSessions } from "./auth/session.ts";
+import { purgeTrash } from "./services/nodes.ts";
 import { appliedMigrations, closeDatabase, db } from "./db/index.ts";
 import { assertProductionSafe, env, paths } from "./env.ts";
 import { assertScope, attachUser, viewerForNode } from "./http/context.ts";
@@ -277,6 +278,16 @@ if (fs.existsSync(webDist)) {
 purgeExpiredSessions();
 const sessionSweep = setInterval(purgeExpiredSessions, 6 * 60 * 60 * 1000);
 sessionSweep.unref();
+
+// The trash empties itself: anything trashed more than 30 days ago goes for
+// good, at boot and once a day after (see services/nodes.ts purgeTrash).
+const purgedAtBoot = purgeTrash();
+if (purgedAtBoot > 0) app.log.info({ purged: purgedAtBoot }, "emptied expired trash");
+const trashSweep = setInterval(() => {
+  const purged = purgeTrash();
+  if (purged > 0) app.log.info({ purged }, "emptied expired trash");
+}, 24 * 60 * 60 * 1000);
+trashSweep.unref();
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {

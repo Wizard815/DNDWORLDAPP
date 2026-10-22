@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Suspense, lazy, useState } from "react";
-import type { FieldDto, FieldType, NodeDetail, NodeSummary, Visibility } from "@dndworldapp/schema";
+import type { FieldDto, FieldType, NodeDetail, NodeSummary, NodeVisibility, Visibility } from "@dndworldapp/schema";
 import { ApiError, api } from "../api.ts";
 import { Editor } from "../editor/Editor.tsx";
 import { navigate } from "../lib/nav.ts";
@@ -32,10 +32,13 @@ interface Props {
   node: NodeDetail;
   allNodes: NodeSummary[];
   isGameMaster: boolean;
+  /** False for a read-only guest: hides every "add a page" entry point. */
+  canCreate: boolean;
   onChanged: () => void;
   onOpenCreateChooser: (parentId: string) => void;
   onCreateNamed: (title: string) => void;
   onArchive: (node: NodeDetail) => void;
+  onTrash: (node: NodeDetail) => void;
   pinnedIds: Set<string>;
   onTogglePin: (nodeId: string) => void;
   /** Opens the tags/backlinks/fields panel, which is a drawer below the lg breakpoint. */
@@ -46,10 +49,12 @@ export function NodeView({
   node,
   allNodes,
   isGameMaster,
+  canCreate,
   onChanged,
   onOpenCreateChooser,
   onCreateNamed,
   onArchive,
+  onTrash,
   pinnedIds,
   onTogglePin,
   onOpenInfo,
@@ -141,18 +146,34 @@ export function NodeView({
             />
             <select
               value={node.visibility}
-              onChange={(e) => void patch({ visibility: e.target.value as Visibility })}
+              onChange={(e) => void patch({ visibility: e.target.value as NodeVisibility })}
               disabled={!node.canEdit}
-              className={`ml-auto shrink-0 cursor-pointer rounded-full border bg-surface px-2.5 py-1 text-xs disabled:cursor-default ${VISIBILITY_CLASS[node.visibility]}`}
-              title="Who can see this page"
+              className={`ml-auto shrink-0 cursor-pointer rounded-full border bg-surface px-2.5 py-1 text-xs disabled:cursor-default ${VISIBILITY_CLASS[node.effectiveVisibility]}`}
+              title={
+                node.visibility === "inherit"
+                  ? `Same as the page above: ${VISIBILITY_LABEL[node.effectiveVisibility]}. Pages inside inherit this unless they set their own.`
+                  : "Who can see this page. Pages inside inherit it unless they set their own."
+              }
               aria-label="Visibility"
             >
+              <option value="inherit">Inherit ({VISIBILITY_LABEL[node.effectiveVisibility]})</option>
               {(Object.keys(VISIBILITY_LABEL) as Visibility[]).map((v) => (
                 <option key={v} value={v}>
                   {VISIBILITY_LABEL[v]}
                 </option>
               ))}
             </select>
+            {isGameMaster && (
+              <button
+                type="button"
+                onClick={() => setAccessOpen(true)}
+                title="Access: give one person or a role extra read/edit rights on this page"
+                aria-label="Access"
+                className="shrink-0 rounded-md px-1.5 py-1 text-sm leading-none text-fg-subtle hover:bg-hover hover:text-fg"
+              >
+                🔐
+              </button>
+            )}
 
             {node.canEdit && (
               <div className="relative">
@@ -241,9 +262,22 @@ export function NodeView({
                           setMenuOpen(false);
                           onArchive(node);
                         }}
-                        className="menu-item menu-item-danger"
+                        title="Keep it, out of the way, until you restore it"
+                        className="menu-item"
                       >
                         Archive page
+                        {node.children.length > 0 && ` and ${node.children.length} inside`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onTrash(node);
+                        }}
+                        title="Move to the trash — deleted for good after 30 days"
+                        className="menu-item menu-item-danger"
+                      >
+                        Delete page
                         {node.children.length > 0 && ` and ${node.children.length} inside`}
                       </button>
                     </div>
@@ -346,13 +380,15 @@ export function NodeView({
             </section>
           )}
 
-          <button
-            type="button"
-            onClick={() => onOpenCreateChooser(node.id)}
-            className="mt-4 rounded px-2 py-1.5 text-xs text-fg-muted hover:bg-hover hover:text-fg"
-          >
-            + Add a page under {node.title}
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              onClick={() => onOpenCreateChooser(node.id)}
+              className="mt-4 rounded px-2 py-1.5 text-xs text-fg-muted hover:bg-hover hover:text-fg"
+            >
+              + Add a page under {node.title}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -427,12 +463,14 @@ export function Backlinks({
   node,
   allNodes,
   onCreateNamed,
+  canCreate,
   mobileOpen,
   onCloseMobile,
 }: {
   node: NodeDetail;
   allNodes: NodeSummary[];
   onCreateNamed: (title: string) => void;
+  canCreate: boolean;
   /** Below the lg breakpoint the panel is a right-hand drawer; this says whether it's open. */
   mobileOpen: boolean;
   onCloseMobile: () => void;
@@ -544,7 +582,7 @@ export function Backlinks({
         </ul>
       )}
 
-      {links.length > 0 && (
+      {canCreate && links.length > 0 && (
         <>
           <h2 className="mb-1 mt-6 text-xs font-medium uppercase tracking-wide text-fg-muted">
             Wanted pages
@@ -581,7 +619,10 @@ export function Backlinks({
         </div>
         <div className="flex justify-between">
           <dt>Visibility</dt>
-          <dd className={VISIBILITY_CLASS[node.visibility].split(" ")[0]}>{VISIBILITY_LABEL[node.visibility]}</dd>
+          <dd className={VISIBILITY_CLASS[node.effectiveVisibility].split(" ")[0]}>
+            {VISIBILITY_LABEL[node.effectiveVisibility]}
+            {node.visibility === "inherit" && <span className="text-fg-faint"> (inherited)</span>}
+          </dd>
         </div>
         <div className="flex justify-between">
           <dt>Children</dt>

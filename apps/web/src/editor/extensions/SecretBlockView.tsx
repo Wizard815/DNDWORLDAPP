@@ -1,16 +1,25 @@
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 
+type SecretLevel = "dm" | "members" | "public";
+
+const LEVEL_LABEL: Record<SecretLevel, string> = {
+  dm: "DM only",
+  members: "Players",
+  public: "Everyone",
+};
+
 /**
- * Same gold "Secret" wrapper the old renderer used — see styles.css
- * `.secret-block`. "Reveal" un-hides it permanently: the block's own content
- * (already live-editable prose, no separate Edit button) gets spliced into
- * the surrounding document in its place, and the wrapper — the only thing
- * that made it a secret — is gone. There is no partial/temporary reveal:
- * this is the same one-way action as changing a page's visibility, just at
- * the paragraph level instead of the whole page.
+ * One block, three audiences. The server decides who actually receives the
+ * contents (apps/server/src/lib/secrets.ts), this just labels it and lets
+ * the author change the level. "Reveal" removes the wrapper for good:
+ * the block's own content gets spliced into the surrounding document in
+ * its place — the same one-way action as changing a page's visibility,
+ * just at the paragraph level.
  */
-export function SecretBlockView({ editor, node, getPos }: NodeViewProps) {
+export function SecretBlockView({ editor, node, getPos, updateAttributes }: NodeViewProps) {
+  const level = ((node.attrs.visibility as string | undefined) ?? "dm") as SecretLevel;
+
   function reveal(): void {
     const pos = getPos();
     if (pos === undefined) return;
@@ -23,14 +32,29 @@ export function SecretBlockView({ editor, node, getPos }: NodeViewProps) {
   }
 
   return (
-    <NodeViewWrapper className="secret-block">
+    <NodeViewWrapper className="secret-block" data-level={level}>
       <div className="secret-block-label" contentEditable={false}>
-        <span>🔒 Secret — DM only</span>
+        <span className="flex items-center gap-1.5">
+          {level === "public" ? "📣" : level === "members" ? "👥" : "🔒"} Secret —
+          <select
+            value={level}
+            onChange={(e) => updateAttributes({ visibility: e.target.value })}
+            title="Who can read this block"
+            aria-label="Who can read this block"
+            className="secret-block-level"
+          >
+            {(Object.keys(LEVEL_LABEL) as SecretLevel[]).map((l) => (
+              <option key={l} value={l}>
+                {LEVEL_LABEL[l]}
+              </option>
+            ))}
+          </select>
+        </span>
         <button
           type="button"
           onClick={reveal}
           className="secret-block-reveal"
-          title="Remove the secret wrapper — this text becomes normal, visible prose"
+          title="Remove the secret wrapper — this text becomes normal prose"
         >
           Reveal
         </button>

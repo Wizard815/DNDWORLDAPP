@@ -16,7 +16,16 @@ import { viewerForNode, viewerForWorld } from "../http/context.ts";
 import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { grantAcl, listAcl, revokeAcl } from "../services/acl.ts";
 import { createField, deleteField, listFields, moveField, updateField } from "../services/fields.ts";
-import { archiveNode, getNodeDetail, getNodeRow, moveNode, updateNode } from "../services/nodes.ts";
+import {
+  archiveNode,
+  deleteNodeForever,
+  getNodeDetail,
+  getNodeRow,
+  moveNode,
+  restoreNode,
+  trashNode,
+  updateNode,
+} from "../services/nodes.ts";
 import { createPost, deletePost, listPosts, updatePost } from "../services/posts.ts";
 import { createShareLink, listShareLinks, revokeShareLink } from "../services/shareLinks.ts";
 import { assignTemplateFields } from "../services/templates.ts";
@@ -52,6 +61,15 @@ export async function nodeRoutes(app: FastifyInstance): Promise<void> {
   app.patch<{ Params: NodeParams }>("/api/v1/nodes/:nodeId", async (request) => {
     const { viewer } = viewerForNode(request, request.params.nodeId);
     const input = updateNodeInputSchema.parse(request.body);
+    // A removed page isn't visible, so it can't be PATCHed — `isArchived:
+    // false` is the one exception, kept so older API clients can still
+    // restore the way they used to; it's the same thing as POST …/restore.
+    if (input.isArchived === false && getNodeRow(request.params.nodeId)?.is_archived === 1) {
+      restoreNode(request.params.nodeId, viewer);
+      const { isArchived: _restored, ...rest } = input;
+      if (Object.keys(rest).length > 0) updateNode(request.params.nodeId, viewer, rest);
+      return { node: getNodeDetail(request.params.nodeId, viewer) };
+    }
     updateNode(request.params.nodeId, viewer, input);
     return { node: getNodeDetail(request.params.nodeId, viewer) };
   });
@@ -66,6 +84,24 @@ export async function nodeRoutes(app: FastifyInstance): Promise<void> {
   app.delete<{ Params: NodeParams }>("/api/v1/nodes/:nodeId", async (request) => {
     const { viewer } = viewerForNode(request, request.params.nodeId);
     archiveNode(request.params.nodeId, viewer);
+    return { ok: true };
+  });
+
+  app.post<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/trash", async (request) => {
+    const { viewer } = viewerForNode(request, request.params.nodeId);
+    trashNode(request.params.nodeId, viewer);
+    return { ok: true };
+  });
+
+  app.post<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/restore", async (request) => {
+    const { viewer } = viewerForNode(request, request.params.nodeId);
+    restoreNode(request.params.nodeId, viewer);
+    return { ok: true };
+  });
+
+  app.delete<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/forever", async (request) => {
+    const { viewer } = viewerForNode(request, request.params.nodeId);
+    deleteNodeForever(request.params.nodeId, viewer);
     return { ok: true };
   });
 

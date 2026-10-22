@@ -22,7 +22,15 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
  * after the first one is created by a DM, from the world's member panel — see
  * Members.tsx — never from a public form, and never with an email anywhere.
  */
-export function AuthScreen({ needsSetup, onDone }: { needsSetup: boolean; onDone: () => void }) {
+export function AuthScreen({
+  needsSetup,
+  guestLogin,
+  onDone,
+}: {
+  needsSetup: boolean;
+  guestLogin: boolean;
+  onDone: () => void;
+}) {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -48,6 +56,19 @@ export function AuthScreen({ needsSetup, onDone }: { needsSetup: boolean; onDone
         console.error(err);
         setError("Something went wrong.");
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function continueAsGuest(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.guestLogin();
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
       setBusy(false);
     }
@@ -121,6 +142,24 @@ export function AuthScreen({ needsSetup, onDone }: { needsSetup: boolean; onDone
         <button className={buttonClass} disabled={busy} type="submit">
           {busy ? "Working…" : needsSetup ? "Create world" : "Sign in"}
         </button>
+        {!needsSetup && guestLogin && (
+          <>
+            <div className="flex items-center gap-3 py-1 text-xs text-fg-faint" aria-hidden="true">
+              <span className="h-px flex-1 bg-line" />
+              or
+              <span className="h-px flex-1 bg-line" />
+            </div>
+            <button
+              type="button"
+              onClick={() => void continueAsGuest()}
+              disabled={busy}
+              className="w-full rounded-md border border-line px-3 py-2 text-sm font-medium text-fg hover:border-line-strong hover:bg-highlight disabled:opacity-50"
+            >
+              Guest Login
+            </button>
+            <p className="text-center text-xs text-fg-faint">Read-only. Public pages only — no DM info.</p>
+          </>
+        )}
       </form>
     </div>
   );

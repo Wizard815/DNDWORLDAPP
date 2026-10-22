@@ -11,7 +11,7 @@ import { latLngToPixel, pixelToLatLng } from "../lib/mapCoords.ts";
 import { navigate } from "../lib/nav.ts";
 import { Glyph, glyphHtml } from "./Glyph.tsx";
 import { IconPicker } from "./IconPicker.tsx";
-import { FogEditorLayer, FogPanel, type FogTool } from "./MapFog.tsx";
+import { FogEditorLayer, FogPanel, type FogBrushShape, type FogTool } from "./MapFog.tsx";
 import { MeasureLayer, MeasurePanel, type MeasureMode } from "./MapMeasure.tsx";
 
 /**
@@ -109,9 +109,18 @@ function iconFor(marker: MapMarkerDto): L.DivIcon {
 }
 
 /** The part of a preset a new marker copies. Empty when there's no preset, so it can be spread unconditionally. */
-function presetLook(preset: MarkerPresetDto | null): { icon?: string | null; color?: string | null; radius?: number | null } {
+function presetLook(
+  preset: MarkerPresetDto | null,
+): { icon?: string | null; color?: string | null; radius?: number | null; visibility?: FieldVisibility; minZoom?: number | null; maxZoom?: number | null } {
   if (preset === null) return {};
-  return { icon: preset.icon, color: preset.color, radius: preset.shape === "circle" ? preset.radius : null };
+  return {
+    icon: preset.icon,
+    color: preset.color,
+    radius: preset.shape === "circle" ? preset.radius : null,
+    visibility: preset.visibility,
+    minZoom: preset.minZoom,
+    maxZoom: preset.maxZoom,
+  };
 }
 
 /** A preset's look in miniature, for the presets menu. */
@@ -633,8 +642,9 @@ export function MapView({
   const [measureMode, setMeasureMode] = useState<MeasureMode>("points");
   // Owner/DM fog controls — see MapFog.tsx.
   const [fogPanelOpen, setFogPanelOpen] = useState(false);
-  const [fogTool, setFogTool] = useState<FogTool>("reveal");
+  const [fogTool, setFogTool] = useState<FogTool>("paint");
   const [fogBrushPx, setFogBrushPx] = useState(40);
+  const [fogBrushShape, setFogBrushShape] = useState<FogBrushShape>("round");
   const [fogFill, setFogFill] = useState<{ seq: number; fill: "reveal" | "hide" } | null>(null);
   const [fogSaveState, setFogSaveState] = useState<string | null>(null);
   // "Groups" (visibility filter) and "Markers" (browse/jump-to) share one
@@ -656,6 +666,13 @@ export function MapView({
   const [draft, setDraft] = useState<{ shape: DrawShape; points: MarkerPoint[]; anchor: { x: number; y: number } | null; replaceId: string | null } | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /**
+   * Edit mode. Off (the default), the map is read-only for everyone — no
+   * dragging, no inspector — and clicking a marker shows a summary card
+   * instead. On, everything editable is live. A draft in progress forces it
+   * on so its Done/Cancel stay reachable.
+   */
+  const editing = node.canEdit && (editToolbarOpen || draft !== null);
 
   const invalidateMap = () => queryClient.invalidateQueries({ queryKey: ["map", node.id] });
   const invalidateMarkers = () => queryClient.invalidateQueries({ queryKey: ["map-markers", node.id] });
@@ -699,7 +716,7 @@ export function MapView({
 
   const create = useMutation({
     mutationFn: (input: { shape: AddableShape; x: number; y: number }) =>
-      api.createMarker(node.id, { ...input, ...presetLook(activePreset), visibility: "members" }),
+      api.createMarker(node.id, { ...input, visibility: "members", ...presetLook(activePreset) }),
     onSuccess: (result) => {
       invalidateMarkers();
       setDropShape(null);
@@ -753,8 +770,8 @@ export function MapView({
             x: d.anchor.x,
             y: d.anchor.y,
             points: formatMarkerPoints(d.points),
-            ...presetLook(activePreset),
             visibility: "members",
+            ...presetLook(activePreset),
           }),
     onSuccess: (result) => {
       setDraft(null);
@@ -872,7 +889,7 @@ export function MapView({
    * zooming out doesn't yank the inspector's subject off the map.
    */
   const drawnMarkers =
-    magnification === null || (node.canEdit && editToolbarOpen)
+    magnification === null || editing
       ? visibleMarkers
       : visibleMarkers.filter(
           (m) =>
@@ -880,6 +897,11 @@ export function MapView({
             ((m.minZoom === null || magnification.current >= m.minZoom - ZOOM_EPSILON) &&
               (m.maxZoom === null || magnification.current <= m.maxZoom + ZOOM_EPSILON)),
         );
+  /** Markers the Markers panel lists but the map isn't drawing right now, because of their zoom range. */
+  const hiddenByZoom = useMemo(() => {
+    const drawn = new Set(drawnMarkers.map((m) => m.id));
+    return new Set(visibleMarkers.filter((m) => !drawn.has(m.id)).map((m) => m.id));
+  }, [drawnMarkers, visibleMarkers]);
   const bounds = useMemo<L.LatLngBoundsLiteral | null>(
     () => (map !== null && map !== undefined ? [[0, 0], [map.height / scale, map.width / scale]] : null),
     [map, scale],
@@ -1072,16 +1094,16 @@ export function MapView({
               // A draft in progress keeps its Done/Cancel controls reachable
               // even if this gets collapsed mid-draw — see the `|| draft
               // !== null` on the block below, not just this highlight.
-              title="Show/hide map editing controls"
+              title={editing ? "Leave edit mode" : "Edit this map: move markers, add shapes, change the image"}
               className={`rounded px-2 py-1 text-xs ${
-                editToolbarOpen || draft !== null ? "bg-accent text-on-accent" : "text-fg-soft hover:bg-press"
+                editing ? "bg-accent text-on-accent" : "text-fg-soft hover:bg-press"
               }`}
             >
-              ✏️ Edit
+              {editing ? "✓ Done" : "✏️ Edit"}
             </button>
           </>
         )}
-        {node.canEdit && (editToolbarOpen || draft !== null) && (
+        {editing && (
           <>
             <div className="mx-0.5 w-px self-stretch bg-line" />
             <button
@@ -1232,12 +1254,25 @@ export function MapView({
           markers={markers}
           groups={groups}
           scale={scale}
+          hiddenByZoom={hiddenByZoom}
           onClose={() => setOpenPanel(null)}
           onSelect={(marker) => {
             setSelectedId(marker.id);
             const anchor =
               marker.shape === "polygon" || marker.shape === "path" ? anchorFor(marker) : { x: marker.x, y: marker.y };
-            if (anchor !== null) mapInstanceRef.current?.panTo(pixelToLatLng(anchor.x, anchor.y, scale));
+            if (anchor === null) return;
+            const latlng = pixelToLatLng(anchor.x, anchor.y, scale);
+            // A marker outside its zoom range would stay invisible after a
+            // plain pan — zoom to the nearest edge of its range instead.
+            if (hiddenByZoom.has(marker.id) && magnification !== null) {
+              const target =
+                marker.minZoom !== null && magnification.current < marker.minZoom
+                  ? marker.minZoom
+                  : (marker.maxZoom ?? magnification.current);
+              mapInstanceRef.current?.setView(latlng, target + nativeZoom);
+            } else {
+              mapInstanceRef.current?.panTo(latlng);
+            }
           }}
         />
       )}
@@ -1329,6 +1364,7 @@ export function MapView({
             pixelScale={scale}
             tool={fogPanelOpen ? fogTool : null}
             brushPx={fogBrushPx}
+            brushShape={fogBrushShape}
             fillRequest={fogFill}
             onSaved={() => {
               setFogSaveState("Saved");
@@ -1386,17 +1422,17 @@ export function MapView({
             <PolygonShapeMarker
               key={marker.id}
               marker={marker}
-              canEdit={node.canEdit}
-              isEditing={selectedId === marker.id}
+              canEdit={editing}
+              isEditing={editing && selectedId === marker.id}
               scale={scale}
               onSelect={() => setSelectedId(marker.id)}
               onMoveAnchor={
-                node.canEdit
+                editing
                   ? (x, y) => update.mutate({ id: marker.id, x, y })
                   : undefined
               }
               onUpdatePoints={
-                node.canEdit
+                editing
                   ? (points) => update.mutate({ id: marker.id, points: formatMarkerPoints(points) })
                   : undefined
               }
@@ -1417,7 +1453,7 @@ export function MapView({
               key={marker.id}
               position={pixelToLatLng(marker.x, marker.y, scale)}
               icon={iconFor(marker)}
-              draggable={node.canEdit}
+              draggable={editing}
               eventHandlers={{
                 click: () => setSelectedId(marker.id),
                 dragend: (e) => {
@@ -1436,10 +1472,12 @@ export function MapView({
           map={map}
           tool={fogTool}
           brushPx={fogBrushPx}
+          brushShape={fogBrushShape}
           saveState={fogSaveState}
           onToggleFog={(enabled) => toggleFog.mutate(enabled)}
           onToolChange={setFogTool}
           onBrushChange={setFogBrushPx}
+          onBrushShapeChange={setFogBrushShape}
           onFill={(fill) => setFogFill((prev) => ({ seq: (prev?.seq ?? 0) + 1, fill }))}
           onClose={() => setFogPanelOpen(false)}
         />
@@ -1458,7 +1496,17 @@ export function MapView({
         />
       )}
 
-      {selected !== null && (
+      {selected !== null && !editing && (
+        <MarkerSummaryCard
+          key={selected.id}
+          marker={selected}
+          groups={groups}
+          canEdit={node.canEdit}
+          onEdit={() => setEditToolbarOpen(true)}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
+      {selected !== null && editing && (
         <MarkerInspector
           // Keyed so switching markers resets its local form state (label,
           // color, zoom range drafts) instead of carrying the last one's over.
@@ -1487,6 +1535,9 @@ export function MapView({
                     icon: selected.icon,
                     color: selected.color,
                     radius: selected.shape === "circle" ? selected.radius : null,
+                    visibility: selected.visibility,
+                    minZoom: selected.minZoom,
+                    maxZoom: selected.maxZoom,
                   })
               : undefined
           }
@@ -1774,12 +1825,15 @@ function MarkerListPanel({
   markers,
   groups,
   scale,
+  hiddenByZoom,
   onClose,
   onSelect,
 }: {
   markers: MapMarkerDto[];
   groups: MapGroupDto[];
   scale: number;
+  /** Markers not drawn at the current zoom (their "visible at zoom" range) — listed anyway, with a hint. */
+  hiddenByZoom: Set<string>;
   onClose: () => void;
   onSelect: (marker: MapMarkerDto) => void;
 }) {
@@ -1835,6 +1889,11 @@ function MarkerListPanel({
             >
               <Glyph icon={iconTextOf(m)} className="w-4 shrink-0 text-center" />
               <span className="min-w-0 flex-1 truncate">{nameOf(m)}</span>
+              {hiddenByZoom.has(m.id) && (
+                <span className="shrink-0 text-[10px] text-fg-faint" title="Outside its visible zoom range — click to zoom to it">
+                  hidden at this zoom
+                </span>
+              )}
               {m.groupId !== null && groupsById.get(m.groupId) !== undefined && (
                 <span className="shrink-0 truncate text-[10px] text-fg-muted">{groupsById.get(m.groupId)!.name}</span>
               )}
@@ -1842,6 +1901,98 @@ function MarkerListPanel({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Strips markdown scaffolding and secret fences down to plain words for a short preview. */
+function excerptOf(md: string, max = 220): string {
+  const text = md
+    .replace(/^:::.*$/gm, "")
+    .replace(/^#+\s*/gm, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, "$1")
+    .replace(/[*_`>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > max ? `${text.slice(0, max).replace(/\s\S*$/, "")}…` : text;
+}
+
+/**
+ * What clicking a marker shows outside edit mode, for everyone: what it is,
+ * the first lines of the page it links to, and a way to open that page. The
+ * body comes from GET /nodes/:id, so it's already redacted for this viewer.
+ */
+function MarkerSummaryCard({
+  marker,
+  groups,
+  canEdit,
+  onEdit,
+  onClose,
+}: {
+  marker: MapMarkerDto;
+  groups: MapGroupDto[];
+  canEdit: boolean;
+  onEdit: () => void;
+  onClose: () => void;
+}) {
+  const target = marker.targetNode;
+  const page = useQuery({
+    queryKey: ["node", target?.id],
+    queryFn: () => api.node(target!.id),
+    enabled: target !== null,
+    staleTime: 30_000,
+  });
+  const title = marker.label ?? target?.title ?? SHAPE_LABEL[marker.shape] ?? marker.shape;
+  const icon = marker.icon ?? target?.icon ?? (marker.shape === "token" ? DEFAULT_TOKEN_ICON : null);
+  const group = marker.groupId !== null ? (groups.find((g) => g.id === marker.groupId) ?? null) : null;
+  const excerpt = page.data !== undefined ? excerptOf(page.data.node.bodyMd) : "";
+
+  return (
+    <div className="absolute bottom-3 right-3 z-[1000] w-72 rounded-md border border-line bg-surface p-4 shadow-2xl">
+      <div className="mb-1 flex items-start gap-2">
+        {icon !== null && <Glyph icon={icon} className="mt-0.5 shrink-0 text-base" />}
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-semibold text-fg-strong">{title}</h3>
+          <p className="text-[10px] uppercase tracking-wide text-fg-muted">
+            {SHAPE_LABEL[marker.shape] ?? marker.shape}
+            {group !== null && ` · ${group.name}`}
+          </p>
+        </div>
+        <button type="button" onClick={onClose} className="shrink-0 text-xs text-fg-muted hover:text-fg">
+          Close
+        </button>
+      </div>
+      {marker.members !== null && marker.members.length > 0 && (
+        <p className="mb-2 text-xs text-fg-soft">{marker.members}</p>
+      )}
+      {target !== null &&
+        (page.isLoading ? (
+          <p className="mb-2 text-xs text-fg-faint">Loading…</p>
+        ) : excerpt.length > 0 ? (
+          <p className="mb-2 text-xs leading-relaxed text-fg-soft">{excerpt}</p>
+        ) : null)}
+      <div className="flex gap-1">
+        {target !== null && (
+          <button
+            type="button"
+            onClick={() => navigate(`/n/${target.id}`)}
+            className="flex-1 rounded bg-accent px-2 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover"
+          >
+            Open {target.title} →
+          </button>
+        )}
+        {canEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            title="Switch the map to edit mode with this marker selected"
+            className="rounded border border-line px-2 py-1.5 text-xs text-fg-soft hover:bg-press"
+          >
+            ✏️ Edit
+          </button>
+        )}
+      </div>
     </div>
   );
 }

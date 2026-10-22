@@ -1934,11 +1934,99 @@ check("a player's coarsest tile is fogged too, not just the deepest", coarseTile
 await dm("DELETE", `/nodes/${fogMapNode.id}`);
 await dm("DELETE", `/nodes/${tiledFogNode.id}`);
 
-console.log("\n== archive ==");
+console.log("\n== guest login (one click, read-only) ==");
+const guestPublic = (await dm("POST", `/worlds/${worldId}/nodes`, {
+  title: "Guest test public", parentId: rootId, visibility: "public",
+  bodyMd: "Open to all.\n\n:::secret\n\nGUEST-MUST-NOT-SEE\n\n:::",
+})).body.node;
+const guestMembersOnly = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Guest test members-only", parentId: rootId, visibility: "members" })).body.node;
+const guestDmOnly = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Guest test dm-only", parentId: rootId, visibility: "dm" })).body.node;
+
+const guest = makeSession();
+const statusAfterSetup = await guest("GET", "/setup/status");
+check("the login screen is told guest login is on", statusAfterSetup.body.guestLogin === true, statusAfterSetup.body);
+const guestIn = await guest("POST", "/auth/guest");
+check("guest login signs in with no credentials", guestIn.status === 200 && guestIn.body.user.username === "guest", guestIn.body);
+const guestTree = (await guest("GET", `/worlds/${worldId}/tree`)).body.nodes.map((n) => n.id);
+check("a guest sees public pages", guestTree.includes(guestPublic.id), guestTree.length);
+check("LEAK: a guest does not see players-only pages", !guestTree.includes(guestMembersOnly.id));
+check("LEAK: a guest does not see DM-only pages", !guestTree.includes(guestDmOnly.id));
+const guestDirectDm = await guest("GET", `/nodes/${guestDmOnly.id}`);
+check("LEAK: a guest cannot fetch a DM-only page by id", guestDirectDm.status === 404, guestDirectDm.status);
+const guestBody = (await guest("GET", `/nodes/${guestPublic.id}`)).body.node;
+check("LEAK: a guest's copy of a public page has the :::secret block stripped", !guestBody.bodyMd.includes("GUEST-MUST-NOT-SEE"), guestBody.bodyMd);
+const guestSearch = (await guest("GET", `/worlds/${worldId}/search?q=GUEST-MUST-NOT-SEE`)).body.hits;
+check("LEAK: a guest cannot search into a secret block", guestSearch.length === 0, guestSearch);
+check("a guest cannot edit a page", (await guest("PATCH", `/nodes/${guestPublic.id}`, { title: "hacked" })).status === 403);
+check("a guest cannot create a page", (await guest("POST", `/worlds/${worldId}/nodes`, { title: "nope", parentId: rootId })).status === 403);
+check("a guest cannot create a world", (await guest("POST", "/worlds", { name: "Mine now" })).status === 403);
+check("a guest cannot mint an API token", (await guest("POST", "/tokens", { name: "sneaky" })).status === 403);
+check("the guest account has no password to guess", (await makeSession()("POST", "/auth/login", { username: "guest", password: "guest" })).status === 401);
+await dm("POST", `/worlds/${worldId}/members`, { username: "guest", role: "dm" });
+const guestAgain = makeSession();
+await guestAgain("POST", "/auth/guest");
+const guestAfterPromote = (await guestAgain("GET", `/worlds/${worldId}/tree`)).body.nodes.map((n) => n.id);
+check("promoting the guest account in the member panel does not unlock DM pages", !guestAfterPromote.includes(guestDmOnly.id));
+
+console.log("\n== inherited visibility ==");
+const dmFolder = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "DM folder", parentId: rootId, visibility: "dm" })).body.node;
+const inheritChildCreated = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Inherit child", parentId: dmFolder.id, bodyMd: "Tagged #inherittag" })).body.node;
+const inheritChild = (await dm("GET", `/nodes/${inheritChildCreated.id}`)).body.node;
+check("a new page defaults to inherit, resolved to its parent's level", inheritChild.visibility === "inherit" && inheritChild.effectiveVisibility === "dm", inheritChild);
+check("LEAK: a player cannot read a page that inherits DM-only", (await player("GET", `/nodes/${inheritChild.id}`)).status === 404);
+check("LEAK: nor find it in the tree", !(await player("GET", `/worlds/${worldId}/tree`)).body.nodes.some((n) => n.id === inheritChild.id));
+const opened = (await dm("PATCH", `/nodes/${inheritChild.id}`, { visibility: "members" })).body.node;
+check("setting a page to Players inside a DM-only folder opens just that page", opened.effectiveVisibility === "members" && (await player("GET", `/nodes/${inheritChild.id}`)).status === 200);
+const inheritTree = (await player("GET", `/worlds/${worldId}/tree`)).body.nodes;
+check("the player sees the opened page but not the DM-only folder around it", inheritTree.some((n) => n.id === inheritChild.id) && !inheritTree.some((n) => n.id === dmFolder.id));
+check("the tree carries tag names for #tag filtering", inheritTree.find((n) => n.id === inheritChild.id)?.tagNames.includes("inherittag") === true, inheritTree.find((n) => n.id === inheritChild.id));
+const grandchildCreated = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Grandchild", parentId: inheritChild.id })).body.node;
+const grandchild = (await dm("GET", `/nodes/${grandchildCreated.id}`)).body.node;
+check("a page inside the opened page inherits Players, not the grandparent's DM-only", grandchild.effectiveVisibility === "members" && (await player("GET", `/nodes/${grandchild.id}`)).status === 200);
+await dm("PATCH", `/nodes/${inheritChild.id}`, { visibility: "inherit" });
+check("switching back to inherit hides the whole subtree again", (await player("GET", `/nodes/${grandchild.id}`)).status === 404);
+const openFolder = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Open folder", parentId: rootId, visibility: "public" })).body.node;
+await dm("POST", `/nodes/${inheritChild.id}/move`, { parentId: openFolder.id, afterId: null, beforeId: null });
+check("moving an inheriting page under a public folder re-resolves it (and its children) to public", (await dm("GET", `/nodes/${grandchild.id}`)).body.node.effectiveVisibility === "public");
+await dm("PATCH", `/nodes/${openFolder.id}`, { visibility: "dm" });
+check("changing a folder's level flows down to inheriting pages", (await dm("GET", `/nodes/${grandchild.id}`)).body.node.effectiveVisibility === "dm");
+
+console.log("\n== archive, trash, restore ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);
 check("archive succeeds", archived.status === 200, archived.body);
 const treeAfterArchive = (await dm("GET", `/worlds/${worldId}/tree`)).body.nodes;
 check("archived page leaves the tree", !treeAfterArchive.some((n) => n.id === orgella.id), treeAfterArchive.length);
+check("an archived page is not readable by id any more", (await dm("GET", `/nodes/${orgella.id}`)).status === 404);
+check("a player cannot list archived pages", (await player("GET", `/worlds/${worldId}/removed`)).status === 403);
+const removed1 = (await dm("GET", `/worlds/${worldId}/removed`)).body;
+check("the DM sees it under Archived, not Trash", removed1.archived.some((r) => r.id === orgella.id) && !removed1.trashed.some((r) => r.id === orgella.id), removed1);
+check("restore succeeds", (await dm("POST", `/nodes/${orgella.id}/restore`)).status === 200);
+check("a restored page is back in the tree and readable", (await dm("GET", `/worlds/${worldId}/tree`)).body.nodes.some((n) => n.id === orgella.id) && (await dm("GET", `/nodes/${orgella.id}`)).status === 200);
+
+const binParent = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Trash parent", parentId: rootId })).body.node;
+const binChild = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Trash child", parentId: binParent.id })).body.node;
+check("a player cannot trash a DM page", (await player("POST", `/nodes/${binParent.id}/trash`)).status === 403);
+check("trash succeeds", (await dm("POST", `/nodes/${binParent.id}/trash`)).status === 200);
+const removed2 = (await dm("GET", `/worlds/${worldId}/removed`)).body;
+const binRow = removed2.trashed.find((r) => r.id === binParent.id);
+check("the trash lists the top of the subtree with its child count and a deletedAt", binRow !== undefined && binRow.childCount === 1 && typeof binRow.deletedAt === "number", removed2);
+check("the trashed child is not listed separately", !removed2.trashed.some((r) => r.id === binChild.id), removed2.trashed.map((r) => r.title));
+check("a trashed page is not readable by id", (await dm("GET", `/nodes/${binChild.id}`)).status === 404);
+check("delete-forever is refused for a page that is not in the trash", (await dm("DELETE", `/nodes/${orgella.id}/forever`)).status === 404);
+check("a player cannot delete forever", (await player("DELETE", `/nodes/${binParent.id}/forever`)).status === 403);
+check("restore from the trash brings the subtree back", (await dm("POST", `/nodes/${binParent.id}/restore`)).status === 200 && (await dm("GET", `/nodes/${binChild.id}`)).status === 200);
+await dm("POST", `/nodes/${binParent.id}/trash`);
+check("delete forever succeeds from the trash", (await dm("DELETE", `/nodes/${binParent.id}/forever`)).status === 200);
+check("a deleted-forever page is gone, child included", (await dm("GET", `/nodes/${binParent.id}`)).status === 404 && (await dm("GET", `/nodes/${binChild.id}`)).status === 404);
+check("and it has left the trash list", !(await dm("GET", `/worlds/${worldId}/removed`)).body.trashed.some((r) => r.id === binParent.id));
+
+// Restoring a child whose parent stays removed must not strand it inside something invisible.
+const strandParent = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Strand parent", parentId: rootId })).body.node;
+const strandChild = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Strand child", parentId: strandParent.id })).body.node;
+await dm("DELETE", `/nodes/${strandParent.id}`);
+await dm("POST", `/nodes/${strandChild.id}/restore`);
+const strandRow = (await dm("GET", `/worlds/${worldId}/tree`)).body.nodes.find((n) => n.id === strandChild.id);
+check("a page restored out of a still-archived parent becomes a top-level page", strandRow !== undefined && strandRow.parentId === null, strandRow);
 
 console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}\n`);
 process.exit(failures === 0 ? 0 : 1);

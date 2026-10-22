@@ -1,14 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { changePasswordInputSchema, loginInputSchema, setupInputSchema } from "@dndworldapp/schema";
 import type { UserDto } from "@dndworldapp/schema";
+import { GUEST_USERNAME, LOCKED_PASSWORD_HASH, isGuestAccount } from "../auth/guest.ts";
 import { hashPassword, verifyPassword } from "../auth/password.ts";
 import { SESSION_COOKIE, destroySession } from "../auth/session.ts";
 import { db } from "../db/index.ts";
 import type { UserRow } from "../db/types.ts";
-import { badRequest, conflict, unauthorized } from "../lib/errors.ts";
+import { env } from "../env.ts";
+import { badRequest, conflict, notFound, unauthorized } from "../lib/errors.ts";
 import { longId } from "../lib/id.ts";
 import { requireUser, startSession } from "../http/context.ts";
-import { createWorld } from "../services/worlds.ts";
+import { createWorld, firstWorld, setMemberRole } from "../services/worlds.ts";
 
 const countUsers = db.prepare("SELECT COUNT(*) AS n FROM users");
 const findUserByUsername = db.prepare("SELECT * FROM users WHERE lower(username) = lower(?)");
@@ -31,7 +33,10 @@ function needsSetup(): boolean {
 }
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/api/v1/setup/status", async () => ({ needsSetup: needsSetup() }));
+  app.get("/api/v1/setup/status", async () => {
+    const setup = needsSetup();
+    return { needsSetup: setup, guestLogin: env.guestLogin && !setup };
+  });
 
   /**
    * First run. Creates the owner account and their first world, then signs in.
@@ -78,6 +83,30 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     startSession(request, reply, user.id);
     return { user: toDto(user) };
+  });
+
+  /**
+   * One-click, read-only entry. Signs into a shared, password-less "guest"
+   * account whose membership is forced to the `guest` role every time — so it
+   * sees only `public` pages (never DM-only or players-only content or secret
+   * blocks) and cannot edit, create or upload, whatever the member panel says.
+   */
+  app.post("/api/v1/auth/guest", async (request, reply) => {
+    if (!env.guestLogin || needsSetup()) throw notFound("Guest login is not available.");
+    const world = firstWorld();
+    if (world === null) throw notFound("Guest login is not available.");
+
+    let guest = findUserByUsername.get(GUEST_USERNAME) as UserRow | undefined;
+    if (guest === undefined) {
+      insertUser.run(longId(), GUEST_USERNAME, "Guest", LOCKED_PASSWORD_HASH, 0, Date.now());
+      guest = findUserByUsername.get(GUEST_USERNAME) as UserRow;
+    } else if (!isGuestAccount(guest)) {
+      throw conflict('A regular account already uses the username "guest", so guest login is unavailable.');
+    }
+
+    setMemberRole(world.id, guest.id, "guest");
+    startSession(request, reply, guest.id);
+    return { user: toDto(guest) };
   });
 
   app.post("/api/v1/auth/logout", async (request, reply) => {

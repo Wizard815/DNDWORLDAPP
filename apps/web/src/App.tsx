@@ -10,6 +10,8 @@ import { PinnedStrip } from "./components/PinnedStrip.tsx";
 import { QuickSwitcher } from "./components/QuickSwitcher.tsx";
 import { ShareView } from "./components/ShareView.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
+import { ConfirmDialog } from "./components/ConfirmDialog.tsx";
+import { Removed } from "./components/Removed.tsx";
 import { Templates } from "./components/Templates.tsx";
 import { Tokens } from "./components/Tokens.tsx";
 import { navigate, nodeIdFromPath, usePath } from "./lib/nav.ts";
@@ -60,6 +62,8 @@ export function App() {
   const [tokensOpen, setTokensOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [removedOpen, setRemovedOpen] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<{ node: NodeDetail; action: "archive" | "trash" } | null>(null);
   const [viewAsPlayer, setViewAsPlayerState] = useState(false);
   const [createChooser, setCreateChooser] = useState<{ parentId: string | null } | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -187,19 +191,17 @@ export function App() {
   });
 
   /** Archiving takes the subtree with it, so ask first, then fall back to the parent. */
-  const archiveNode = useCallback(
-    (target: NodeDetail) => {
-      const inside =
-        target.children.length > 0 ? ` and the ${target.children.length} page(s) inside it` : "";
-      if (!window.confirm(`Archive "${target.title}"${inside}?`)) return;
-      void api.archiveNode(target.id).then(() => {
-        const parent = target.breadcrumb.at(-1)?.id ?? world?.rootNodeId ?? null;
-        if (parent !== null) navigate(`/n/${parent}`);
-        refreshTree();
-      });
-    },
-    [refreshTree, world],
-  );
+  /** Runs after the ConfirmDialog below: removes the page, then shows its parent so the view isn't left on a gone page. */
+  const confirmRemoval = useCallback(() => {
+    if (pendingRemoval === null) return;
+    const { node: target, action } = pendingRemoval;
+    setPendingRemoval(null);
+    void (action === "archive" ? api.archiveNode(target.id) : api.trashNode(target.id)).then(() => {
+      const parent = target.breadcrumb.at(-1)?.id ?? world?.rootNodeId ?? null;
+      if (parent !== null) navigate(`/n/${parent}`);
+      refreshTree();
+    });
+  }, [pendingRemoval, refreshTree, world]);
 
   // A share link needs no session at all — rendered after the hooks above
   // (so their call count stays fixed every render) but before anything that
@@ -216,6 +218,7 @@ export function App() {
     return (
       <AuthScreen
         needsSetup={setupStatus.data?.needsSetup ?? false}
+        guestLogin={setupStatus.data?.guestLogin ?? false}
         onDone={() => {
           void queryClient.invalidateQueries();
         }}
@@ -229,6 +232,7 @@ export function App() {
 
   const nodes = tree.data?.nodes ?? [];
   const isGameMaster = world.role === "owner" || world.role === "dm";
+  const canCreate = world.role !== "guest";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -269,7 +273,9 @@ export function App() {
           onOpenTokens={() => setTokensOpen(true)}
           onOpenMembers={() => setMembersOpen(true)}
           onOpenTemplates={() => setTemplatesOpen(true)}
+          onOpenRemoved={() => setRemovedOpen(true)}
           isGameMaster={isGameMaster}
+          canCreate={canCreate}
           viewAsPlayer={viewAsPlayer}
           onToggleViewAsPlayer={toggleViewAsPlayer}
           theme={theme}
@@ -300,12 +306,14 @@ export function App() {
               node={node.data.node}
               allNodes={nodes}
               isGameMaster={isGameMaster && !viewAsPlayer}
+              canCreate={canCreate}
               onChanged={refreshTree}
               onOpenCreateChooser={(parentId) => setCreateChooser({ parentId })}
               onCreateNamed={(title) =>
                 createNode.mutate({ parentId: node.data!.node.id, title })
               }
-              onArchive={archiveNode}
+              onArchive={(target) => setPendingRemoval({ node: target, action: "archive" })}
+              onTrash={(target) => setPendingRemoval({ node: target, action: "trash" })}
               pinnedIds={pinnedIds}
               onTogglePin={togglePin}
               onOpenInfo={() => setMobileInfoOpen(true)}
@@ -316,6 +324,7 @@ export function App() {
               onCreateNamed={(title) =>
                 createNode.mutate({ parentId: node.data!.node.id, title })
               }
+              canCreate={canCreate}
               mobileOpen={mobileInfoOpen}
               onCloseMobile={() => setMobileInfoOpen(false)}
             />
@@ -335,6 +344,26 @@ export function App() {
         )}
 
         {templatesOpen && <Templates worldId={world.id} onClose={() => setTemplatesOpen(false)} />}
+
+        {removedOpen && <Removed worldId={world.id} onClose={() => setRemovedOpen(false)} />}
+
+        {pendingRemoval !== null && (
+          <ConfirmDialog
+            title={`${pendingRemoval.action === "archive" ? "Archive" : "Delete"} "${pendingRemoval.node.title}"?`}
+            body={
+              (pendingRemoval.node.children.length > 0
+                ? `The ${pendingRemoval.node.children.length} page(s) inside it go with it. `
+                : "") +
+              (pendingRemoval.action === "archive"
+                ? "It stays in Archived & Trash (DM Menu) until you restore it."
+                : "It goes to the trash and is deleted for good after 30 days unless you restore it.")
+            }
+            confirmLabel={pendingRemoval.action === "archive" ? "Archive" : "Delete"}
+            danger={pendingRemoval.action === "trash"}
+            onConfirm={confirmRemoval}
+            onCancel={() => setPendingRemoval(null)}
+          />
+        )}
 
         {createChooser !== null && (
           <CreateChooser

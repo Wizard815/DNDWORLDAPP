@@ -15,6 +15,8 @@ export const env = {
   sessionSecret: required("SESSION_SECRET", DEV_SECRET),
   logLevel: required("LOG_LEVEL", "info"),
   isProduction: process.env.NODE_ENV === "production",
+  /** The login screen's one-click read-only "Guest Login". Set GUEST_LOGIN=off to remove it. */
+  guestLogin: (process.env.GUEST_LOGIN ?? "on").toLowerCase() !== "off",
 };
 
 export const paths = {

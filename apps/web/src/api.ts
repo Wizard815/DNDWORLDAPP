@@ -45,6 +45,7 @@ import type {
   UpdateTemplateInput,
   UserDto,
   Visibility,
+  RemovedNode,
   WorldDto,
 } from "@dndworldapp/schema";
 
@@ -125,13 +126,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const json = (body: unknown): RequestInit => ({ body: JSON.stringify(body) });
 
 export const api = {
-  setupStatus: () => request<{ needsSetup: boolean }>("/setup/status"),
+  setupStatus: () => request<{ needsSetup: boolean; guestLogin: boolean }>("/setup/status"),
 
   setup: (input: SetupInput) =>
     request<{ user: UserDto; worldId: string }>("/setup", { method: "POST", ...json(input) }),
 
   login: (input: LoginInput) =>
     request<{ user: UserDto }>("/auth/login", { method: "POST", ...json(input) }),
+
+  guestLogin: () => request<{ user: UserDto }>("/auth/guest", { method: "POST" }),
 
   logout: () => request<{ ok: true }>("/auth/logout", { method: "POST" }),
 
@@ -181,6 +184,11 @@ export const api = {
     request<{ node: { id: string } }>(`/nodes/${nodeId}/move`, { method: "POST", ...json(input) }),
 
   archiveNode: (nodeId: string) => request<{ ok: true }>(`/nodes/${nodeId}`, { method: "DELETE" }),
+  trashNode: (nodeId: string) => request<{ ok: true }>(`/nodes/${nodeId}/trash`, { method: "POST" }),
+  restoreNode: (nodeId: string) => request<{ ok: true }>(`/nodes/${nodeId}/restore`, { method: "POST" }),
+  deleteNodeForever: (nodeId: string) => request<{ ok: true }>(`/nodes/${nodeId}/forever`, { method: "DELETE" }),
+  removedNodes: (worldId: string) =>
+    request<{ archived: RemovedNode[]; trashed: RemovedNode[] }>(`/worlds/${worldId}/removed`),
 
   acl: (nodeId: string) => request<{ entries: AclEntryDto[] }>(`/nodes/${nodeId}/acl`),
 

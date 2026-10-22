@@ -14,11 +14,11 @@ import { shortId } from "../lib/id.ts";
 const selectPreset = db.prepare("SELECT * FROM marker_presets WHERE id = ?");
 const selectPresetsForWorld = db.prepare("SELECT * FROM marker_presets WHERE world_id = ? ORDER BY name COLLATE NOCASE");
 const insertPreset = db.prepare(`
-  INSERT INTO marker_presets (id, world_id, name, shape, icon, color, radius, created_at, updated_at)
-  VALUES (@id, @worldId, @name, @shape, @icon, @color, @radius, @now, @now)
+  INSERT INTO marker_presets (id, world_id, name, shape, icon, color, radius, visibility, min_zoom, max_zoom, created_at, updated_at)
+  VALUES (@id, @worldId, @name, @shape, @icon, @color, @radius, @visibility, @minZoom, @maxZoom, @now, @now)
 `);
 const updatePresetStmt = db.prepare(`
-  UPDATE marker_presets SET name = ?, shape = ?, icon = ?, color = ?, radius = ?, updated_at = ? WHERE id = ?
+  UPDATE marker_presets SET name = ?, shape = ?, icon = ?, color = ?, radius = ?, visibility = ?, min_zoom = ?, max_zoom = ?, updated_at = ? WHERE id = ?
 `);
 const deletePresetStmt = db.prepare("DELETE FROM marker_presets WHERE id = ?");
 
@@ -31,6 +31,9 @@ function toDto(row: MarkerPresetRow): MarkerPresetDto {
     icon: row.icon,
     color: row.color,
     radius: row.radius,
+    visibility: row.visibility,
+    minZoom: row.min_zoom,
+    maxZoom: row.max_zoom,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -57,6 +60,9 @@ export function createMarkerPreset(worldId: string, input: CreateMarkerPresetInp
     icon: input.icon ?? null,
     color: input.color ?? null,
     radius: input.radius ?? null,
+    visibility: input.visibility,
+    minZoom: input.minZoom ?? null,
+    maxZoom: input.maxZoom ?? null,
     now: Date.now(),
   });
   return toDto(selectPreset.get(id) as MarkerPresetRow);
@@ -70,6 +76,9 @@ export function updateMarkerPreset(presetId: string, worldId: string, input: Upd
     input.icon !== undefined ? input.icon : existing.icon,
     input.color !== undefined ? input.color : existing.color,
     input.radius !== undefined ? input.radius : existing.radius,
+    input.visibility ?? existing.visibility,
+    input.minZoom !== undefined ? input.minZoom : existing.min_zoom,
+    input.maxZoom !== undefined ? input.maxZoom : existing.max_zoom,
     Date.now(),
     presetId,
   );

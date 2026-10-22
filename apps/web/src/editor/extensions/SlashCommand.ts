@@ -40,9 +40,9 @@ function createItems(bridge: SlashCommandBridge): SlashCommandItem[] {
   return [
   {
     title: "Secret",
-    description: "Hide this part from everyone but the owner/DM",
+    description: "A block only some can read — DM only by default, or Players, or Everyone",
     icon: "🔒",
-    searchTerms: ["dm", "hidden", "hide"],
+    searchTerms: ["dm", "hidden", "hide", "notes", "section", "players"],
     command: (editor) => {
       editor
         .chain()
@@ -52,19 +52,10 @@ function createItems(bridge: SlashCommandBridge): SlashCommandItem[] {
     },
   },
   {
-    title: "Page",
-    description: "Link to another page — existing, or type a new one",
-    icon: "📄",
-    searchTerms: ["link", "wikilink"],
-    command: (editor) => {
-      editor.chain().focus().insertContent("[[").run();
-    },
-  },
-  {
-    title: "Mention",
-    description: "Link to an existing page",
+    title: "Link a page",
+    description: "Pick a page, or type a new name to create one (same as typing @)",
     icon: "@",
-    searchTerms: ["link"],
+    searchTerms: ["link", "wikilink", "mention", "page"],
     command: (editor) => {
       editor.chain().focus().insertContent("@").run();
     },
@@ -75,32 +66,6 @@ function createItems(bridge: SlashCommandBridge): SlashCommandItem[] {
     icon: "🖼️",
     searchTerms: ["photo", "picture", "upload"],
     command: () => bridge.triggerImageUpload(),
-  },
-  {
-    title: "Section",
-    description: "A player-visible section, editable in place",
-    icon: "📝",
-    searchTerms: ["post", "notes"],
-    command: async (editor) => {
-      const postId = await bridge.createSection();
-      editor.chain().focus().insertContent({ type: "postSection", attrs: { postId } }).run();
-    },
-  },
-  {
-    title: "DM Notes",
-    description: "Hidden from everyone but the owner/DM",
-    icon: "🗒️",
-    searchTerms: ["post", "hidden"],
-    // The exact same mechanism as "Secret" — no separate post, no Edit
-    // button, live inline like the rest of the document. Two menu entries
-    // for the one thing people actually reach for (see SecretBlock.ts).
-    command: (editor) => {
-      editor
-        .chain()
-        .focus()
-        .insertContent({ type: "secretBlock", content: [{ type: "paragraph" }] })
-        .run();
-    },
   },
   {
     title: "Columns",

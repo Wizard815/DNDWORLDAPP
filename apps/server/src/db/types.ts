@@ -1,4 +1,4 @@
-import type { FieldType, FieldVisibility, MarkerShape, NodeKind, Role, Visibility } from "@dndworldapp/schema";
+import type { FieldType, FieldVisibility, MarkerShape, NodeKind, NodeVisibility, Role, Visibility } from "@dndworldapp/schema";
 
 /** Row shapes, mirroring migrations/*.sql. SQLite booleans are 0/1 integers. */
 
@@ -48,8 +48,13 @@ export type NodeRow = {
   icon: string | null;
   cover_asset_id: string | null;
   sort_key: string;
-  visibility: Visibility;
+  visibility: NodeVisibility;
+  /** Resolved level/owner — see migration 0016 and services/nodes.ts recomputeEffective(). */
+  effective_visibility: Visibility;
+  effective_owner_id: string | null;
   is_archived: number;
+  /** Trash: set when trashed, purged 30 days later. NULL for live and merely-archived pages. */
+  deleted_at: number | null;
   created_by: string | null;
   created_at: number;
   updated_at: number;
@@ -164,6 +169,9 @@ export type MarkerPresetRow = {
   icon: string | null;
   color: string | null;
   radius: number | null;
+  visibility: FieldVisibility;
+  min_zoom: number | null;
+  max_zoom: number | null;
   created_at: number;
   updated_at: number;
 }

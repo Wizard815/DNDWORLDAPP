@@ -386,6 +386,38 @@ a.tag-chip:hover {
   color: var(--color-secret);
   margin-bottom: 0.4em;
 }
+.secret-block[data-level="members"] {
+  border-color: var(--color-line-strong);
+  background: var(--color-raised);
+}
+.secret-block[data-level="members"] .secret-block-label,
+.secret-block[data-level="members"] .secret-block-level {
+  color: var(--color-fg-subtle);
+}
+.secret-block[data-level="public"] {
+  border-color: var(--color-success-line);
+  background: color-mix(in srgb, var(--color-success) 8%, transparent);
+}
+.secret-block[data-level="public"] .secret-block-label,
+.secret-block[data-level="public"] .secret-block-level {
+  color: var(--color-success);
+}
+.secret-block-level {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.secret-block-level:hover,
+.secret-block-level:focus-visible {
+  border-color: currentColor;
+  outline: none;
+}
 .secret-block-reveal {
   font-size: 10px;
   font-weight: 500;
@@ -433,6 +465,10 @@ a.tag-chip:hover {
   display: grid;
   gap: 1.5em;
   margin: 1em 0;
+}
+/* NodeViewContent wraps the column children in one extra div; without this the grid has a single item and every column stacks. */
+[data-columns] > [data-node-view-content-react] {
+  display: contents;
 }
 [data-columns][data-layout="1-1"] {
   grid-template-columns: 1fr 1fr;
