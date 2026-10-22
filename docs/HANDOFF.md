@@ -61,7 +61,7 @@ planned — see §9.4.
 Verified by:
 - `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 351 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 352 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`

@@ -1856,6 +1856,20 @@ await dm("PATCH", `/nodes/${secretNode.id}`, { title: "Event test: DM only (rena
 await sleep(300);
 check("the DM gets node.changed for their DM-only page", dmEvents.messages.some((m) => m.type === "node.changed" && m.nodeId === secretNode.id), dmEvents.messages);
 check("LEAK: a player never gets an event naming a DM-only page", !playerEvents.messages.some((m) => m.nodeId === secretNode.id), playerEvents.messages);
+// An autosave (body only) is a page change, not a tree change.
+playerEvents.messages.length = 0;
+const publicNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Event test: public", parentId: rootId })).body.node;
+await sleep(200);
+playerEvents.messages.length = 0;
+await dm("PATCH", `/nodes/${publicNode.id}`, { bodyMd: "Typing away…" });
+await sleep(300);
+check(
+  "a body-only autosave sends node.changed but not tree.changed",
+  playerEvents.messages.some((m) => m.type === "node.changed" && m.nodeId === publicNode.id) &&
+    !playerEvents.messages.some((m) => m.type === "tree.changed"),
+  playerEvents.messages,
+);
+await dm("DELETE", `/nodes/${publicNode.id}`);
 await dm("DELETE", `/nodes/${secretNode.id}`);
 playerEvents.socket.close();
 dmEvents.socket.close();

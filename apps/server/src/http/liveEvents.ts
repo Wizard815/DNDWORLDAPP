@@ -39,6 +39,16 @@ function ownerOf(path: string): string | null {
   return null;
 }
 
+/**
+ * Whether a page PATCH changes anything the tree shows. Autosave sends only
+ * `bodyMd` every few seconds while someone types; announcing that as a tree
+ * change would make every connected client refetch the whole tree that often.
+ */
+function touchesTree(body: unknown): boolean {
+  if (body === null || typeof body !== "object") return true;
+  return Object.keys(body).some((key) => key !== "bodyMd");
+}
+
 export function registerLiveEvents(app: FastifyInstance): void {
   app.addHook("preHandler", async (request) => {
     if (!WRITE_METHODS.has(request.method)) return;
@@ -72,7 +82,9 @@ export function registerLiveEvents(app: FastifyInstance): void {
       // A page's own edit, or its posts/fields/ACL/template: the page changed,
       // and title/icon/visibility/ACL changes can reshape the tree too.
       publishForNode(nodeId, { type: "node.changed", nodeId });
-      if (sub === undefined || sub === "acl") publishForNode(nodeId, { type: "tree.changed" });
+      if (sub === "acl" || (sub === undefined && touchesTree(request.body))) {
+        publishForNode(nodeId, { type: "tree.changed" });
+      }
     }
   });
 }

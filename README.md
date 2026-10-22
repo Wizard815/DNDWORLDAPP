@@ -213,7 +213,7 @@ docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.js
 
 ```bash
 npm test          # unit: fractional indexing, wiki-link parsing, secret blocks
-npm run smoke     # 351 end-to-end API checks (needs an EMPTY data/ dir + running server)
+npm run smoke     # 352 end-to-end API checks (needs an EMPTY data/ dir + running server)
 npm run test:mcp  # drives the MCP server over stdio (needs a running server)
 npm run typecheck
 ```
