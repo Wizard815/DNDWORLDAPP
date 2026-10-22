@@ -574,11 +574,36 @@ export function registerTools(server: McpServer, client: WorldClient): void {
               // description for why these are kept separate rather than merged.
               const party = m.parentMarkerId !== null ? ` (party group: [${m.parentMarkerId}])` : "";
               const displayGroup = m.groupId !== null ? ` (display group: [${m.groupId}])` : "";
-              return `- [${m.id}] ${m.shape} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${vertices}${target}${vis}${party}${displayGroup}`;
+              const icon = m.icon !== null ? ` ${m.icon}` : "";
+              return `- [${m.id}] ${m.shape}${icon} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${vertices}${target}${vis}${party}${displayGroup}`;
             }),
           );
         }
         return text(parts.join("\n"));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "search_icons",
+    {
+      title: "Search the marker icon library",
+      description:
+        "Search ~5,500 bundled icons (game-icons.net fantasy/RPG art, plus Font Awesome) by name. Pass a result's ref as `icon` to place_marker or update_marker. Searches names only, in English: try concrete nouns like 'castle', 'skull', 'ship', 'dragon'.",
+      inputSchema: {
+        query: z.string().describe("Words to look for in icon names, e.g. 'tower' or 'crossed swords'."),
+        set: z.enum(["game-icons", "fa6-solid"]).optional().describe("Limit to one collection. game-icons is the fantasy-art set."),
+        limit: z.number().int().min(1).max(200).optional().describe("Default 40."),
+      },
+    },
+    async ({ query, set, limit }) => {
+      try {
+        const { icons, total } = await client.searchIcons(query, set, limit ?? 40);
+        if (icons.length === 0) return text(`No icons match "${query}". Try a simpler or different noun.`);
+        const more = total > icons.length ? `\n(${total - icons.length} more — refine the query to see them)` : "";
+        return text(`${total} match${total === 1 ? "" : "es"}:\n${icons.map((i) => i.ref).join("\n")}${more}`);
       } catch (error) {
         return fail(error);
       }
@@ -598,7 +623,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         y: z.number().describe("Pixel y position."),
         target_node_id: z.string().nullable().optional().describe("A page this marker links to and inherits title/icon from."),
         label: z.string().optional().describe("Overrides the linked page's title, or names an unlinked marker."),
-        icon: z.string().optional().describe("A single emoji, overriding the linked page's icon."),
+        icon: z.string().optional().describe("A single emoji, or a library icon ref from search_icons (e.g. \"game-icons:castle\"). Overrides the linked page's icon."),
         color: z.string().optional(),
         radius: z
           .number()
@@ -669,7 +694,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         y: z.number().optional(),
         target_node_id: z.string().nullable().optional(),
         label: z.string().nullable().optional(),
-        icon: z.string().nullable().optional(),
+        icon: z.string().nullable().optional().describe("A single emoji, or a library icon ref from search_icons (e.g. \"game-icons:castle\"). Overrides the linked page's icon."),
         color: z.string().nullable().optional(),
         radius: z.number().positive().nullable().optional().describe("Circle markers only, same pixel space as x/y."),
         points: z

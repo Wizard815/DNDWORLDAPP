@@ -727,6 +727,50 @@ export const createdShareLinkDtoSchema = z.object({
 export type CreatedShareLinkDto = z.infer<typeof createdShareLinkDtoSchema>;
 
 // ---------------------------------------------------------------------------
+// Icon library — game-icons.net and Font Awesome's free solid set, bundled on
+// the server. Stored in the same `icon` column an emoji goes in, as a standard
+// Iconify reference ("game-icons:castle", "fa6-solid:skull"), so no migration
+// and no new column: anything that isn't a valid reference is an emoji.
+// ---------------------------------------------------------------------------
+
+export const ICON_SETS = {
+  "game-icons": { label: "Game icons", attribution: "game-icons.net, CC BY 3.0" },
+  "fa6-solid": { label: "Font Awesome", attribution: "Font Awesome Free 6, CC BY 4.0" },
+} as const;
+export type IconSet = keyof typeof ICON_SETS;
+
+const ICON_REF_PATTERN = /^(game-icons|fa6-solid):([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+
+/** `{ set, name }` when `icon` is a library reference, `null` when it's an emoji (or empty). */
+export function parseIconRef(icon: string | null | undefined): { set: IconSet; name: string } | null {
+  if (icon == null) return null;
+  const match = ICON_REF_PATTERN.exec(icon);
+  if (match === null) return null;
+  return { set: match[1] as IconSet, name: match[2]! };
+}
+
+/** Where the server serves a library icon's SVG. Public and immutable — icons are not campaign data. */
+export function iconSvgUrl(ref: { set: IconSet; name: string }): string {
+  return `/icons/${ref.set}/${ref.name}.svg`;
+}
+
+export const iconSetSchema = z.enum(["game-icons", "fa6-solid"]);
+
+export const iconHitSchema = z.object({
+  /** The value to store in an `icon` field, e.g. "game-icons:castle". */
+  ref: z.string(),
+  set: iconSetSchema,
+  name: z.string(),
+});
+export type IconHit = z.infer<typeof iconHitSchema>;
+
+export const iconSearchQuerySchema = z.object({
+  q: z.string().trim().max(100).default(""),
+  set: iconSetSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(120),
+});
+
+// ---------------------------------------------------------------------------
 // Assets
 // ---------------------------------------------------------------------------
 

@@ -20,6 +20,7 @@ export default defineConfig({
       "/api": "http://localhost:8080",
       "/media": "http://localhost:8080",
       "/tiles": "http://localhost:8080",
+      "/icons": "http://localhost:8080",
       "/healthz": "http://localhost:8080",
     },
   },

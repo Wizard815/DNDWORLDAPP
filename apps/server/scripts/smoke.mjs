@@ -1507,6 +1507,54 @@ await dm("DELETE", `/markers/${markerInGroup.body.marker.id}`);
 await dm("DELETE", `/map-groups/${statue.body.group.id}`);
 await dm("DELETE", `/map-groups/${regions.body.group.id}`);
 
+console.log("\n== icon library ==");
+const anonymous = makeSession();
+const iconsAnon = await anonymous("GET", "/icons?q=castle");
+check("icon search needs a signed-in user", iconsAnon.status === 401, iconsAnon.body);
+const castleSearch = await dm("GET", "/icons?q=castle&limit=5");
+check(
+  "icon search finds game-icons:castle first for 'castle'",
+  castleSearch.status === 200 && castleSearch.body.icons[0]?.ref === "game-icons:castle" && castleSearch.body.total >= 1,
+  castleSearch.body,
+);
+const faOnly = await dm("GET", "/icons?q=skull&set=fa6-solid");
+check(
+  "icon search can be limited to one set",
+  faOnly.status === 200 && faOnly.body.icons.length > 0 && faOnly.body.icons.every((i) => i.set === "fa6-solid"),
+  faOnly.body,
+);
+const everything = await dm("GET", "/icons?limit=1");
+check("the library holds ~5,500 icons", everything.status === 200 && everything.body.total > 5000, everything.body.total);
+
+const SERVER_ROOT = BASE.replace(/\/api\/v1$/, "");
+const svgRes = await fetch(`${SERVER_ROOT}/icons/game-icons/castle.svg`);
+const svgText = await svgRes.text();
+check(
+  "an icon's SVG is served without auth, as image/svg+xml",
+  svgRes.status === 200 && (svgRes.headers.get("content-type") ?? "").startsWith("image/svg+xml") && svgText.startsWith("<svg"),
+  { status: svgRes.status, type: svgRes.headers.get("content-type") },
+);
+check(
+  "an icon's SVG is sent with nosniff and a script-blocking CSP",
+  svgRes.headers.get("x-content-type-options") === "nosniff" &&
+    (svgRes.headers.get("content-security-policy") ?? "").includes("default-src 'none'"),
+  Object.fromEntries(svgRes.headers),
+);
+const missingSvg = await fetch(`${SERVER_ROOT}/icons/game-icons/not-a-real-icon.svg`);
+check("an unknown icon 404s instead of falling through to the app shell", missingSvg.status === 404, missingSvg.status);
+const badSet = await fetch(`${SERVER_ROOT}/icons/other-set/castle.svg`);
+check("an unknown icon set 404s", badSet.status === 404, badSet.status);
+
+const iconMarker = await dm("POST", `/nodes/${mapNode.id}/map/markers`, { x: 5, y: 5, icon: "game-icons:castle" });
+check("a marker can use a library icon", iconMarker.status === 201 && iconMarker.body.marker.icon === "game-icons:castle", iconMarker.body);
+const fakeIcon = await dm("POST", `/nodes/${mapNode.id}/map/markers`, { x: 5, y: 5, icon: "game-icons:made-up-dragon" });
+check("a marker with an unknown library icon is rejected", fakeIcon.status === 400, fakeIcon.body);
+const fakeIconUpdate = await dm("PATCH", `/markers/${iconMarker.body.marker.id}`, { icon: "fa6-solid:nope-nope" });
+check("updating a marker to an unknown library icon is rejected", fakeIconUpdate.status === 400, fakeIconUpdate.body);
+const emojiStillFine = await dm("PATCH", `/markers/${iconMarker.body.marker.id}`, { icon: "🐉" });
+check("an emoji icon is still accepted as-is", emojiStillFine.status === 200 && emojiStillFine.body.marker.icon === "🐉", emojiStillFine.body);
+await dm("DELETE", `/markers/${iconMarker.body.marker.id}`);
+
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);
 check("archive succeeds", archived.status === 200, archived.body);

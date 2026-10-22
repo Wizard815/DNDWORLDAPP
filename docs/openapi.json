@@ -68,6 +68,10 @@
       "description": "API tokens for scripts and MCP"
     },
     {
+      "name": "icons",
+      "description": "The bundled icon library for map markers"
+    },
+    {
       "name": "assets",
       "description": "Uploads"
     }
@@ -4556,6 +4560,123 @@
         }
       }
     },
+    "/icons": {
+      "get": {
+        "tags": [
+          "icons"
+        ],
+        "summary": "Search the bundled icon library",
+        "description": "About 5,500 icons from game-icons.net (CC BY 3.0) and Font Awesome Free (CC BY 4.0). Store a hit's `ref` in any marker's `icon` field. The SVG itself is served, without auth, at `/icons/{set}/{name}.svg`.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Words to match against icon names; empty lists everything."
+          },
+          {
+            "name": "set",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "game-icons",
+                "fa6-solid"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/IconHit"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "icons",
+                    "total"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tokens": {
       "get": {
         "tags": [
@@ -5211,6 +5332,30 @@
               "additionalProperties": false
             }
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "icon": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "icon"
+              ],
+              "additionalProperties": false
+            }
+          },
           "canEdit": {
             "type": "boolean"
           }
@@ -5233,6 +5378,7 @@
           "breadcrumb",
           "children",
           "backlinks",
+          "tags",
           "canEdit"
         ],
         "additionalProperties": false
@@ -5778,6 +5924,10 @@
             "type": "string",
             "nullable": true
           },
+          "radius": {
+            "type": "number",
+            "nullable": true
+          },
           "members": {
             "type": "string",
             "nullable": true
@@ -5818,6 +5968,10 @@
           "parentMarkerId": {
             "type": "string",
             "nullable": true
+          },
+          "groupId": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -5830,11 +5984,13 @@
           "label",
           "icon",
           "color",
+          "radius",
           "members",
           "revealed",
           "visibility",
           "targetNode",
-          "parentMarkerId"
+          "parentMarkerId",
+          "groupId"
         ],
         "additionalProperties": false
       },
@@ -5864,6 +6020,30 @@
         ],
         "additionalProperties": false
       },
+      "IconHit": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string"
+          },
+          "set": {
+            "type": "string",
+            "enum": [
+              "game-icons",
+              "fa6-solid"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "set",
+          "name"
+        ],
+        "additionalProperties": false
+      },
       "SetupInput": {
         "type": "object",
         "properties": {
@@ -5880,7 +6060,7 @@
           },
           "password": {
             "type": "string",
-            "minLength": 10,
+            "minLength": 1,
             "maxLength": 512
           },
           "worldName": {
@@ -5927,7 +6107,7 @@
           },
           "newPassword": {
             "type": "string",
-            "minLength": 10,
+            "minLength": 1,
             "maxLength": 512
           }
         },
@@ -5976,7 +6156,7 @@
           },
           "password": {
             "type": "string",
-            "minLength": 10,
+            "minLength": 1,
             "maxLength": 512
           }
         },
@@ -5991,7 +6171,7 @@
         "properties": {
           "newPassword": {
             "type": "string",
-            "minLength": 10,
+            "minLength": 1,
             "maxLength": 512
           }
         },
@@ -6570,6 +6750,12 @@
             "maxLength": 60,
             "nullable": true
           },
+          "radius": {
+            "type": "number",
+            "exclusiveMinimum": true,
+            "minimum": 0,
+            "nullable": true
+          },
           "members": {
             "type": "string",
             "maxLength": 2000,
@@ -6585,6 +6771,10 @@
             "default": "members"
           },
           "parentMarkerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "groupId": {
             "type": "string",
             "nullable": true
           }
@@ -6627,6 +6817,12 @@
             "maxLength": 60,
             "nullable": true
           },
+          "radius": {
+            "type": "number",
+            "exclusiveMinimum": true,
+            "minimum": 0,
+            "nullable": true
+          },
           "members": {
             "type": "string",
             "maxLength": 2000,
@@ -6642,6 +6838,14 @@
               "members",
               "dm"
             ]
+          },
+          "parentMarkerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "groupId": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false

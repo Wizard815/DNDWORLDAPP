@@ -16,6 +16,8 @@ import type {
   FieldType,
   FieldVisibility,
   GrantAclInput,
+  IconHit,
+  IconSet,
   LoginInput,
   MapDto,
   MapGroupDto,
@@ -278,6 +280,12 @@ export const api = {
     request<{ ok: true }>(`/map-groups/${groupId}/move`, { method: "POST", ...json(input) }),
 
   deleteMapGroup: (groupId: string) => request<{ ok: true }>(`/map-groups/${groupId}`, { method: "DELETE" }),
+
+  searchIcons: (q: string, set?: IconSet, limit = 120) => {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    if (set !== undefined) params.set("set", set);
+    return request<{ icons: IconHit[]; total: number }>(`/icons?${params.toString()}`);
+  },
 
   uploadAsset: async (worldId: string, file: File): Promise<AssetDto> => {
     const form = new FormData();

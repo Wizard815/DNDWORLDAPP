@@ -7,6 +7,7 @@ import type { FieldVisibility, MapGroupDto, MapMarkerDto, MarkerPoint, NodeDetai
 import { formatMarkerPoints, mapTileUrlTemplate, parseMarkerPoints } from "@dndworldapp/schema";
 import { ApiError, api } from "../api.ts";
 import { navigate } from "../lib/nav.ts";
+import { Glyph, glyphHtml } from "./Glyph.tsx";
 import { IconPicker } from "./IconPicker.tsx";
 
 /**
@@ -103,7 +104,7 @@ function iconFor(marker: MapMarkerDto): L.DivIcon {
   const fallbackIcon = marker.shape === "token" ? DEFAULT_TOKEN_ICON : "📍";
   return L.divIcon({
     className: "",
-    html: `<div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:${bg};border:2px solid #17181b;box-shadow:0 1px 3px rgba(0,0,0,.5);font-size:15px;line-height:1">${escapeHtml(marker.icon ?? fallbackIcon)}</div>`,
+    html: `<div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:${bg};border:2px solid #17181b;box-shadow:0 1px 3px rgba(0,0,0,.5);font-size:15px;line-height:1">${glyphHtml(marker.icon ?? fallbackIcon, escapeHtml, "#fff")}</div>`,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
   });
@@ -1483,7 +1484,7 @@ function MarkerListPanel({
               onClick={() => onSelect(m)}
               className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs text-fg hover:bg-press"
             >
-              <span className="w-4 shrink-0 text-center">{iconTextOf(m)}</span>
+              <Glyph icon={iconTextOf(m)} className="w-4 shrink-0 text-center" />
               <span className="min-w-0 flex-1 truncate">{nameOf(m)}</span>
               {m.groupId !== null && groupsById.get(m.groupId) !== undefined && (
                 <span className="shrink-0 truncate text-[10px] text-fg-muted">{groupsById.get(m.groupId)!.name}</span>
@@ -1617,9 +1618,11 @@ function MarkerInspector({
                   value={marker.icon}
                   disabled={false}
                   onChange={(icon) => onSave({ icon })}
+                  allowLibrary
+                  fallback={marker.targetNode?.icon ?? (marker.shape === "token" ? DEFAULT_TOKEN_ICON : "📍")}
                 />
                 <span className="text-[10px] text-fg-muted">
-                  {marker.icon !== null ? "Click to change" : (marker.targetNode?.icon ?? "Click to pick")}
+                  {marker.icon !== null ? "Click to change" : marker.targetNode !== null ? "From the linked page" : "Click to pick"}
                 </span>
               </div>
             </div>

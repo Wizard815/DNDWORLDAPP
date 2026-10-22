@@ -39,6 +39,7 @@ const FieldDto = ref("FieldDto", S.fieldDtoSchema);
 const MapDto = ref("MapDto", S.mapDtoSchema);
 const MapMarkerDto = ref("MapMarkerDto", S.mapMarkerDtoSchema);
 const ApiError = ref("ApiError", S.apiErrorSchema);
+const IconHit = ref("IconHit", S.iconHitSchema);
 
 const SetupInput = ref("SetupInput", S.setupInputSchema);
 const LoginInput = ref("LoginInput", S.loginInputSchema);
@@ -569,6 +570,25 @@ const paths: Json = {
     },
   },
 
+  "/icons": {
+    get: {
+      tags: ["icons"],
+      summary: "Search the bundled icon library",
+      description:
+        "About 5,500 icons from game-icons.net (CC BY 3.0) and Font Awesome Free (CC BY 4.0). " +
+        "Store a hit's `ref` in any marker's `icon` field. The SVG itself is served, without " +
+        "auth, at `/icons/{set}/{name}.svg`.",
+      parameters: [
+        { name: "q", in: "query", schema: { type: "string" }, description: "Words to match against icon names; empty lists everything." },
+        { name: "set", in: "query", schema: { type: "string", enum: ["game-icons", "fa6-solid"] } },
+        { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 120 } },
+      ],
+      responses: {
+        200: ok(obj({ icons: arr(IconHit), total: { type: "integer" } }, ["icons", "total"])),
+        ...ERRORS,
+      },
+    },
+  },
   "/tokens": {
     get: {
       tags: ["tokens"],
@@ -648,6 +668,7 @@ export function buildOpenApiDocument(version = "0.1.0"): Json {
         description: "Anonymous, no-account read access to one page's subtree via a URL token",
       },
       { name: "tokens", description: "API tokens for scripts and MCP" },
+      { name: "icons", description: "The bundled icon library for map markers" },
       { name: "assets", description: "Uploads" },
     ],
     paths,

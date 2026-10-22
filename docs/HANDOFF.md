@@ -61,7 +61,7 @@ planned — see §9.4.
 Verified by:
 - `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 264 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 276 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
@@ -70,7 +70,7 @@ Verified by:
   markers, and a player-can-list-groups-without-edit-rights check — see the "Resolved"
   bullet under Known open items for why that last one is a real bug, not a formality).
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All
-  pass (58 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
+  pass (80 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
   `== map display groups ==` section for the 5 new group-CRUD tools).
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
@@ -1348,6 +1348,29 @@ method, not the app). Leading theory is a stale tab holding an old JS bundle acr
 which page, immediately before vs. after) if it still reproduces. Do not assume this is
 fixed; it is unconfirmed either way.
 
+### 7.8a The marker icon library
+
+A marker's `icon` is either an emoji or an Iconify reference — `game-icons:castle`,
+`fa6-solid:skull` — stored in the same column, so there was no migration
+(`parseIconRef()` in `packages/schema` tells them apart). The two collections
+(`@iconify-json/game-icons`, 4,134 icons; `@iconify-json/fa6-solid`, 1,407) are server
+dependencies, loaded into memory on first use by `services/icons.ts`. The browser never
+downloads them: `GET /api/v1/icons?q=` searches names (signed-in only, like any read),
+and `GET /icons/{set}/{name}.svg` serves one icon, **without auth** on purpose — it is
+bundled open-licensed art, not campaign data, and an anonymous share-link map shows
+marker icons too. Those SVGs go out with `nosniff` and a `default-src 'none'` CSP.
+
+The client draws a library icon as a CSS mask over that SVG (`components/Glyph.tsx`),
+so it takes a color like text does; Leaflet's `divIcon` gets the same thing as raw HTML
+through `glyphHtml()`. Creating or updating a marker with a library-prefixed value that
+names no real icon is a 400 (`assertKnownIcon`) — mostly for MCP clients that guess
+names instead of calling `search_icons`.
+
+Only markers offer the library today (`IconPicker`'s `allowLibrary`). Page icons are
+printed as plain text in the tree, breadcrumbs, mentions, the quick switcher, share
+views and MCP output; each of those needs `Glyph` before pages can use library icons —
+that is the "icons-as-images" item in ROADMAP §4.
+
 ### 7.9 Sidebar right-click menu, the "+ New" chooser, and pinned pages
 
 Three additions the owner asked for after comparing this app to a LegendKeeper trial:
@@ -1510,7 +1533,7 @@ Registered: `list_worlds`, `get_tree`, `get_subtree`, `find_nodes`, `get_node`,
 `list_templates`, `list_unresolved_links`, `create_node`, `update_node`, `move_node`,
 `archive_node`, `create_post`, `update_post`, `set_node_template`, `set_field`,
 `delete_field`, `apply_template` (see §7.7), `get_map`, `place_marker`, `update_marker`,
-`delete_marker` (see §7.8). `get_subtree` renders just one page's descendant hierarchy as
+`delete_marker`, `search_icons` (see §7.8). `get_subtree` renders just one page's descendant hierarchy as
 an indented outline (client-side filter over the same `GET .../tree` payload `get_tree`
 already uses — no new server route), for "find the family/faction/region node, then see
 what's nested under it" without pulling in the whole world. Plus `add_event` and

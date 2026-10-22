@@ -5,7 +5,24 @@ ordering lives in [ROADMAP-2026-09-23.md](ROADMAP-2026-09-23.md); what is alread
 lives in [HANDOFF.md](HANDOFF.md) §3 and [PLAN.md](PLAN.md)'s status table. Finished work
 is not kept here — `git log` and HANDOFF have it.
 
-## Just done (2026-10-22): UI audit and cleanup
+## Just done (2026-10-22)
+
+### Marker icon library
+
+~5,500 searchable icons (game-icons.net + Font Awesome) as a third marker icon source
+beside emoji and image upload — an "Icon library" tab in the marker inspector's icon
+picker, a `search_icons` MCP tool, `GET /api/v1/icons`, and per-icon SVGs at
+`/icons/{set}/{name}.svg`. Stored as `game-icons:castle` in the existing `icon` column.
+Details in HANDOFF §7.8a.
+
+### Loose ends from the UI audit
+
+- The right-hand panel (tags, backlinks, wanted pages, fields) opens as a drawer from an
+  "ⓘ Info" button below 1024px wide — before, it simply wasn't reachable on a phone.
+- The map editor (Leaflet + `MapView`) is a lazy-loaded 247 KB chunk, so ordinary pages
+  no longer download it.
+
+### UI audit and cleanup
 
 - **Design tokens + themes.** Every color now comes from a token in
   `apps/web/src/styles.css` (`bg-surface`, `text-fg-muted`, `border-line`, …) — about 700
@@ -31,7 +48,7 @@ is not kept here — `git log` and HANDOFF have it.
 
 1. **Map-editor polish** (confirmed with the owner 2026-09-23; the browse panel and the
    collapsible edit toolbar are already done):
-   1. Searchable icon library — a third icon source next to emoji and image upload.
+   1. ~~Searchable icon library~~ — done, see above.
    2. Reusable marker templates — named presets of icon/color/shape.
    3. Visibility-by-zoom — a marker fades in or out past a per-marker zoom range,
       set with a two-handle slider in `MarkerInspector`.
@@ -59,11 +76,12 @@ is not kept here — `git log` and HANDOFF have it.
 
 - `@fastify/static` is still on 8.x with advisories that were shown non-exploitable
   here (AUDIT-2026-08-24 §3.1); a major bump wants a changelog read first.
-- Archiving a map page does not delete its `tiles/<nodeId>/` directory.
-- The right-hand panel (tags, backlinks, wanted pages, fields) is hidden below 1024px
-  with no way to open it; on a phone those are unreachable.
-- The web bundle is one ~1 MB chunk (Vite warns). Lazy-loading `MapView` (Leaflet) would
-  take most of that off pages that are not maps.
+- Archiving a map page leaves its `tiles/<nodeId>/` directory on disk. That is correct
+  as things stand — archive is reversible (`PATCH {isArchived:false}`) and deleting the
+  tiles would break a restore — so cleanup belongs with a future hard delete/purge.
+- The main web chunk is still ~870 KB (mostly TipTap), so Vite still warns.
+- Page icons can't use the icon library yet — see HANDOFF §7.8a for what that needs
+  (ROADMAP §4's icons-as-images).
 - Several pickers in `MapView.tsx` and `Posts.tsx` still use native `<select>`s, which
   ignore the theme in some browsers' dropdown lists.
 

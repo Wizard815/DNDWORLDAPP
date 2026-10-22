@@ -5,6 +5,7 @@ import type {
   CreateNodeInput,
   CreatePostInput,
   FieldDto,
+  IconHit,
   MapDto,
   MapGroupDto,
   MapMarkerDto,
@@ -115,6 +116,12 @@ export class WorldClient {
   search(worldId: string, q: string, limit = 25) {
     const query = `q=${encodeURIComponent(q)}&limit=${limit}`;
     return this.request<{ hits: SearchHit[] }>("GET", `/worlds/${worldId}/search?${query}`);
+  }
+
+  searchIcons(q: string, set?: string, limit = 40) {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    if (set !== undefined) params.set("set", set);
+    return this.request<{ icons: IconHit[]; total: number }>("GET", `/icons?${params.toString()}`);
   }
 
   unresolvedLinks(worldId: string) {

@@ -12,6 +12,7 @@ import { assertProductionSafe, env, paths } from "./env.ts";
 import { assertScope, attachUser, viewerForNode } from "./http/context.ts";
 import { HttpError, forbidden } from "./lib/errors.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { iconRoutes } from "./routes/icons.ts";
 import { mapRoutes } from "./routes/maps.ts";
 import { nodeRoutes } from "./routes/nodes.ts";
 import { openApiRoutes } from "./routes/openapi.ts";
@@ -154,6 +155,7 @@ await app.register(mapRoutes);
 await app.register(shareRoutes);
 await app.register(tokenRoutes);
 await app.register(openApiRoutes);
+await app.register(iconRoutes);
 
 // Uploaded images, under /media so they cannot collide with the client bundle
 // that Vite emits into /assets. Content-addressed, so they cache forever.
@@ -183,7 +185,8 @@ if (fs.existsSync(webDist)) {
     // uploaded) must 404 for real — falling through to the SPA shell would silently
     // hand back index.html with a 200, which content-type-agnostic callers (an <img>
     // tag, a fetch() checking only .ok) can't distinguish from a genuine hit.
-    if (request.url.startsWith("/api/") || request.url.startsWith("/media/") || request.url.startsWith("/tiles/")) {
+    const url = request.url;
+    if (url.startsWith("/api/") || url.startsWith("/media/") || url.startsWith("/tiles/") || url.startsWith("/icons/")) {
       return reply.code(404).send({ error: { code: "not_found", message: "No such endpoint." } });
     }
     return reply.sendFile("index.html");

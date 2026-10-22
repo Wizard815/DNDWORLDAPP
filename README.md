@@ -113,8 +113,10 @@ uploaded images. Backup is a copy of that directory.
   A marker linked to another page shows that page's title and icon automatically unless
   you override them — and if the linked page is itself a map, clicking the pin opens it,
   giving you nested maps for free. Images over 2000px tile automatically in the
-  background (no page reload needed once ready). Fog of war and party/army tokens are
-  next.
+  background (no page reload needed once ready). Party/army tokens and toggleable
+  display groups are built; fog of war is next.
+  A marker's icon can be an emoji or one of ~5,500 searchable library icons
+  (game-icons.net's fantasy art plus Font Awesome), served by the app itself.
 - **A sidebar row menu, reachable by right-click or its own "⋯" button** — add a page
   inside, rename in place, pin, or archive, without first opening the page.
 - **Manually pinned pages** — a strip of quick-access chips at the top of the app,
@@ -203,7 +205,7 @@ docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.js
 
 ```bash
 npm test          # unit: fractional indexing, wiki-link parsing, secret blocks
-npm run smoke     # 193 end-to-end API checks (needs an EMPTY data/ dir + running server)
+npm run smoke     # 276 end-to-end API checks (needs an EMPTY data/ dir + running server)
 npm run test:mcp  # drives the MCP server over stdio (needs a running server)
 npm run typecheck
 ```
@@ -213,3 +215,11 @@ tree, a direct fetch by id, the posts list, search, and inline `:::secret` block
 both node and post bodies, including that a viewer who cannot see one is blocked from
 resaving over it) — plus the token scope rules. The MCP test additionally proves a
 read-only token cannot write through an assistant.
+
+## Third-party artwork
+
+Marker icons are bundled from [game-icons.net](https://game-icons.net) (CC BY 3.0, by
+Lorc, Delapouite and contributors) and [Font Awesome Free](https://fontawesome.com)
+(icons CC BY 4.0), via the `@iconify-json/game-icons` and `@iconify-json/fa6-solid`
+packages. The icon picker shows this attribution too. Inter and Fraunces are under the
+SIL Open Font License.

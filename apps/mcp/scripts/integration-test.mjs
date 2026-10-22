@@ -162,6 +162,7 @@ for (const expected of [
   "delete_field",
   "apply_template",
   "get_map",
+  "search_icons",
   "place_marker",
   "update_marker",
   "delete_marker",
@@ -362,6 +363,20 @@ check("get_map no longer shows a party group for the ungrouped token", !mapUngro
 
 await callTool("delete_marker", { marker_id: squadId });
 await callTool("delete_marker", { marker_id: partyId });
+
+console.log("\n== icon library ==");
+const iconHits = await callTool("search_icons", { query: "castle", limit: 5 });
+check("search_icons returns library refs", !iconHits.isError && iconHits.text.includes("game-icons:castle"), iconHits.text);
+const iconNone = await callTool("search_icons", { query: "zzzqqq" });
+check("search_icons says so when nothing matches", !iconNone.isError && iconNone.text.includes("No icons match"), iconNone.text);
+const iconPin = await callTool("place_marker", { node_id: mapNodeId, x: 3, y: 3, label: "Keep", icon: "game-icons:castle" });
+const iconPinId = iconPin.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+check("place_marker accepts a library icon", !iconPin.isError && typeof iconPinId === "string", iconPin.text);
+const iconMap = await callTool("get_map", { node_id: mapNodeId });
+check("get_map shows a marker's icon", iconMap.text.includes('pin game-icons:castle "Keep"'), iconMap.text);
+const badIcon = await callTool("update_marker", { marker_id: iconPinId, icon: "game-icons:invented-name" });
+check("update_marker rejects an icon that isn't in the library", badIcon.isError === true && badIcon.text.includes("search_icons"), badIcon.text);
+await callTool("delete_marker", { marker_id: iconPinId });
 
 // Map display groups (Kanka's own MapGroup) — a separate, purely organizational
 // feature from the party-group hierarchy above. Any shape can join one.

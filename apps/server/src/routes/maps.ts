@@ -11,6 +11,7 @@ import type { Viewer } from "../auth/viewer.ts";
 import { db } from "../db/index.ts";
 import { viewerForNode } from "../http/context.ts";
 import { notFound } from "../lib/errors.ts";
+import { assertKnownIcon } from "../services/icons.ts";
 import {
   createMapGroup,
   deleteMapGroup,
@@ -72,6 +73,7 @@ export async function mapRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/map/markers", async (request, reply) => {
     const { viewer } = viewerForNode(request, request.params.nodeId);
     const input = createMarkerInputSchema.parse(request.body);
+    assertKnownIcon(input.icon);
     reply.code(201);
     return { marker: createMarker(request.params.nodeId, viewer, input) };
   });
@@ -79,6 +81,7 @@ export async function mapRoutes(app: FastifyInstance): Promise<void> {
   app.patch<{ Params: MarkerParams }>("/api/v1/markers/:markerId", async (request) => {
     const { viewer, mapNodeId } = viewerForMarker(request.params.markerId, request);
     const input = updateMarkerInputSchema.parse(request.body);
+    assertKnownIcon(input.icon);
     return { marker: updateMarker(mapNodeId, request.params.markerId, viewer, input) };
   });
 
