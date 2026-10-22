@@ -80,14 +80,14 @@ Details in HANDOFF §7.8a.
    both already in the schema). Ship flat feathered fog first, defer animated cloud
    drift; a DM/player view split is required. (An earlier version of this file pointed
    at a fog design section in ROADMAP; there isn't one — these notes are the design.)
+   References the owner named (HANDOFF §7.8): **DungeonBoard** (McAJBen, MIT) for the
+   paint-to-reveal mechanic; mimir and VeilCast-VTT in `DNDWORLDREF` for live-session
+   DM controls. Those folders are on the owner's machine, not in the repo.
 3. **P3 content model** — relations (a `relations` table and a "Connections" panel that
    merges them with backlinks), then a graph view, then icons-as-images, a table of
    contents, and an index view. ROADMAP §3–§4.
 
-   **Open question for the owner:** ROADMAP §8 puts this *before* fog of war, while the
-   map-polish list agreed the same day said "then fog of war." This file follows the
-   map-polish agreement because it is the more specific one. Swap 2 and 3 if that's
-   wrong.
+   Ordering confirmed with the owner 2026-10-22: fog of war first, then this.
 4. **API realtime groundwork** — push updates, needed before the desktop companion's
    live-session features. ROADMAP §5.
 5. **DM desktop companion v1**, then the **player app** as a mode of it. ROADMAP §6–§7.
