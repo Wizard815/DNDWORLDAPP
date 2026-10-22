@@ -116,7 +116,10 @@ uploaded images. Backup is a copy of that directory.
   background (no page reload needed once ready). Party/army tokens and toggleable
   display groups are built, and so is fog of war: the DM paints reveals (or marks a
   room revealed) and players only ever receive the revealed parts — enforced by the
-  server, not hidden in the browser.
+  server, not hidden in the browser. A Dim brush leaves areas half-fogged ("explored").
+- **Live updates.** Every open screen — players' maps under fog, the tree, a page —
+  refreshes itself over a WebSocket when someone changes something. Behind a reverse
+  proxy, let it pass WebSocket upgrades for `/api/` (see HANDOFF §7.10).
   A marker's icon can be an emoji or one of ~5,500 searchable library icons
   (game-icons.net's fantasy art plus Font Awesome), served by the app itself, and a DM
   can save any marker's look as a world-wide preset ("Tavern", "Enemy camp") to stamp
@@ -176,7 +179,7 @@ drift from what the server actually validates:
 ## What does not exist yet
 
 Map layers, relations and a graph view, calendars, timelines, query views, boards,
-statblocks, realtime push. The order is in [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md). No bulk importer from Kanka or LegendKeeper is planned — content
+statblocks. The order is in [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md). No bulk importer from Kanka or LegendKeeper is planned — content
 moves over by hand through the API/MCP as needed.
 
 ## Layout
@@ -210,7 +213,7 @@ docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.js
 
 ```bash
 npm test          # unit: fractional indexing, wiki-link parsing, secret blocks
-npm run smoke     # 337 end-to-end API checks (needs an EMPTY data/ dir + running server)
+npm run smoke     # 351 end-to-end API checks (needs an EMPTY data/ dir + running server)
 npm run test:mcp  # drives the MCP server over stdio (needs a running server)
 npm run typecheck
 ```

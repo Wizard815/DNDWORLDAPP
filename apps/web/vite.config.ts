@@ -17,7 +17,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8080",
+      "/api": { target: "http://localhost:8080", ws: true },
       "/media": "http://localhost:8080",
       "/tiles": "http://localhost:8080",
       "/icons": "http://localhost:8080",

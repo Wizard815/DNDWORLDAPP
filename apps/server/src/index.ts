@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cookie from "@fastify/cookie";
 import multipart from "@fastify/multipart";
+import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { ZodError } from "zod";
@@ -11,8 +12,10 @@ import { purgeExpiredSessions } from "./auth/session.ts";
 import { appliedMigrations, closeDatabase, db } from "./db/index.ts";
 import { assertProductionSafe, env, paths } from "./env.ts";
 import { assertScope, attachUser, viewerForNode } from "./http/context.ts";
+import { registerLiveEvents } from "./http/liveEvents.ts";
 import { HttpError, forbidden } from "./lib/errors.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { eventRoutes } from "./routes/events.ts";
 import { iconRoutes } from "./routes/icons.ts";
 import { mapRoutes } from "./routes/maps.ts";
 import { nodeRoutes } from "./routes/nodes.ts";
@@ -23,6 +26,7 @@ import { worldRoutes } from "./routes/worlds.ts";
 import { foggedTile } from "./services/fog.ts";
 import { getMapRowIfAny, mapImageInfo, recoverStuckTiling } from "./services/maps.ts";
 import { backfillLinksStrippedOfSecrets, requireVisibleNode } from "./services/nodes.ts";
+import { roleFor } from "./services/worlds.ts";
 
 assertProductionSafe();
 
@@ -51,11 +55,54 @@ const app = Fastify({
 
 await app.register(cookie, { secret: env.sessionSecret });
 await app.register(multipart);
+await app.register(websocket);
 
 app.decorateRequest("user", null);
 app.decorateRequest("tokenAuth", null);
 app.addHook("onRequest", async (request) => {
   attachUser(request);
+});
+
+/**
+ * A fogged map's source image. /media/ URLs are content-addressed capability
+ * URLs (HANDOFF §8.2) and stay that way for every other upload — but while a
+ * map has fog on, its raw image is refused to anyone who isn't an owner/DM of
+ * that map's world, so a player who loaded the map before fog went on can't
+ * just reopen the link they already have. Players get the server-fogged copy
+ * instead (services/fog.ts).
+ */
+const selectFoggedMapsForAsset = db.prepare(`
+  SELECT n.world_id AS worldId FROM maps m
+  JOIN assets a ON a.id = m.asset_id
+  JOIN nodes n ON n.id = m.node_id
+  WHERE a.sha256 = ? AND m.fog_enabled = 1`);
+app.addHook("onRequest", async (request, reply) => {
+  if (!request.url.startsWith("/media/")) return;
+  const sha = /^\/media\/[0-9a-f]{2}\/([0-9a-f]{64})/.exec(request.url)?.[1];
+  if (sha === undefined) return;
+  const fogged = selectFoggedMapsForAsset.all(sha) as { worldId: string }[];
+  if (fogged.length === 0) return;
+  const userId = request.user?.id ?? null;
+  const allowed = userId !== null && fogged.every((m) => isGameMaster(roleFor(m.worldId, userId)));
+  if (!allowed) {
+    return reply.code(404).send({ error: { code: "not_found", message: "No such file." } });
+  }
+});
+
+/**
+ * Every other upload keeps its year-long immutable cache header, but a map's
+ * source image must be re-checked on each load: otherwise a player's browser
+ * would keep showing its cached copy after fog went on without ever asking
+ * the server again. ETags keep the revalidation cheap.
+ */
+const selectMapsForAsset = db.prepare("SELECT 1 FROM maps m JOIN assets a ON a.id = m.asset_id WHERE a.sha256 = ? LIMIT 1");
+app.addHook("onSend", async (request, reply, payload) => {
+  if (!request.url.startsWith("/media/")) return payload;
+  const sha = /^\/media\/[0-9a-f]{2}\/([0-9a-f]{64})/.exec(request.url)?.[1];
+  if (sha !== undefined && selectMapsForAsset.get(sha) !== undefined) {
+    reply.header("cache-control", "private, no-cache");
+  }
+  return payload;
 });
 
 /**
@@ -169,6 +216,8 @@ app.setErrorHandler((error: unknown, request, reply) => {
     .send({ error: { code: "internal", message: "Something went wrong on the server." } });
 });
 
+registerLiveEvents(app);
+
 app.get("/healthz", async () => ({
   ok: true,
   migrations: appliedMigrations.length,
@@ -176,6 +225,7 @@ app.get("/healthz", async () => ({
 }));
 
 await app.register(authRoutes);
+await app.register(eventRoutes);
 await app.register(worldRoutes);
 await app.register(nodeRoutes);
 await app.register(mapRoutes);

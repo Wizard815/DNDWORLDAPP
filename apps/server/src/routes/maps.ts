@@ -77,7 +77,7 @@ export async function mapRoutes(app: FastifyInstance): Promise<void> {
   app.put<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/map", async (request) => {
     const { viewer } = viewerForNode(request, request.params.nodeId);
     const input = setMapImageInputSchema.parse(request.body);
-    const map = await setMapImage(request.params.nodeId, viewer, input.assetId);
+    const map = await setMapImage(request.params.nodeId, viewer, input.assetId, input.fog);
     return { map };
   });
 

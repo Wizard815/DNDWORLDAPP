@@ -4,6 +4,7 @@
 // It walks the whole P0 surface, and asserts the DM/player boundary in every place
 // it could leak: tree, direct fetch by id, posts, and search.
 import sharp from "sharp";
+import WebSocket from "ws";
 import { fogMaskSize, mapTileUrlTemplate } from "@dndworldapp/schema";
 
 const BASE = process.env.SMOKE_BASE ?? "http://localhost:8080/api/v1";
@@ -1775,6 +1776,110 @@ const editorUnreveal = await player("PATCH", `/markers/${eastRoom.id}`, { reveal
 check("a player with edit rights cannot reveal/unreveal a region", editorUnreveal.status === 403, editorUnreveal.body);
 const editorScale = await player("PATCH", `/nodes/${fogMapNode.id}/map`, { scale: { pxPerUnit: 2, unit: "ft" } });
 check("…but can still set the map's scale, which only needs edit rights", editorScale.status === 200, editorScale.body);
+
+// The raw image link a player may already have stops working while fog is on.
+const rawUrl = dmUnfogged.assetUrl;
+const playerRaw = await fetch(`${SERVER_ROOT}${rawUrl}`, { headers: { cookie: player.cookieHeader() } });
+check("LEAK: a player's old raw image link is refused while fog is on", playerRaw.status === 404, playerRaw.status);
+const anonRaw = await fetch(`${SERVER_ROOT}${rawUrl}`);
+check("LEAK: so is an anonymous request for it", anonRaw.status === 404, anonRaw.status);
+const dmRaw = await fetch(`${SERVER_ROOT}${rawUrl}`, { headers: { cookie: dm.cookieHeader() } });
+check(
+  "the DM still loads the raw image, and it is sent revalidate-every-time",
+  dmRaw.status === 200 && (dmRaw.headers.get("cache-control") ?? "").includes("no-cache"),
+  { status: dmRaw.status, cache: dmRaw.headers.get("cache-control") },
+);
+
+// Live events over a WebSocket: content-free, visibility-filtered.
+function openEvents(session) {
+  const messages = [];
+  const socket = new WebSocket(`${SERVER_ROOT.replace(/^http/, "ws")}/api/v1/worlds/${worldId}/events`, {
+    headers: session !== null ? { cookie: session.cookieHeader() } : {},
+  });
+  const closed = new Promise((resolve) => socket.on("close", (code) => resolve(code)));
+  const ready = new Promise((resolve) => {
+    socket.on("message", (data) => {
+      const event = JSON.parse(String(data));
+      messages.push(event);
+      if (event.type === "hello") resolve(true);
+    });
+    socket.on("close", () => resolve(false));
+  });
+  return { socket, messages, ready, closed };
+}
+const playerEvents = openEvents(player);
+const dmEvents = openEvents(dm);
+check("a player can open the world's event stream", (await playerEvents.ready) === true);
+await dmEvents.ready;
+const anonEvents = openEvents(null);
+check("an anonymous event stream is refused", (await anonEvents.ready) === false && (await anonEvents.closed) === 1008);
+
+// Dim: a mid-gray band is "explored" — half-strength fog, markers still sent.
+const bandMask = async () => {
+  const size = fogMaskSize(400, 200);
+  const quarter = Math.round(size.width / 4);
+  return (
+    await sharp({ create: { width: size.width, height: size.height, channels: 3, background: { r: 0, g: 0, b: 0 } } })
+      .composite([
+        { input: { create: { width: quarter, height: size.height, channels: 3, background: { r: 255, g: 255, b: 255 } } }, left: 0, top: 0 },
+        { input: { create: { width: quarter, height: size.height, channels: 3, background: { r: 128, g: 128, b: 128 } } }, left: quarter, top: 0 },
+      ])
+      .png()
+      .toBuffer()
+  ).toString("base64");
+};
+const dimPin = (await dm("POST", `/nodes/${fogMapNode.id}/map/markers`, { x: 150, y: 100, label: "Dim pin" })).body.marker;
+playerEvents.messages.length = 0;
+await dm("PUT", `/nodes/${fogMapNode.id}/map/fog`, { png: await bandMask() });
+await sleep(300);
+check(
+  "painting fog pushes a map.changed event to a player watching",
+  playerEvents.messages.some((m) => m.type === "map.changed" && m.nodeId === fogMapNode.id),
+  playerEvents.messages,
+);
+check("events carry no content, only what changed", playerEvents.messages.every((m) => Object.keys(m).every((k) => k === "type" || k === "nodeId")), playerEvents.messages);
+const dimView = (await player("GET", `/nodes/${fogMapNode.id}/map`)).body.map;
+const dimPixel = await pixelAt(player, dimView.assetUrl, 150, 100);
+check(
+  "a dimmed area shows the map through half-strength fog",
+  dimPixel.rgb !== null && dimPixel.rgb[0] > 90 && dimPixel.rgb[0] < 190 && !near(dimPixel.rgb, FOG_RGB) && !near(dimPixel.rgb, [255, 0, 0]),
+  dimPixel,
+);
+const dimMarkers = (await player("GET", `/nodes/${fogMapNode.id}/map/markers`)).body.markers.map((m) => m.label);
+check("a marker in a dimmed area is still sent", dimMarkers.includes("Dim pin"), dimMarkers);
+
+// A DM-only page's own events never reach a player — only the generic tree nudge.
+const secretNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Event test: DM only", parentId: rootId, visibility: "dm" })).body.node;
+playerEvents.messages.length = 0;
+dmEvents.messages.length = 0;
+await dm("PATCH", `/nodes/${secretNode.id}`, { title: "Event test: DM only (renamed)" });
+await sleep(300);
+check("the DM gets node.changed for their DM-only page", dmEvents.messages.some((m) => m.type === "node.changed" && m.nodeId === secretNode.id), dmEvents.messages);
+check("LEAK: a player never gets an event naming a DM-only page", !playerEvents.messages.some((m) => m.nodeId === secretNode.id), playerEvents.messages);
+await dm("DELETE", `/nodes/${secretNode.id}`);
+playerEvents.socket.close();
+dmEvents.socket.close();
+
+// Replacing a fogged map's image: keep stretches the paint, reset hides all again.
+const biggerHalves = await halvesImage(800, 400);
+const editorReset = await (async () => {
+  const form = new FormData();
+  form.append("file", new Blob([biggerHalves], { type: "image/png" }), "halves-800.png");
+  const asset = await dm("POST", `/worlds/${worldId}/assets`, form);
+  return player("PUT", `/nodes/${fogMapNode.id}/map`, { assetId: asset.body.asset.id, fog: "reset" });
+})();
+check("a player with edit rights can't reset the fog by replacing the image", editorReset.status === 403, editorReset.body);
+await uploadMapImage(fogMapNode.id, biggerHalves, "halves-800.png").then(() => null);
+const keptView = (await player("GET", `/nodes/${fogMapNode.id}/map`)).body.map;
+const keptPixel = await pixelAt(player, keptView.assetUrl, 60, 200);
+check("replacing the image keeps the painted fog by default, stretched to the new size", near(keptPixel.rgb, [255, 0, 0]), keptPixel);
+const resetForm = new FormData();
+resetForm.append("file", new Blob([await halvesImage(400, 200)], { type: "image/png" }), "halves.png");
+const resetAsset = await dm("POST", `/worlds/${worldId}/assets`, resetForm);
+const resetReplace = await dm("PUT", `/nodes/${fogMapNode.id}/map`, { assetId: resetAsset.body.asset.id, fog: "reset" });
+const resetPixel = await pixelAt(player, resetReplace.body.map.fogEnabled ? (await player("GET", `/nodes/${fogMapNode.id}/map`)).body.map.assetUrl : "", 60, 100);
+check("fog: \"reset\" hides the whole map again", near(resetPixel.rgb, FOG_RGB), resetPixel);
+await dm("DELETE", `/markers/${dimPin.id}`);
 
 // Fog off: back to the raw image and every marker.
 await dm("PATCH", `/nodes/${fogMapNode.id}/map`, { fogEnabled: false });

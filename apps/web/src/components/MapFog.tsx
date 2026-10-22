@@ -10,9 +10,11 @@ import { latLngToPixel } from "../lib/mapCoords.ts";
  * server hands them pre-darkened images and tiles (services/fog.ts).
  *
  * Modeled on DungeonBoard: one mask over the map, hidden by default, painted
- * with a round brush — left button with the Reveal brush clears fog, the Hide
- * brush (or the right button, as a shortcut) puts it back — and every stroke
- * joins its samples with a full-width line so a fast drag leaves no gaps.
+ * with a round brush — Reveal clears fog, Hide puts it back, Dim leaves it at
+ * half strength ("explored": players see the area darkened, markers and all);
+ * the right button paints Hide (or Reveal, with the Hide brush) as a
+ * shortcut — and every stroke joins its samples with a full-width line so a
+ * fast drag leaves no gaps.
  *
  * In the browser the mask is kept "alpha-shaped" on a canvas — fog color,
  * opaque where hidden, transparent where revealed — so painting is a plain
@@ -21,9 +23,12 @@ import { latLngToPixel } from "../lib/mapCoords.ts";
  * server's grayscale PNG (white revealed, black hidden) only on load and save.
  */
 
-export type FogTool = "reveal" | "hide" | "pan";
+export type FogTool = "reveal" | "dim" | "hide" | "pan";
+type PaintMode = "reveal" | "dim" | "hide";
 
 const FOG_STYLE = "rgb(13, 14, 18)";
+/** Fog alpha the Dim brush leaves behind — 50%, which the server reads back as mid-gray ("explored"). */
+const DIM_ALPHA = 0.5;
 /** How opaque hidden areas look to the DM — enough to read as fog, not so much the DM can't see the map under it. */
 const DM_OVERLAY_OPACITY = 0.55;
 const SAVE_DEBOUNCE_MS = 500;
@@ -112,7 +117,7 @@ export function FogEditorLayer({
   const fogRef = useRef<HTMLCanvasElement | null>(null);
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
   const [cursor, setCursor] = useState<L.LatLng | null>(null);
-  const stroke = useRef<{ mode: "reveal" | "hide"; last: [number, number] } | null>(null);
+  const stroke = useRef<{ mode: PaintMode; last: [number, number] } | null>(null);
   const saveTimer = useRef<number | null>(null);
   const saving = useRef<Promise<void> | null>(null);
   const frame = useRef<number | null>(null);
@@ -215,35 +220,54 @@ export function FogEditorLayer({
   /** Brush radius in mask pixels at the current zoom: screen px ÷ (screen px per image px) × mask px per image px. */
   const brushInMask = () => (brushPx / (2 ** leaflet.getZoom() / pixelScale)) * size.scale;
 
-  const dab = (mode: "reveal" | "hide", from: [number, number], to: [number, number]) => {
+  const dab = (mode: PaintMode, from: [number, number], to: [number, number]) => {
     const fog = fogRef.current;
     if (fog === null) return;
     const ctx = fog.getContext("2d")!;
     const r = brushInMask();
-    ctx.globalCompositeOperation = mode === "reveal" ? "destination-out" : "source-over";
+    // One drawing operation per dab, never a line plus a dot: at the Dim
+    // brush's 50% alpha the overlap of two would come out darker. A round-
+    // capped line already covers both ends; a single click is just a dot.
+    const shape = () => {
+      if (from[0] === to[0] && from[1] === to[1]) {
+        ctx.beginPath();
+        ctx.arc(to[0], to[1], r, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+      ctx.lineCap = "round";
+      ctx.lineWidth = r * 2;
+      ctx.beginPath();
+      ctx.moveTo(from[0], from[1]);
+      ctx.lineTo(to[0], to[1]);
+      ctx.stroke();
+    };
     ctx.strokeStyle = FOG_STYLE;
     ctx.fillStyle = FOG_STYLE;
-    ctx.lineCap = "round";
-    ctx.lineWidth = r * 2;
-    ctx.beginPath();
-    ctx.moveTo(from[0], from[1]);
-    ctx.lineTo(to[0], to[1]);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(to[0], to[1], r, 0, Math.PI * 2);
-    ctx.fill();
+    // Dim sets the area to exactly half fog whatever was there before: clear
+    // it, then lay half-strength fog back down. Overlapping dabs in one stroke
+    // repeat the same two steps, so they don't stack darker.
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = mode === "hide" ? "source-over" : "destination-out";
+    shape();
+    if (mode === "dim") {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = DIM_ALPHA;
+      shape();
+      ctx.globalAlpha = 1;
+    }
     render();
   };
 
-  const painting = tool === "reveal" || tool === "hide";
+  const painting = tool === "reveal" || tool === "dim" || tool === "hide";
 
   useMapEvents({
     mousedown(e) {
       if (!painting) return;
       const button = (e.originalEvent as MouseEvent).button;
       if (button !== 0 && button !== 2) return;
-      // Right button paints the opposite of the selected brush, like DungeonBoard.
-      const mode = button === 2 ? (tool === "reveal" ? "hide" : "reveal") : tool;
+      // Right button paints the opposite, like DungeonBoard: Hide, or Reveal when the Hide brush is picked.
+      const mode: PaintMode = button === 2 ? (tool === "hide" ? "reveal" : "hide") : (tool as PaintMode);
       const at = toMask(e.latlng);
       stroke.current = { mode, last: at };
       dab(mode, at, at);
@@ -279,7 +303,13 @@ export function FogEditorLayer({
         <CircleMarker
           center={cursor}
           radius={brushPx}
-          pathOptions={{ color: tool === "reveal" ? "#f0b429" : "#8b6cf0", weight: 1.5, fill: false, interactive: false }}
+          pathOptions={{
+            color: tool === "reveal" ? "#f0b429" : tool === "dim" ? "#9aa0ad" : "#8b6cf0",
+            weight: 1.5,
+            dashArray: tool === "dim" ? "4 3" : undefined,
+            fill: false,
+            interactive: false,
+          }}
         />
       )}
     </>
@@ -334,8 +364,8 @@ export function FogPanel({
         </p>
       ) : (
         <>
-          <div className="mb-2 flex gap-1 rounded-md bg-canvas p-0.5" role="tablist">
-            {(["reveal", "hide", "pan"] as const).map((t) => (
+          <div className="mb-2 flex gap-0.5 rounded-md bg-canvas p-0.5" role="tablist">
+            {(["reveal", "dim", "hide", "pan"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -344,7 +374,7 @@ export function FogPanel({
                 onClick={() => onToolChange(t)}
                 className={`flex-1 rounded px-2 py-1 ${tool === t ? "bg-selected text-fg-strong" : "text-fg-muted hover:text-fg"}`}
               >
-                {t === "reveal" ? "Reveal" : t === "hide" ? "Hide" : "Pan"}
+                {t === "reveal" ? "Reveal" : t === "dim" ? "Dim" : t === "hide" ? "Hide" : "Pan"}
               </button>
             ))}
           </div>
@@ -360,8 +390,8 @@ export function FogPanel({
             />
           </label>
           <p className="mb-2 text-[10px] text-fg-muted">
-            Drag on the map to paint. The right mouse button paints the opposite brush. Regions marked “Reveals the
-            fog” in their inspector clear it without painting.
+            Drag on the map to paint. Dim leaves an area half-fogged — explored, but not in view. The right mouse
+            button paints Hide (Reveal, with Hide picked). Regions marked “Reveals the fog” clear it without painting.
           </p>
           <div className="flex gap-1">
             <button

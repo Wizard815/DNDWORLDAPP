@@ -6,6 +6,7 @@ import { Circle, CircleMarker, ImageOverlay, MapContainer, Marker, Polygon, Poly
 import type { FieldVisibility, MapDto, MapGroupDto, MapMarkerDto, MarkerPoint, MarkerPresetDto, NodeDetail, NodeSummary } from "@dndworldapp/schema";
 import { formatMarkerPoints, mapTileUrlTemplate, parseMarkerPoints } from "@dndworldapp/schema";
 import { ApiError, api } from "../api.ts";
+import { useLiveConnected } from "../lib/liveEvents.ts";
 import { latLngToPixel, pixelToLatLng } from "../lib/mapCoords.ts";
 import { navigate } from "../lib/nav.ts";
 import { Glyph, glyphHtml } from "./Glyph.tsx";
@@ -215,7 +216,7 @@ function DrawHandler({
  * instead, via Leaflet's own setters, so they take effect immediately no
  * matter when they change.
  */
-/** How often a player's map re-checks the fog while it's on. */
+/** How often a player's map re-checks the fog while it's on and the live event stream is down. */
 const FOG_POLL_MS = 4000;
 
 /** Tolerance for comparing fractional zooms (zoomSnap is 0), so a marker set to exactly the current zoom doesn't flicker. */
@@ -578,6 +579,7 @@ export function MapView({
   isGameMaster: boolean;
 }) {
   const queryClient = useQueryClient();
+  const liveConnected = useLiveConnected();
   const mapQuery = useQuery({
     queryKey: ["map", node.id],
     queryFn: async () => {
@@ -591,12 +593,12 @@ export function MapView({
     // Tiling runs in the background server-side (no queue — see services/maps.ts's
     // startTiling); poll while it's in flight so the view upgrades from ImageOverlay
     // to TileLayer the moment it finishes, with no user action needed.
-    // Also polled for a player while fog is on, so the DM's reveals show up
-    // within a few seconds — there's no push channel yet (ROADMAP §5).
+    // Fog changes normally arrive over the live event stream (lib/liveEvents.ts);
+    // a player's map only falls back to polling while that stream is down.
     refetchInterval: (query) =>
       query.state.data?.tilingStatus === "pending" || query.state.data?.tilingStatus === "running"
         ? 2000
-        : query.state.data?.fogEnabled === true && !isGameMaster
+        : query.state.data?.fogEnabled === true && !isGameMaster && !liveConnected
           ? FOG_POLL_MS
           : false,
   });
@@ -681,10 +683,12 @@ export function MapView({
     },
   });
 
+  /** A replacement image picked for a fogged map, waiting on the DM's keep/reset answer. */
+  const [pendingReplace, setPendingReplace] = useState<File | null>(null);
   const upload = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async ({ file, fog }: { file: File; fog?: "keep" | "reset" }) => {
       const asset = await api.uploadAsset(node.worldId, file);
-      return api.setMapImage(node.id, asset.id);
+      return api.setMapImage(node.id, asset.id, fog);
     },
     onSuccess: () => {
       setUploadError(null);
@@ -913,7 +917,7 @@ export function MapView({
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file !== undefined) void upload.mutate(file);
+                if (file !== undefined) void upload.mutate({ file });
                 e.target.value = "";
               }}
             />
@@ -976,7 +980,10 @@ export function MapView({
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file !== undefined) void upload.mutate(file);
+            if (file === undefined) return;
+            // With fog on, ask what should happen to it first — see FogReplacePrompt.
+            if (map.fogEnabled) setPendingReplace(file);
+            else void upload.mutate({ file });
             e.target.value = "";
           }}
         />
@@ -1193,6 +1200,16 @@ export function MapView({
           </>
         )}
       </div>
+      {pendingReplace !== null && (
+        <FogReplacePrompt
+          canReset={isGameMaster}
+          onChoose={(fog) => {
+            upload.mutate({ file: pendingReplace, fog });
+            setPendingReplace(null);
+          }}
+          onCancel={() => setPendingReplace(null)}
+        />
+      )}
       {uploadError !== null && (
         <div className="absolute right-3 top-14 z-[1000] max-w-xs rounded-md border border-line bg-surface/95 px-2.5 py-1.5 text-xs text-danger shadow-lg">
           {uploadError}
@@ -2321,6 +2338,54 @@ function ZoomRangeControl({
         >
           Always
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Replacing a fogged map's image: keep the painted fog (stretched onto the
+ * new image — right for a re-export of the same map) or reset it so the whole
+ * map is hidden again (right for a different map). Reset is owner/DM only,
+ * like everything else about fog.
+ */
+function FogReplacePrompt({
+  canReset,
+  onChoose,
+  onCancel,
+}: {
+  canReset: boolean;
+  onChoose: (fog: "keep" | "reset") => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 z-[1100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+      <div className="w-80 rounded-lg border border-line bg-surface p-4 text-sm text-fg-soft shadow-pop">
+        <h3 className="mb-1 font-medium text-fg-strong">This map has fog of war</h3>
+        <p className="mb-3 text-xs text-fg-muted">What should happen to what you've revealed so far?</p>
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => onChoose("keep")}
+            className="w-full rounded-md bg-accent px-3 py-2 text-left text-on-accent hover:bg-accent-hover"
+          >
+            <span className="block font-medium">Keep the fog</span>
+            <span className="block text-xs opacity-80">Same map, new image — the same areas stay revealed.</span>
+          </button>
+          {canReset && (
+            <button
+              type="button"
+              onClick={() => onChoose("reset")}
+              className="w-full rounded-md border border-line px-3 py-2 text-left hover:bg-press"
+            >
+              <span className="block font-medium text-fg">Reset the fog</span>
+              <span className="block text-xs text-fg-muted">A different map — hide everything again.</span>
+            </button>
+          )}
+          <button type="button" onClick={onCancel} className="w-full px-3 py-1 text-xs text-fg-muted hover:text-fg">
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -7528,6 +7528,13 @@
         "properties": {
           "assetId": {
             "type": "string"
+          },
+          "fog": {
+            "type": "string",
+            "enum": [
+              "keep",
+              "reset"
+            ]
           }
         },
         "required": [

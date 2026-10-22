@@ -13,6 +13,7 @@ import { Sidebar } from "./components/Sidebar.tsx";
 import { Templates } from "./components/Templates.tsx";
 import { Tokens } from "./components/Tokens.tsx";
 import { navigate, nodeIdFromPath, usePath } from "./lib/nav.ts";
+import { useLiveEvents } from "./lib/liveEvents.ts";
 import { useTheme } from "./lib/theme.ts";
 
 function shareTokenFromPath(path: string): string | null {
@@ -91,6 +92,7 @@ export function App() {
 
   const world = worlds.data?.worlds[0] ?? null;
   const { pinnedIds, togglePin } = usePinned(world?.id ?? "");
+  useLiveEvents(world?.id ?? null);
 
   const tree = useQuery({
     queryKey: ["tree", world?.id],

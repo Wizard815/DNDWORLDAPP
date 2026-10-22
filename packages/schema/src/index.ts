@@ -403,7 +403,15 @@ export const mapDtoSchema = z.object({
 });
 export type MapDto = z.infer<typeof mapDtoSchema>;
 
-export const setMapImageInputSchema = z.object({ assetId: z.string() });
+export const setMapImageInputSchema = z.object({
+  assetId: z.string(),
+  /**
+   * Replacing a fogged map's image: "keep" stretches the painted fog onto the
+   * new image (right for a re-export of the same map), "reset" hides
+   * everything again (right for a different map). Default "keep".
+   */
+  fog: z.enum(["keep", "reset"]).optional(),
+});
 export type SetMapImageInput = z.infer<typeof setMapImageInputSchema>;
 
 export const mapScaleSchema = z.object({

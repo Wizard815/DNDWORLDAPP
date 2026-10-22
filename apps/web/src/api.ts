@@ -264,8 +264,8 @@ export const api = {
   updateMap: (nodeId: string, input: UpdateMapInput) =>
     request<{ map: MapDto }>(`/nodes/${nodeId}/map`, { method: "PATCH", ...json(input) }),
 
-  setMapImage: (nodeId: string, assetId: string) =>
-    request<{ map: MapDto }>(`/nodes/${nodeId}/map`, { method: "PUT", ...json({ assetId }) }),
+  setMapImage: (nodeId: string, assetId: string, fog?: "keep" | "reset") =>
+    request<{ map: MapDto }>(`/nodes/${nodeId}/map`, { method: "PUT", ...json({ assetId, fog }) }),
 
   mapMarkers: (nodeId: string) => request<{ markers: MapMarkerDto[] }>(`/nodes/${nodeId}/map/markers`),
 

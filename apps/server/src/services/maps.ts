@@ -12,7 +12,7 @@ import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { shortId } from "../lib/id.ts";
 import { canEditNode } from "./acl.ts";
 import { ensureAssetDimensions, filePathFor, getAssetRow, toDto as assetToDto } from "./assets.ts";
-import { clearFogCache, effectiveMask, fogVersion, markerVisibleThroughFog } from "./fog.ts";
+import { carryFogOver, clearFogCache, effectiveMask, fogVersion, markerVisibleThroughFog } from "./fog.ts";
 import { getNodeRow, isNodeVisible, requireVisibleNode } from "./nodes.ts";
 
 /**
@@ -253,11 +253,21 @@ export function getMap(nodeId: string, viewer: Viewer): MapDto | null {
  * tiling in the background without blocking this call. The response returns
  * immediately either way; a caller polls GET .../map to see tilingStatus advance.
  */
-export async function setMapImage(nodeId: string, viewer: Viewer, assetId: string): Promise<MapDto> {
+export async function setMapImage(
+  nodeId: string,
+  viewer: Viewer,
+  assetId: string,
+  fogMode: "keep" | "reset" = "keep",
+): Promise<MapDto> {
   const node = requireMapNode(nodeId, viewer);
   const asset = getAssetRow(assetId);
   if (asset === null || asset.world_id !== node.world_id) throw badRequest("No such image.");
   const { width, height } = await ensureAssetDimensions(assetId);
+  const previousRow = selectMap.get(nodeId) as MapRow | undefined;
+  const previousAsset = previousRow !== undefined ? getAssetRow(previousRow.asset_id) : null;
+  if (previousRow?.fog_enabled === 1 && fogMode === "reset" && !isGameMaster(viewer.role)) {
+    throw forbidden("Only the owner or a DM can reset a map's fog of war.");
+  }
 
   const now = Date.now();
   upsertMap.run(nodeId, assetId, UNTILED_MIN_ZOOM, UNTILED_MAX_ZOOM, now, now);
@@ -265,7 +275,15 @@ export async function setMapImage(nodeId: string, viewer: Viewer, assetId: strin
   if (width > TILING_THRESHOLD_PX || height > TILING_THRESHOLD_PX) {
     startTiling(nodeId, filePathFor(asset));
   }
-  clearFogCache(nodeId);
+  if (previousRow !== undefined && previousRow.asset_id !== assetId) {
+    const previousSize =
+      previousAsset?.width != null && previousAsset.height != null
+        ? { width: previousAsset.width, height: previousAsset.height }
+        : null;
+    await carryFogOver(nodeId, fogMode, previousSize, { width, height });
+  } else {
+    clearFogCache(nodeId);
+  }
 
   return toMapDto(selectMap.get(nodeId) as MapRow, viewer);
 }

@@ -12,8 +12,9 @@ import { badRequest } from "../lib/errors.ts";
 /**
  * Fog of war (P4.4), modeled on DungeonBoard's paint-to-reveal mask.
  *
- * The DM paints a grayscale mask over the map (white revealed, black hidden;
- * a map with fog on and nothing painted is fully hidden). On top of the paint,
+ * The DM paints a grayscale mask over the map (white revealed, black hidden,
+ * mid-gray "dimmed" — explored, seen through half-strength fog; a map with fog
+ * on and nothing painted is fully hidden). On top of the paint,
  * any region polygon flagged `revealed` clears the fog inside it — a "room
  * reveal" that doesn't need a brush.
  *
@@ -33,8 +34,12 @@ import { badRequest } from "../lib/errors.ts";
 const FOG_RGB = { r: 13, g: 14, b: 18 };
 /** Blur, in mask pixels, applied to the edge players see — "flat feathered fog". */
 const FEATHER_SIGMA = 1.6;
-/** A mask byte at or above this counts as revealed for marker hit-testing. */
-const REVEALED_THRESHOLD = 128;
+/**
+ * A mask byte at or above this counts as revealed for marker hit-testing.
+ * Below the Dim brush's mid-gray (~127) on purpose: a dimmed area is
+ * "explored" — players see it through half-strength fog, markers included.
+ */
+const REVEALED_THRESHOLD = 96;
 
 const fogDir = paths.fog;
 const cacheDir = path.join(fogDir, "cache");
@@ -164,6 +169,39 @@ export async function savePaintedMask(nodeId: string, png: Buffer, imageWidth: n
   fs.writeFileSync(tmp, zlib.deflateSync(decoded.data));
   fs.renameSync(tmp, maskFile(nodeId));
   const now = Date.now();
+  updateFogStamp.run(now, now, nodeId);
+  clearFogCache(nodeId);
+}
+
+/**
+ * After the map's image is replaced: "keep" resizes the painted mask to the
+ * new image's mask size (so the same areas stay revealed on a re-export of
+ * the same map), "reset" deletes it so the whole map is hidden again.
+ */
+export async function carryFogOver(
+  nodeId: string,
+  mode: "keep" | "reset",
+  previous: { width: number; height: number } | null,
+  next: { width: number; height: number },
+): Promise<void> {
+  const now = Date.now();
+  if (mode === "reset" || previous === null) {
+    fs.rmSync(maskFile(nodeId), { force: true });
+  } else {
+    const from = fogMaskSize(previous.width, previous.height);
+    const to = fogMaskSize(next.width, next.height);
+    if (from.width !== to.width || from.height !== to.height) {
+      const resized = await sharp(readPaintedMask(nodeId, from.width, from.height), {
+        raw: { width: from.width, height: from.height, channels: 1 },
+      })
+        .resize(to.width, to.height, { fit: "fill" })
+        .extractChannel(0)
+        .raw()
+        .toBuffer();
+      fs.mkdirSync(fogDir, { recursive: true });
+      fs.writeFileSync(maskFile(nodeId), zlib.deflateSync(resized));
+    }
+  }
   updateFogStamp.run(now, now, nodeId);
   clearFogCache(nodeId);
 }

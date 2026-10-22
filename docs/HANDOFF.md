@@ -61,7 +61,7 @@ planned — see §9.4.
 Verified by:
 - `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 337 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 351 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
@@ -1467,13 +1467,51 @@ all; the right mouse button paints the opposite brush). Strokes save 0.5 s after
 end. Players' maps poll every 4 s while fog is on (no push channel yet, ROADMAP §5), so
 reveals show up on their screens on their own.
 
-Known limits, deliberately left: (1) `/media/` URLs stay capability URLs — a player who
-loaded the map *before* fog was turned on could still reopen the raw image by its URL;
-(2) a player with edit rights who somehow knew a hidden marker's id could still PATCH
-it — ids aren't exposed to them, and the marker list never sends it; (3) replacing the
-map image with one of a different size resets the paint to fully hidden (the mask is
-size-bound); (4) `revealed` is still a boolean — the "explored but dimmed" third state
-and animated fog are not built.
+**Follow-ups done the same day (owner's list):**
+
+- **Dim brush** — paints mid-gray: "explored" areas players see through half-strength
+  fog, markers included (the marker threshold is 96, below the Dim value). This is the
+  three-state reveal the plan asked for, done in the mask rather than a marker column.
+- **Replacing a fogged map's image asks first** — "Keep the fog" (default; the painted
+  mask is resized onto the new image, `carryFogOver` in services/fog.ts) or "Reset the
+  fog" (hide everything; owner/DM only). `PUT /nodes/{id}/map` takes `fog: "keep" | "reset"`.
+- **The old raw-image link is closed.** While fog is on, `/media/<sha>` for that map's
+  source image answers 404 to anyone who isn't owner/DM of its world (an onRequest hook
+  in index.ts), and every map source image is now sent `private, no-cache` instead of
+  immutable, so a browser revalidates and hits that check rather than reusing a cached
+  copy. Other uploads keep their year-long cache.
+- **Live updates over a WebSocket** — see §7.10. Players' maps no longer poll while it's
+  connected (they fall back to a 4 s poll only while it's down).
+
+Still open: animated fog; a player with edit rights who somehow knew a hidden marker's
+id could still PATCH it (ids are never sent to them).
+
+### 7.10 Live events (WebSocket)
+
+`GET /api/v1/worlds/{worldId}/events`, upgraded to a WebSocket (`@fastify/websocket`,
+`routes/events.ts`). ROADMAP §5 leaned towards SSE; the owner asked for WebSockets,
+which also suit the desktop companion's eventual two-way needs. Same auth as any read
+(session cookie or a `world:read` token), checked at connect; refused with close code
+1008 otherwise. Pinged every 30 s.
+
+**Events carry no content** — `{type: "tree.changed"}`, `{type: "node.changed", nodeId}`,
+`{type: "map.changed", nodeId}` — and a node-specific event is only sent to subscribers
+who can see that node (smoke asserts a DM-only page's events never reach a player). The
+client (`lib/liveEvents.ts`, mounted in App) turns each into React Query invalidations,
+so data is still always fetched through the normal permission-checked API; on every
+(re)connect it invalidates everything to cover what it missed, reconnecting with
+backoff up to 30 s.
+
+Events are published from **one place**: `http/liveEvents.ts`, an onResponse hook that
+maps every successful POST/PATCH/PUT/DELETE under /api/v1 to an event by its URL (it
+looks up a marker's/group's/post's page in a preHandler, so DELETEs still know). New
+routes announce themselves for free as long as they live under `/nodes/{id}/…`,
+`/markers/…`, `/map-groups/…`, `/posts/…` or `/worlds/{id}/nodes`.
+
+Self-hosting note: a reverse proxy in front of the app (nginx, Caddy, Traefik) must pass
+WebSocket upgrades for `/api/` — Caddy and Traefik do by default; nginx needs the usual
+`proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`.
+Without it, everything still works, just with polling on fogged maps.
 
 ### 7.9 Sidebar right-click menu, the "+ New" chooser, and pinned pages
 

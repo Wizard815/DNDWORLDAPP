@@ -7,6 +7,13 @@ is not kept here — `git log` and HANDOFF have it.
 
 ## Just done (2026-10-22)
 
+### Fog of war follow-ups and live updates
+
+The owner's list after the first fog pass: a Dim brush (half-strength "explored"
+fog), a keep/reset prompt when replacing a fogged map's image, the raw image link
+closed off while fog is on, and a WebSocket event stream so every open screen —
+players' maps, the tree, pages — updates live. HANDOFF §7.8e and §7.10.
+
 ### Fog of war (P4.4)
 
 The DM turns fog on per map (🌫 Fog in the map toolbar), paints reveals with a brush
@@ -82,16 +89,16 @@ Details in HANDOFF §7.8a.
    2. ~~Reusable marker templates~~ — done as marker presets, see above.
    3. ~~Visibility-by-zoom~~ — done, see above (markers pop in/out; a fade is not done).
    4. ~~Distance measurement~~ — done, see above.
-2. ~~**P4.4 fog of war**~~ — done, see above. Still open from the original design: a
-   three-state room reveal ("explored but dimmed") and animated cloud drift.
+2. ~~**P4.4 fog of war**~~ — done, see above, including the "explored but dimmed" state.
+   Still open: animated cloud drift.
 3. **P3 content model** — relations (a `relations` table and a "Connections" panel that
    merges them with backlinks), then a graph view, then icons-as-images, a table of
    contents, and an index view. ROADMAP §3–§4.
 
    **This is next.** Ordering confirmed with the owner 2026-10-22: fog of war first,
    then this.
-4. **API realtime groundwork** — push updates, needed before the desktop companion's
-   live-session features. ROADMAP §5.
+4. ~~**API realtime groundwork**~~ — the WebSocket event stream is in (HANDOFF §7.10).
+   The companion may still want richer, typed events later.
 5. **DM desktop companion v1**, then the **player app** as a mode of it. ROADMAP §6–§7.
 6. **P3 query views** (table/board/gallery), **P5** calendars/timelines, **P6** play
    mode, **P7** hardening.
