@@ -6,23 +6,24 @@ A self-hosted worldbuilding and campaign app: **LegendKeeper's freeform structur
 One tree. Anything nests inside anything. A map is a page, a timeline is a page, a
 character is a page — type is a filter, not a folder you are forced to live in.
 
-**Status: P0, P1 and P2 done, plus a P2.4 editor rewrite, P3's templates/typed fields,
-and P4.1–P4.3 of maps** — the spine, scoped API tokens, a generated OpenAPI spec, an MCP
-server, inline `:::secret` blocks, username/password accounts with a DM member panel (no
-email, ever — this is self-hosted with no mail server), per-node ACL overrides,
-anonymous share links, "view as a player," a live TipTap document editor (slash
-commands, page linking, inline DM-notes sections, columns, hover-to-link),
-field-definition templates with typed per-node fields, map nodes (Leaflet `CRS.Simple`,
-a source image with background tiling for large ones, typed markers that inherit a
-linked page's title/icon, and drawable region/zone polygons), a sidebar right-click/⋯
-row menu, a "+ New" tile chooser (Lore/Map/saved templates), and manually pinned pages.
-Next: fog of war and party/army tokens (P4.4–P4.5), then query
-views (table/board/gallery). No bulk importer is planned; content moves in through the
-API/MCP as needed.
+**Status: P0, P1 and P2 done, plus a P2.4 editor rewrite, P3's templates/typed fields
+and inline `#tags`, and maps P4.1–P4.3 and P4.5** — the spine, scoped API tokens, a
+generated OpenAPI spec, an MCP server, inline `:::secret` blocks, username/password
+accounts with a DM member panel (no email, ever — this is self-hosted with no mail
+server), per-node ACL overrides, anonymous share links, "view as a player," a live
+TipTap document editor (slash commands, page linking, inline DM-notes sections, columns,
+hover-to-link), field-definition templates with typed per-node fields, and map nodes
+(Leaflet `CRS.Simple`, background tiling for large images, typed markers that inherit a
+linked page's title/icon, region/zone polygons, party/army tokens, and toggleable display
+groups). The UI has three themes (Midnight, Ember, Parchment) and works at phone width.
+Next: map-editor polish and fog of war, then relations and a graph view — the ordered
+list is in [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md). No bulk importer is planned;
+content moves in through the API/MCP as needed.
 
 **Picking this up? Read [docs/HANDOFF.md](docs/HANDOFF.md) first** — it covers what
-exists, the rules that must not be broken, the environment gotchas, and the next tasks in
-order. [docs/PLAN.md](docs/PLAN.md) has the product roadmap.
+exists, the rules that must not be broken, and the environment gotchas.
+[docs/NEXT-STEPS.md](docs/NEXT-STEPS.md) is the ordered to-do list, and
+[docs/PLAN.md](docs/PLAN.md) has the product roadmap.
 
 ## Run it
 

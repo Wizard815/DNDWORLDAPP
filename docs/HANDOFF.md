@@ -1,6 +1,6 @@
 # HANDOFF — read this first
 
-Written 2026-08-21, last updated 2026-09-14, for whoever (human or agent) picks this up
+Written 2026-08-21, last updated 2026-10-22, for whoever (human or agent) picks this up
 next.
 
 This document is the operating manual: what exists, why it is shaped this way, which
@@ -8,7 +8,10 @@ rules must not be broken, and what to build next. The other docs are:
 
 | File | What it holds |
 |---|---|
+| [NEXT-STEPS.md](NEXT-STEPS.md) | **The ordered to-do list — start here for "what next"** |
+| [ROADMAP-2026-09-23.md](ROADMAP-2026-09-23.md) | The three-app vision and the research behind the current ordering |
 | [PLAN.md](PLAN.md) | The product plan and phase roadmap (P0–P7) |
+| [AUDIT-2026-08-24.md](AUDIT-2026-08-24.md) | Security/bug audit; everything but §3.1 is fixed |
 | [kanka-mapping.md](kanka-mapping.md) | Kanka's model → ours — reference only, no importer is planned (§9.4) |
 | [legendkeeper-observations.md](legendkeeper-observations.md) | Field notes from inspecting a live LegendKeeper project |
 | [openapi.json](openapi.json) | Generated API contract — regenerate with `npm run openapi` |
@@ -56,9 +59,9 @@ groups — fog and layers, P4.4 and P4.6, are not built yet).** No bulk importer
 planned — see §9.4.
 
 Verified by:
-- `npm test` — 31 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
+- `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 254 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 264 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
@@ -439,7 +442,7 @@ When the editor is upgraded to TipTap, it must round-trip markdown on load/save.
 
 ### 6.4 Migrations are append-only SQL
 
-Add `migrations/000N_whatever.sql` (next is `0004`). Never edit an applied migration.
+Add `migrations/00NN_whatever.sql` (next is `0011`). Never edit an applied migration.
 Update `src/db/types.ts` by hand in the same commit — nothing checks this for you.
 
 ### 6.5 A leak surface needs a test in the same commit that opens it
@@ -448,6 +451,23 @@ Update `src/db/types.ts` by hand in the same commit — nothing checks this for 
 named in §6.1. It got the same treatment: excluded from indexing entirely, and
 `scripts/smoke.mjs` asserts it. When P4/P5 add map markers and timeline entries, they
 need the identical pass before they ship, not after.
+
+### 6.6 UI colors come from design tokens, never raw hex
+
+Every color in `apps/web` is a token defined once in `src/styles.css`'s `@theme static`
+block and used through Tailwind utilities named for their role — `bg-canvas`,
+`bg-surface`, `bg-raised`, `text-fg-strong`/`fg`/`fg-soft`/`fg-muted`/`fg-faint`,
+`border-line`, `bg-accent`/`text-on-accent`, `text-danger`, `text-secret`, and so on.
+A theme (`lib/theme.ts` + a `:root[data-theme="…"]` block) only re-assigns those
+variables. A `bg-[#1d1f23]`-style class bypasses every theme and shows up as a dark
+rectangle in the light Parchment theme, so don't add one. The exceptions are user data —
+a marker's own color, the default marker color in `MapView.tsx` — which are content, not
+chrome. Keep the block `static`: Tailwind otherwise drops variables no utility uses,
+and the plain-CSS rules in `styles.css` (wiki links, tag chips, secret blocks) read them
+directly.
+
+Two other shared pieces: dialogs use the `.modal-backdrop` class plus
+`useEscapeKey(onClose)` (`lib/useEscapeKey.ts`), and dropdown rows use `.menu-item`.
 
 ---
 
@@ -1468,24 +1488,19 @@ it. On Windows the server holds the file open, so the delete fails until it is s
 
 ---
 
-## 9. What to build next — P1 in concrete tasks
+## 9. The API, the MCP server, and what comes next
 
-P1 is **API tokens + MCP server + the Kanka import**, in that order. It comes before maps
-and calendars on purpose: retrofitting an API is misery, and once the MCP server exists
-every later phase becomes scriptable and testable.
+**For the ordered to-do list, read [NEXT-STEPS.md](NEXT-STEPS.md).** This section keeps
+the notes on P1 (API tokens, OpenAPI, MCP) that still matter when extending them.
 
-### 9.1 API tokens — DONE
+### 9.1 API tokens and OpenAPI — done
 
-Migration `0002_api_tokens.sql`, `auth/tokens.ts`, `routes/tokens.ts`, the scope hook in
-`index.ts`, and `components/Tokens.tsx`. 14 smoke checks cover it. Details in §7.1.
+Tokens: migration `0002_api_tokens.sql`, `auth/tokens.ts`, `routes/tokens.ts`, the scope
+hook in `index.ts`, and `components/Tokens.tsx`; details in §7.1. OpenAPI is generated
+from the Zod schemas in `packages/schema` (`npm run openapi`), so the MCP server and any
+future script have a contract and drift is visible.
 
-### 9.2 OpenAPI — DONE
-
-Generated from the Zod schemas in `packages/schema`. The point is that the MCP server and
-any future script have a contract, and that drift is visible. See §7.1's sibling note
-where the openapi routes were wired.
-
-### 9.3 The MCP server — DONE
+### 9.3 The MCP server — done
 
 `apps/mcp`, a thin adapter over the HTTP API — **never** direct database access, or rule
 6.2 rots. stdio transport. Configure with `DNDWORLDAPP_URL`, `DNDWORLDAPP_TOKEN` and
@@ -1529,12 +1544,8 @@ cold. But nothing currently on the roadmap depends on them.
 
 ### 9.5 Then, in order
 
-P2 is done (inline secret blocks, DM-driven accounts, per-node ACL, anonymous share
-links, "view as a player," the DM Menu — see §7.2–§7.5). P3's templates and typed fields
-are done too (see §7.7), and so are P4's first three sub-phases — maps with a source
-image, background tiling, typed/inheriting markers, and labeled/colored region/zone
-polygons (see §7.8). Next: P4.4 fog of war → P4.5 party/army tokens → P3's query views →
-P5 calendars + timelines → P6 play mode → P7 hardening. See [PLAN.md](PLAN.md) §8.
+See [NEXT-STEPS.md](NEXT-STEPS.md). It replaced the phase list that used to live here,
+which had gone stale twice (it still listed P4.5 tokens as upcoming after they shipped).
 
 ---
 
