@@ -4,18 +4,39 @@ Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
 
-> **Status, 2026-10-22 — P0, P1 and P2 are built and running, plus a P2.4 editor rewrite,
-> P3's templates/typed fields, inline `#tag`s, and P4.1–P4.3 and P4.5 of maps (source image +
-> typed markers with inheritance, background tiling for large images, labeled/colored
-> region/zone polygons with full vertex editing, party/army tokens with
-> group-dominant visibility, Kanka-style toggleable/orderable map display groups, a
-> marker browse/search panel, and a collapsible edit toolbar — none of these its own
-> numbered P4.x phase, see item 6 under P4 below). No importer is planned.**
+> **Status, 2026-10-22 (evening) — P0–P2 built and running, plus the P2.4 editor, P3's
+> templates/typed fields and `#tag`s, and all of P4 maps (P4.1–P4.5 and the whole
+> map-editor polish list: icon library, image icons, presets, zoom visibility, measurement,
+> clustering) including P4.4 fog of war. Also, from this week's testing rounds: guest
+> login, archive + 30-day trash, inherited page visibility with per-page override, secret
+> blocks with an audience, a real map edit mode, live WebSocket updates, design tokens +
+> three themes + a phone layout. No importer is planned.**
+>
+> **Recently done (2026-10-22)** — details in `docs/NEXT-STEPS.md` "Just done" and HANDOFF §7.8–7.14:
+> - Maps: fog of war (paint/dim/move, undo/redo, square brush), distance measurement with
+>   per-map scale, marker presets (incl. visibility + zoom range), visibility by zoom,
+>   icon library + uploaded-image icons, clustering, an Edit mode with pin summary cards.
+> - Access: Guest Login button (read-only, public pages only), pages inherit visibility
+>   from the parent by default with per-page override, 🔐 Access grants button.
+> - Removal: Archive (kept) vs Delete (trash, purged after 30 days), DM panel to restore.
+> - Editor: one Secret block with DM / Players / Everyone audience; one "Link a page"
+>   (`@`, can create); `#tag` filtering in the sidebar and Ctrl+K.
+>
+> **Doing next, in order:**
+> 1. **Relations + tags redo + graph view** (P3). Tags stop being standalone pages and
+>    become part of one model with typed relations ("Mira → reports to → Queen"); a graph
+>    view draws links, relations and tag colors (ROADMAP §3). Design with the owner first.
+> 2. **Library icon rendering** (bigger, no disc, in the marker's color) — only if still
+>    wanted after trying image icons.
+> 3. **P3 query views** (table/board/gallery), then **P5** calendars/timelines, **P6** play
+>    mode, **P7** hardening (realtime groundwork is already in; Obsidian import/export,
+>    webhooks, backup/restore UI remain).
+> 4. **DM desktop companion app** and the player app mode (ROADMAP §6–7) after the above.
 >
 > | | |
 > |---|---|
 > | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands with submenus, page linking, inline DM-notes sections, multi-layout columns, hover-to-link, inline `#tag`s with a reverse-lookup Tags panel) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, typed/inheriting markers, drawable region/zone polygons (labeled, colored, with per-vertex dragging and click-to-split editing), party/army tokens (grouping, group-dominant visibility), Kanka-style map display groups (nested, orderable, per-viewer toggleable, with an MCP-exposed CRUD surface), a searchable marker browse/jump-to panel, and a collapsible edit toolbar · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Document/Map/saved templates) · manually pinned pages · resizable/collapsible sidebar and right-hand panel · design-token theming (Midnight/Ember/Parchment) and a phone-width layout · a real map edit mode with pin summary cards · guest login · archive + 30-day trash with a DM panel · inherited page visibility with per-page override and a 🔐 Access button · secret blocks with an audience (DM / Players / Everyone) · `#tag` filtering in the sidebar and Ctrl+K · marker clustering · uploaded-image marker icons |
-> | **Next** | The ordered list is `docs/NEXT-STEPS.md`; the reasoning behind it is `docs/ROADMAP-2026-09-23.md`. In short: finish map-editor polish (icon library, marker templates, zoom-visibility, measurement), fog of war, then P3 relations + graph view, API realtime groundwork, and the DM desktop companion / player app, ahead of P5/P6/P7 below |
+> | **Next** | See "Doing next" above; the full ordered list is `docs/NEXT-STEPS.md`, the reasoning is `docs/ROADMAP-2026-09-23.md` |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in
 > Kanka day to day and will move content over by hand through Kanka's MCP and ours as it
