@@ -392,6 +392,12 @@ export const mapDtoSchema = z.object({
   maxZoom: z.number().int(),
   tilingStatus: z.enum(["none", "pending", "running", "ready", "error"]),
   fogEnabled: z.boolean(),
+  /**
+   * Changes whenever what a player can see through the fog changes (a painted
+   * stroke, a region revealed). Players' image/tile URLs carry it so a reveal
+   * shows up without a hard refresh. Null when fog is off.
+   */
+  fogVersion: z.string().nullable(),
   /** Distance scale for the measuring tool, or null when uncalibrated. See migration 0013. */
   scale: z.object({ pxPerUnit: z.number(), unit: z.string() }).nullable(),
 });
@@ -406,9 +412,38 @@ export const mapScaleSchema = z.object({
   unit: z.string().trim().min(1).max(20),
 });
 
-/** Map settings other than the image. `scale: null` clears a calibration. */
-export const updateMapInputSchema = z.object({ scale: mapScaleSchema.nullable() }).partial();
+/**
+ * Map settings other than the image. `scale: null` clears a calibration.
+ * `fogEnabled` is owner/DM only; `scale` needs edit rights on the map.
+ */
+export const updateMapInputSchema = z.object({ scale: mapScaleSchema.nullable(), fogEnabled: z.boolean() }).partial();
 export type UpdateMapInput = z.infer<typeof updateMapInputSchema>;
+
+/**
+ * Fog of war (P4.4). The mask is a grayscale image laid over the map — white
+ * revealed, black hidden — stored at a fraction of the source image's
+ * resolution (DungeonBoard does the same: a fog edge doesn't need the map's
+ * full detail). Server and client must agree on its exact size, so both
+ * compute it here.
+ */
+export const FOG_MASK_DOWNSCALE = 4;
+export const FOG_MASK_MAX_SIDE = 2048;
+
+export function fogMaskSize(imageWidth: number, imageHeight: number): { width: number; height: number; scale: number } {
+  const scale = Math.min(1 / FOG_MASK_DOWNSCALE, FOG_MASK_MAX_SIDE / Math.max(imageWidth, imageHeight, 1));
+  return {
+    width: Math.max(1, Math.round(imageWidth * scale)),
+    height: Math.max(1, Math.round(imageHeight * scale)),
+    /** Mask pixels per source-image pixel. */
+    scale,
+  };
+}
+
+/** PUT /nodes/{id}/map/fog: the whole mask as a base64 PNG, exactly fogMaskSize() pixels. */
+export const putFogMaskInputSchema = z.object({
+  png: z.string().min(1).max(12_000_000),
+});
+export type PutFogMaskInput = z.infer<typeof putFogMaskInputSchema>;
 
 // ---------------------------------------------------------------------------
 // Marker points (P4.3) — polygon/path vertices, stored as ONE string in the map's

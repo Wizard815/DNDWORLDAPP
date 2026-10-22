@@ -55,13 +55,13 @@ If you are about to add a table called `characters`, or a nav section called
 P4.1–P4.3 and P4.5 of maps (source image + typed markers with inheritance, background
 tiling for large images, labeled/colored region/zone polygons with full per-vertex
 editing, party/army tokens with group-dominant visibility, and Kanka-style map display
-groups — fog and layers, P4.4 and P4.6, are not built yet).** No bulk importer is
+groups, plus P4.4 fog of war — only layers, P4.6, is not built yet).** No bulk importer is
 planned — see §9.4.
 
 Verified by:
 - `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 301 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 337 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
@@ -70,7 +70,7 @@ Verified by:
   markers, and a player-can-list-groups-without-edit-rights check — see the "Resolved"
   bullet under Known open items for why that last one is a real bug, not a formality).
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All
-  pass (94 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
+  pass (95 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
   `== map display groups ==` section for the 5 new group-CRUD tools).
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
@@ -160,7 +160,7 @@ to fix it; it just stopped being true once the renderer changed.
 
 ### Not started
 
-Fog of war/layers (P4.4/P4.6), calendars, timelines, the query/view
+Map layers (P4.6), calendars, timelines, the query/view
 engine (table/board/gallery), statblocks, initiative, realtime. No importer is planned
 — see §9.4.
 
@@ -1423,6 +1423,57 @@ in its real length ("Set scale…"); MCP has `set_map_scale`. Uncalibrated, dist
 in source-image pixels. Replacing a map's image keeps the scale — recalibrate if the new
 image is a different resolution. `lib/mapCoords.ts` now holds the pixel↔LatLng helpers
 both MapView and MapMeasure use.
+
+### 7.8e Fog of war (P4.4)
+
+Modeled on **DungeonBoard** (McAJBen, MIT — read for the mechanic, no code copied):
+one mask per map, hidden by default once fog is on, painted with a round brush whose
+strokes join their samples so a fast drag leaves no gaps; the DM sees hidden areas as a
+translucent tint, players see solid fog. On top of the paint, a region polygon with
+`revealed = true` clears the fog inside it — a room reveal without a brush.
+
+**Enforced on the server, not drawn in the browser** — otherwise any player could open
+the raw image or tiles and see everything, which breaks rule §6.1.
+`services/fog.ts` does it all:
+
+- The painted mask is raw 8-bit, deflated, in `DATA_DIR/fog/<nodeId>.mask`, at
+  `fogMaskSize()` (packages/schema: a quarter of the image, longest side ≤ 2048).
+  Raw rather than PNG so `listMarkers` can read it synchronously. Uploads arrive as
+  PNG (`PUT /nodes/{id}/map/fog`, base64) and are converted once.
+- A **fog version** (paint timestamp + a hash of the revealed regions, prefixed with the
+  asset id in `MapDto.fogVersion`) changes whenever what players can see changes. It
+  busts players' URLs and keys the render cache in `DATA_DIR/fog/cache/<nodeId>/<version>/`
+  (older versions are pruned on the next render).
+- **Untiled maps:** a non-DM's `MapDto.assetUrl` is `/api/v1/nodes/{id}/map/view.webp?v=…`,
+  never the raw `/media/` URL. That route always returns the fogged image, for anyone who
+  can see the map — so a DM's "view as a player" `<img>` (no view-as header) gets it too.
+- **Tiled maps:** tile URLs are unchanged; the `/tiles` onRequest hook in `index.ts`
+  darkens each tile for a non-DM (or for `?as=player`, which the client adds while
+  previewing as a player — it only ever narrows). Fog is composited `blend: "atop"` so
+  the tiler's transparent padding stays transparent.
+- **Markers:** a non-DM's marker list drops anything whose anchor (x/y; a polygon's
+  first vertex) is under fog, except revealed regions themselves.
+- **Who controls it:** turning fog on/off, painting, and changing a region's `revealed`
+  are owner/DM only — even a player with an edit grant on the map gets 403 (smoke
+  asserts this). Scale and ordinary marker edits still only need edit rights.
+- **MCP is read-only for fog** (`get_map` reports it). Per ROADMAP §6 / mimir, revealing
+  and hiding is the DM's live call in the editor, not an agent action.
+
+Client: `components/MapFog.tsx` — `FogEditorLayer` (inside the MapContainer, DM only:
+the tint overlay plus painting; the mask lives on a canvas in "alpha form" so painting is
+plain compositing, converted to/from the server's grayscale PNG on load/save) and
+`FogPanel` (🌫 Fog in the toolbar: on/off, Reveal/Hide/Pan, brush size, Reveal all/Hide
+all; the right mouse button paints the opposite brush). Strokes save 0.5 s after they
+end. Players' maps poll every 4 s while fog is on (no push channel yet, ROADMAP §5), so
+reveals show up on their screens on their own.
+
+Known limits, deliberately left: (1) `/media/` URLs stay capability URLs — a player who
+loaded the map *before* fog was turned on could still reopen the raw image by its URL;
+(2) a player with edit rights who somehow knew a hidden marker's id could still PATCH
+it — ids aren't exposed to them, and the marker list never sends it; (3) replacing the
+map image with one of a different size resets the paint to fully hidden (the mask is
+size-bound); (4) `revealed` is still a boolean — the "explored but dimmed" third state
+and animated fog are not built.
 
 ### 7.9 Sidebar right-click menu, the "+ New" chooser, and pinned pages
 

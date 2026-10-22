@@ -21,6 +21,8 @@ export const paths = {
   db: path.join(env.dataDir, "worldapp.db"),
   assets: path.join(env.dataDir, "assets"),
   tiles: path.join(env.dataDir, "tiles"),
+  /** Fog-of-war masks and the player-view renders made from them — see services/fog.ts. */
+  fog: path.join(env.dataDir, "fog"),
 };
 
 /** Refuse to boot a production container with the development secret. */

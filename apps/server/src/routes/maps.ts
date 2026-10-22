@@ -1,17 +1,21 @@
+import fs from "node:fs";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   createMapGroupInputSchema,
   createMarkerInputSchema,
   moveMapGroupInputSchema,
+  putFogMaskInputSchema,
   setMapImageInputSchema,
   updateMapGroupInputSchema,
   updateMapInputSchema,
   updateMarkerInputSchema,
 } from "@dndworldapp/schema";
+import { isGameMaster } from "../auth/policy.ts";
 import type { Viewer } from "../auth/viewer.ts";
 import { db } from "../db/index.ts";
 import { viewerForNode } from "../http/context.ts";
-import { notFound } from "../lib/errors.ts";
+import { forbidden, notFound } from "../lib/errors.ts";
+import { foggedImage, paintedMaskPng, savePaintedMask } from "../services/fog.ts";
 import { assertKnownIcon } from "../services/icons.ts";
 import {
   createMapGroup,
@@ -21,7 +25,18 @@ import {
   selectGroupMapNode,
   updateMapGroup,
 } from "../services/mapGroups.ts";
-import { createMarker, deleteMarker, getMap, listMarkers, setMapImage, updateMap, updateMarker } from "../services/maps.ts";
+import {
+  createMarker,
+  deleteMarker,
+  getMap,
+  getMapRow,
+  listMarkers,
+  mapImageInfo,
+  requireMapNode,
+  setMapImage,
+  updateMap,
+  updateMarker,
+} from "../services/maps.ts";
 
 interface NodeParams {
   nodeId: string;
@@ -71,6 +86,52 @@ export async function mapRoutes(app: FastifyInstance): Promise<void> {
     const input = updateMapInputSchema.parse(request.body);
     return { map: updateMap(request.params.nodeId, viewer, input) };
   });
+
+  /**
+   * The map image as a player sees it under fog — what a player's MapDto
+   * points at instead of the raw /media URL. Always the fogged view, for
+   * anyone who can see the map, so a DM previewing as a player (whose <img>
+   * requests carry no view-as header) gets the same thing their players do.
+   */
+  app.get<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/map/view.webp", async (request, reply) => {
+    const { viewer } = viewerForNode(request, request.params.nodeId);
+    const row = getMapRow(request.params.nodeId, viewer);
+    const image = mapImageInfo(row);
+    if (row.fog_enabled !== 1) {
+      return reply.header("cache-control", "private, no-cache").type("image/webp").send(fs.createReadStream(image.path));
+    }
+    const file = await foggedImage(row, image.path, image.width, image.height);
+    return reply
+      .header("cache-control", "private, max-age=31536000, immutable") // the URL carries the fog version
+      .type("image/webp")
+      .send(fs.createReadStream(file));
+  });
+
+  /** The DM's painted fog mask (white revealed, black hidden) as a PNG. Owner/DM only. */
+  app.get<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/map/fog", async (request, reply) => {
+    const { viewer } = viewerForNode(request, request.params.nodeId);
+    if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can see the fog mask.");
+    const row = getMapRow(request.params.nodeId, viewer);
+    const image = mapImageInfo(row);
+    const png = await paintedMaskPng(row.node_id, image.width, image.height);
+    return reply.header("cache-control", "private, no-store").type("image/png").send(png);
+  });
+
+  app.put<{ Params: NodeParams }>(
+    "/api/v1/nodes/:nodeId/map/fog",
+    { bodyLimit: 16 * 1024 * 1024 },
+    async (request) => {
+      const { viewer } = viewerForNode(request, request.params.nodeId);
+      requireMapNode(request.params.nodeId, viewer);
+      if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can paint fog of war.");
+      const input = putFogMaskInputSchema.parse(request.body);
+      const row = getMapRow(request.params.nodeId, viewer);
+      const image = mapImageInfo(row);
+      const base64 = input.png.replace(/^data:image\/png;base64,/, "");
+      await savePaintedMask(row.node_id, Buffer.from(base64, "base64"), image.width, image.height);
+      return { map: getMap(row.node_id, viewer) };
+    },
+  );
 
   app.get<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/map/markers", async (request) => {
     const { viewer } = viewerForNode(request, request.params.nodeId);

@@ -4,7 +4,7 @@
 // It walks the whole P0 surface, and asserts the DM/player boundary in every place
 // it could leak: tree, direct fetch by id, posts, and search.
 import sharp from "sharp";
-import { mapTileUrlTemplate } from "@dndworldapp/schema";
+import { fogMaskSize, mapTileUrlTemplate } from "@dndworldapp/schema";
 
 const BASE = process.env.SMOKE_BASE ?? "http://localhost:8080/api/v1";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1658,6 +1658,162 @@ const noImageNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Scal
 const noImageScale = await dm("PATCH", `/nodes/${noImageNode.id}/map`, { scale: { pxPerUnit: 1, unit: "ft" } });
 check("a map page with no image yet can't be calibrated (404)", noImageScale.status === 404, noImageScale.body);
 await dm("DELETE", `/nodes/${noImageNode.id}`);
+
+console.log("\n== fog of war ==");
+// A 400x200 untiled map, left half red and right half blue, so a sampled
+// pixel says unambiguously whether a player got the image or the fog.
+const FOG_RGB = [13, 14, 18];
+const near = (rgb, target, tolerance = 30) => rgb !== null && rgb.every((v, i) => Math.abs(v - target[i]) <= tolerance);
+const halvesImage = (width, height) =>
+  sharp({ create: { width, height, channels: 3, background: { r: 0, g: 0, b: 255 } } })
+    .composite([{ input: { create: { width: width / 2, height, channels: 3, background: { r: 255, g: 0, b: 0 } } }, left: 0, top: 0 }])
+    .png()
+    .toBuffer();
+async function uploadMapImage(nodeId, png, name) {
+  const form = new FormData();
+  form.append("file", new Blob([png], { type: "image/png" }), name);
+  const asset = await dm("POST", `/worlds/${worldId}/assets`, form);
+  return dm("PUT", `/nodes/${nodeId}/map`, { assetId: asset.body.asset.id });
+}
+/** A mask PNG of the right size, revealed (white) over the left `revealedFraction` of it. */
+async function leftRevealedMask(width, height, revealedFraction) {
+  const size = fogMaskSize(width, height);
+  const revealedWidth = Math.round(size.width * revealedFraction);
+  let img = sharp({ create: { width: size.width, height: size.height, channels: 3, background: { r: 0, g: 0, b: 0 } } });
+  if (revealedWidth > 0) {
+    img = img.composite([
+      { input: { create: { width: revealedWidth, height: size.height, channels: 3, background: { r: 255, g: 255, b: 255 } } }, left: 0, top: 0 },
+    ]);
+  }
+  return (await img.png().toBuffer()).toString("base64");
+}
+async function pixelAt(session, url, x, y) {
+  const res = await fetch(`${SERVER_ROOT}${url}`, { headers: { cookie: session.cookieHeader() } });
+  if (!res.ok) return { status: res.status, rgb: null };
+  const { data, info } = await sharp(Buffer.from(await res.arrayBuffer())).raw().toBuffer({ resolveWithObject: true });
+  const i = (y * info.width + x) * info.channels;
+  return { status: res.status, rgb: [data[i], data[i + 1], data[i + 2]] };
+}
+
+const fogMapNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Fog test map", parentId: rootId, kind: "map" })).body.node;
+await uploadMapImage(fogMapNode.id, await halvesImage(400, 200), "halves.png");
+const leftPin = (await dm("POST", `/nodes/${fogMapNode.id}/map/markers`, { x: 100, y: 100, label: "West pin" })).body.marker;
+const rightPin = (await dm("POST", `/nodes/${fogMapNode.id}/map/markers`, { x: 300, y: 100, label: "East pin" })).body.marker;
+
+const beforeFog = (await player("GET", `/nodes/${fogMapNode.id}/map`)).body.map;
+check("fog is off by default and a player gets the raw image URL", beforeFog.fogEnabled === false && beforeFog.assetUrl.startsWith("/media/"), beforeFog);
+const playerFogOn = await player("PATCH", `/nodes/${fogMapNode.id}/map`, { fogEnabled: true });
+check("a player cannot turn fog on", playerFogOn.status === 403, playerFogOn.body);
+const fogOn = await dm("PATCH", `/nodes/${fogMapNode.id}/map`, { fogEnabled: true });
+check("the DM can turn fog on", fogOn.status === 200 && fogOn.body.map.fogEnabled === true && typeof fogOn.body.map.fogVersion === "string", fogOn.body);
+
+const playerFogged = (await player("GET", `/nodes/${fogMapNode.id}/map`)).body.map;
+check(
+  "LEAK: under fog a player's map no longer carries the raw image URL",
+  !playerFogged.assetUrl.startsWith("/media/") && playerFogged.assetUrl.startsWith(`/api/v1/nodes/${fogMapNode.id}/map/view.webp`),
+  playerFogged.assetUrl,
+);
+const dmUnfogged = (await dm("GET", `/nodes/${fogMapNode.id}/map`)).body.map;
+check("the DM still gets the raw image", dmUnfogged.assetUrl.startsWith("/media/"), dmUnfogged.assetUrl);
+const previewFogged = (await dm("GET", `/nodes/${fogMapNode.id}/map`, undefined, { "x-view-as": "player" })).body.map;
+check("a DM viewing as a player gets the fogged image", previewFogged.assetUrl.startsWith(`/api/v1/nodes/${fogMapNode.id}/map/view.webp`), previewFogged.assetUrl);
+
+const allHidden = await pixelAt(player, playerFogged.assetUrl, 100, 100);
+check("LEAK: with nothing painted, a player's image is all fog", near(allHidden.rgb, FOG_RGB), allHidden);
+const playerMarkersHidden = (await player("GET", `/nodes/${fogMapNode.id}/map/markers`)).body.markers.map((m) => m.label);
+check("LEAK: markers under fog are not sent to a player", !playerMarkersHidden.includes("West pin") && !playerMarkersHidden.includes("East pin"), playerMarkersHidden);
+const dmMarkers = (await dm("GET", `/nodes/${fogMapNode.id}/map/markers`)).body.markers.map((m) => m.label);
+check("the DM still gets every marker", dmMarkers.includes("West pin") && dmMarkers.includes("East pin"), dmMarkers);
+
+const playerMask = await player("GET", `/nodes/${fogMapNode.id}/map/fog`);
+check("LEAK: a player cannot read the fog mask", playerMask.status === 403, playerMask.status);
+const playerPaint = await player("PUT", `/nodes/${fogMapNode.id}/map/fog`, { png: await leftRevealedMask(400, 200, 1) });
+check("a player cannot paint the fog", playerPaint.status === 403, playerPaint.body);
+const wrongSize = await dm("PUT", `/nodes/${fogMapNode.id}/map/fog`, { png: await leftRevealedMask(800, 400, 0.5) });
+check("a mask of the wrong size is rejected", wrongSize.status === 400, wrongSize.body);
+const notPng = await dm("PUT", `/nodes/${fogMapNode.id}/map/fog`, { png: Buffer.from("not an image").toString("base64") });
+check("a mask that isn't an image is rejected", notPng.status === 400, notPng.body);
+
+const painted = await dm("PUT", `/nodes/${fogMapNode.id}/map/fog`, { png: await leftRevealedMask(400, 200, 0.5) });
+check("the DM can paint the west half revealed", painted.status === 200 && painted.body.map.fogVersion !== fogOn.body.map.fogVersion, painted.body);
+const dmMaskRes = await fetch(`${SERVER_ROOT}/api/v1/nodes/${fogMapNode.id}/map/fog`, { headers: { cookie: dm.cookieHeader() } });
+const dmMaskMeta = await sharp(Buffer.from(await dmMaskRes.arrayBuffer())).metadata();
+const expectedMask = fogMaskSize(400, 200);
+check("the DM reads the mask back at fogMaskSize()", dmMaskRes.status === 200 && dmMaskMeta.width === expectedMask.width && dmMaskMeta.height === expectedMask.height, dmMaskMeta);
+
+const afterPaint = (await player("GET", `/nodes/${fogMapNode.id}/map`)).body.map;
+check("painting changes the URL a player loads", afterPaint.assetUrl !== playerFogged.assetUrl, afterPaint.assetUrl);
+const westPixel = await pixelAt(player, afterPaint.assetUrl, 60, 100);
+const eastPixel = await pixelAt(player, afterPaint.assetUrl, 340, 100);
+check("a player sees the revealed west half", near(westPixel.rgb, [255, 0, 0]), westPixel);
+check("LEAK: a player still sees fog over the east half", near(eastPixel.rgb, FOG_RGB), eastPixel);
+const playerMarkersWest = (await player("GET", `/nodes/${fogMapNode.id}/map/markers`)).body.markers.map((m) => m.label);
+check("a marker in the revealed area is sent; one under fog is not", playerMarkersWest.includes("West pin") && !playerMarkersWest.includes("East pin"), playerMarkersWest);
+
+// A region marked revealed clears the fog inside it — a room reveal, no brush.
+const eastRoom = (await dm("POST", `/nodes/${fogMapNode.id}/map/markers`, {
+  shape: "polygon", x: 220, y: 20, points: "220,20 380,20 380,180 220,180", label: "East room",
+})).body.marker;
+const playerSeesUnrevealedRoom = (await player("GET", `/nodes/${fogMapNode.id}/map/markers`)).body.markers.some((m) => m.id === eastRoom.id);
+check("LEAK: an unrevealed region under fog isn't sent to a player", !playerSeesUnrevealedRoom);
+const revealRoom = await dm("PATCH", `/markers/${eastRoom.id}`, { revealed: true });
+check("the DM can mark a region revealed", revealRoom.status === 200 && revealRoom.body.marker.revealed === true, revealRoom.body);
+const afterRoom = (await player("GET", `/nodes/${fogMapNode.id}/map`)).body.map;
+check("revealing a region changes the player's URL", afterRoom.assetUrl !== afterPaint.assetUrl, afterRoom.assetUrl);
+const roomPixel = await pixelAt(player, afterRoom.assetUrl, 300, 100);
+check("a player sees inside the revealed region", near(roomPixel.rgb, [0, 0, 255]), roomPixel);
+const playerMarkersRoom = (await player("GET", `/nodes/${fogMapNode.id}/map/markers`)).body.markers.map((m) => m.label);
+check("the revealed region and the pin inside it are now sent", playerMarkersRoom.includes("East room") && playerMarkersRoom.includes("East pin"), playerMarkersRoom);
+
+// Edit rights on the map are not enough: fog is the DM's live-session control.
+await dm("POST", `/nodes/${fogMapNode.id}/acl`, { subjectType: "role", subjectId: "player", canRead: true, canEdit: true });
+const editorFogOff = await player("PATCH", `/nodes/${fogMapNode.id}/map`, { fogEnabled: false });
+check("a player with edit rights still cannot turn fog off", editorFogOff.status === 403, editorFogOff.body);
+const editorPaint = await player("PUT", `/nodes/${fogMapNode.id}/map/fog`, { png: await leftRevealedMask(400, 200, 1) });
+check("a player with edit rights still cannot paint the fog", editorPaint.status === 403, editorPaint.body);
+const editorUnreveal = await player("PATCH", `/markers/${eastRoom.id}`, { revealed: false });
+check("a player with edit rights cannot reveal/unreveal a region", editorUnreveal.status === 403, editorUnreveal.body);
+const editorScale = await player("PATCH", `/nodes/${fogMapNode.id}/map`, { scale: { pxPerUnit: 2, unit: "ft" } });
+check("…but can still set the map's scale, which only needs edit rights", editorScale.status === 200, editorScale.body);
+
+// Fog off: back to the raw image and every marker.
+await dm("PATCH", `/nodes/${fogMapNode.id}/map`, { fogEnabled: false });
+const fogOff = (await player("GET", `/nodes/${fogMapNode.id}/map`)).body.map;
+check("with fog off a player gets the raw image again", fogOff.fogEnabled === false && fogOff.fogVersion === null && fogOff.assetUrl.startsWith("/media/"), fogOff);
+const playerMarkersOff = (await player("GET", `/nodes/${fogMapNode.id}/map/markers`)).body.markers.length;
+check("with fog off a player gets every marker", playerMarkersOff === 3, playerMarkersOff);
+
+// Tiled maps: the same tile URL, darkened for players by the /tiles hook.
+const tiledFogNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Fog test: tiled", parentId: rootId, kind: "map" })).body.node;
+await uploadMapImage(tiledFogNode.id, await halvesImage(2400, 1200), "halves-big.png");
+let tiledFogMap = null;
+for (let attempt = 0; attempt < 40; attempt++) {
+  const polled = (await dm("GET", `/nodes/${tiledFogNode.id}/map`)).body.map;
+  if (polled.tilingStatus === "ready" || polled.tilingStatus === "error") {
+    tiledFogMap = polled;
+    break;
+  }
+  await sleep(500);
+}
+check("the tiled fog map finished tiling", tiledFogMap?.tilingStatus === "ready", tiledFogMap);
+await dm("PATCH", `/nodes/${tiledFogNode.id}/map`, { fogEnabled: true });
+await dm("PUT", `/nodes/${tiledFogNode.id}/map/fog`, { png: await leftRevealedMask(2400, 1200, 0.5) });
+const z = tiledFogMap.maxZoom;
+const westTile = `/tiles/${tiledFogNode.id}/${z}/1/1.webp`; // source pixels 256..512 — red, revealed
+const eastTile = `/tiles/${tiledFogNode.id}/${z}/1/7.webp`; // source pixels 1792..2048 — blue, hidden
+const playerWestTile = await pixelAt(player, westTile, 128, 128);
+const playerEastTile = await pixelAt(player, eastTile, 128, 128);
+const dmEastTile = await pixelAt(dm, eastTile, 128, 128);
+const previewEastTile = await pixelAt(dm, `${eastTile}?as=player`, 128, 128);
+check("a player's tile in a revealed area shows the map", near(playerWestTile.rgb, [255, 0, 0]), playerWestTile);
+check("LEAK: a player's tile under fog is darkened, from the same URL", near(playerEastTile.rgb, FOG_RGB), playerEastTile);
+check("the DM gets that tile raw", near(dmEastTile.rgb, [0, 0, 255]), dmEastTile);
+check("?as=player gives a DM the fogged tile", near(previewEastTile.rgb, FOG_RGB), previewEastTile);
+const coarseTile = await pixelAt(player, `/tiles/${tiledFogNode.id}/${tiledFogMap.minZoom}/0/0.webp`, 0, 0);
+check("a player's coarsest tile is fogged too, not just the deepest", coarseTile.status === 200 && coarseTile.rgb !== null, coarseTile);
+
+await dm("DELETE", `/nodes/${fogMapNode.id}`);
+await dm("DELETE", `/nodes/${tiledFogNode.id}`);
 
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);

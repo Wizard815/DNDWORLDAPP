@@ -3,7 +3,7 @@ import path from "node:path";
 import type { CreateMarkerInput, FieldVisibility, MapDto, MapMarkerDto, UpdateMapInput, UpdateMarkerInput } from "@dndworldapp/schema";
 import { formatMarkerPoints, parseMarkerPoints } from "@dndworldapp/schema";
 import sharp from "sharp";
-import { readableLevels } from "../auth/policy.ts";
+import { isGameMaster, readableLevels } from "../auth/policy.ts";
 import type { Viewer } from "../auth/viewer.ts";
 import { db } from "../db/index.ts";
 import type { MapMarkerRow, MapRow } from "../db/types.ts";
@@ -12,6 +12,7 @@ import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { shortId } from "../lib/id.ts";
 import { canEditNode } from "./acl.ts";
 import { ensureAssetDimensions, filePathFor, getAssetRow, toDto as assetToDto } from "./assets.ts";
+import { clearFogCache, effectiveMask, fogVersion, markerVisibleThroughFog } from "./fog.ts";
 import { getNodeRow, isNodeVisible, requireVisibleNode } from "./nodes.ts";
 
 /**
@@ -126,6 +127,7 @@ function startTiling(nodeId: string, sourcePath: string): void {
       if (zooms.length === 0) throw new Error("Tiling produced no zoom levels.");
       fs.rmSync(outDir, { recursive: true, force: true });
       fs.renameSync(tmpDir, outDir);
+      clearFogCache(nodeId); // fogged tiles were rendered from the old pyramid
       updateZoomRange.run(Math.min(...zooms), Math.max(...zooms), "ready", Date.now(), nodeId);
     })
     .catch((err: unknown) => {
@@ -151,18 +153,35 @@ export function recoverStuckTiling(): void {
   ).run(Date.now());
 }
 
-function toMapDto(row: MapRow): MapDto {
+/**
+ * Who sees a map through its fog: everyone but the owner/DM — including an
+ * owner/DM "viewing as a player", whose viewer already says role "player".
+ */
+export function seesFog(row: MapRow, viewer: Viewer): boolean {
+  return row.fog_enabled === 1 && !isGameMaster(viewer.role);
+}
+
+function toMapDto(row: MapRow, viewer: Viewer): MapDto {
   const asset = getAssetRow(row.asset_id);
   if (asset === null) throw notFound("This map's source image is missing.");
+  // The asset id is part of the version so replacing the image (same paint,
+  // new pixels) still busts players' cached URLs.
+  const version = fogVersion(row);
+  const fogKey = version !== null ? `${row.asset_id.slice(0, 8)}-${version}` : null;
   return {
     nodeId: row.node_id,
-    assetUrl: assetToDto(asset).url,
+    // Under fog a player never gets the raw image's URL — only the server-
+    // darkened copy. (Tiles keep their URL; the /tiles hook darkens them.)
+    assetUrl: seesFog(row, viewer)
+      ? `/api/v1/nodes/${row.node_id}/map/view.webp?v=${fogKey}`
+      : assetToDto(asset).url,
     width: asset.width ?? 0,
     height: asset.height ?? 0,
     minZoom: row.min_zoom,
     maxZoom: row.max_zoom,
     tilingStatus: row.tiling_status,
     fogEnabled: row.fog_enabled === 1,
+    fogVersion: fogKey,
     scale:
       row.scale_px_per_unit !== null && row.scale_unit !== null
         ? { pxPerUnit: row.scale_px_per_unit, unit: row.scale_unit }
@@ -172,15 +191,48 @@ function toMapDto(row: MapRow): MapDto {
 
 const updateMapScale = db.prepare("UPDATE maps SET scale_px_per_unit = ?, scale_unit = ?, updated_at = ? WHERE node_id = ?");
 
-/** Map settings that aren't the image — today just the measuring scale. Edit rights on the map page required. */
+const updateMapFog = db.prepare("UPDATE maps SET fog_enabled = ?, updated_at = ? WHERE node_id = ?");
+
+/**
+ * Map settings that aren't the image: the measuring scale (edit rights on the
+ * map) and whether fog is on (owner/DM only — fog is a DM's live-session
+ * control, so even a player with edit rights can't lift it).
+ */
 export function updateMap(nodeId: string, viewer: Viewer, input: UpdateMapInput): MapDto {
   requireMapNode(nodeId, viewer);
   const row = selectMap.get(nodeId) as MapRow | undefined;
   if (row === undefined) throw notFound("This page has no map set.");
+  if (input.fogEnabled !== undefined && !isGameMaster(viewer.role)) {
+    throw forbidden("Only the owner or a DM can turn fog of war on or off.");
+  }
   if (input.scale !== undefined) {
     updateMapScale.run(input.scale?.pxPerUnit ?? null, input.scale?.unit ?? null, Date.now(), nodeId);
   }
-  return toMapDto(selectMap.get(nodeId) as MapRow);
+  if (input.fogEnabled !== undefined) {
+    updateMapFog.run(input.fogEnabled ? 1 : 0, Date.now(), nodeId);
+    clearFogCache(nodeId);
+  }
+  return toMapDto(selectMap.get(nodeId) as MapRow, viewer);
+}
+
+/** The map row behind a page, for the fog routes. Visibility-checked like any read. */
+export function getMapRow(nodeId: string, viewer: Viewer): MapRow {
+  requireVisibleNode(nodeId, viewer);
+  const row = selectMap.get(nodeId) as MapRow | undefined;
+  if (row === undefined) throw notFound("This page has no map set.");
+  return row;
+}
+
+/** The map row for a node with no visibility check — only for callers that already did one (the /tiles hook). */
+export function getMapRowIfAny(nodeId: string): MapRow | null {
+  return (selectMap.get(nodeId) as MapRow | undefined) ?? null;
+}
+
+/** Source-image path and pixel size for a map row. */
+export function mapImageInfo(row: MapRow): { path: string; width: number; height: number } {
+  const asset = getAssetRow(row.asset_id);
+  if (asset === null) throw notFound("This map's source image is missing.");
+  return { path: filePathFor(asset), width: asset.width ?? 0, height: asset.height ?? 0 };
 }
 
 /**
@@ -192,7 +244,7 @@ export function updateMap(nodeId: string, viewer: Viewer, input: UpdateMapInput)
 export function getMap(nodeId: string, viewer: Viewer): MapDto | null {
   requireVisibleNode(nodeId, viewer);
   const row = selectMap.get(nodeId) as MapRow | undefined;
-  return row === undefined ? null : toMapDto(row);
+  return row === undefined ? null : toMapDto(row, viewer);
 }
 
 /**
@@ -213,8 +265,9 @@ export async function setMapImage(nodeId: string, viewer: Viewer, assetId: strin
   if (width > TILING_THRESHOLD_PX || height > TILING_THRESHOLD_PX) {
     startTiling(nodeId, filePathFor(asset));
   }
+  clearFogCache(nodeId);
 
-  return toMapDto(selectMap.get(nodeId) as MapRow);
+  return toMapDto(selectMap.get(nodeId) as MapRow, viewer);
 }
 
 /**
@@ -319,9 +372,19 @@ export function listMarkers(mapNodeId: string, viewer: Viewer): MapMarkerDto[] {
   requireVisibleNode(mapNodeId, viewer);
   const levels = new Set(readableLevels(viewer.role).filter((l) => l !== "private"));
   const byId = markersById(mapNodeId);
+  // Under fog, a marker whose anchor is still hidden isn't sent at all — a
+  // pin in the dark would give away exactly what the fog is hiding.
+  const mapRow = selectMap.get(mapNodeId) as MapRow | undefined;
+  const fog = mapRow !== undefined && seesFog(mapRow, viewer) ? fogMaskFor(mapRow) : null;
   return [...byId.values()]
     .filter((row) => levels.has(effectiveVisibility(row, byId)))
+    .filter((row) => fog === null || markerVisibleThroughFog(row, fog))
     .map((row) => toMarkerDto(row, viewer));
+}
+
+function fogMaskFor(row: MapRow) {
+  const { width, height } = mapImageInfo(row);
+  return effectiveMask(row, width, height);
 }
 
 /** True if `candidateAncestorId` is `markerId` itself or already an ancestor of it — the cycle `parentMarkerId` must never create. */
@@ -464,6 +527,9 @@ export function updateMarker(
 ): MapMarkerDto {
   const node = requireMapNode(mapNodeId, viewer);
   const existing = requireOwnMarker(node, markerId, viewer);
+  if (input.revealed !== undefined && input.revealed !== (existing.revealed === 1) && !isGameMaster(viewer.role)) {
+    throw forbidden("Only the owner or a DM can reveal or hide a region through the fog.");
+  }
 
   if (input.targetNodeId !== undefined && input.targetNodeId !== null) {
     const target = getNodeRow(input.targetNodeId);

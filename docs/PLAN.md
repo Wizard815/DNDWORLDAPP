@@ -407,8 +407,9 @@ import is wanted later, both are specified well enough to build from cold.
      HANDOFF.md §7.8.
    - **Missing feature found the same time**: no way to replace a map's source image
      once set. Added a "🖼 Replace image" toolbar button.
-4. **Fog of war — not yet built.** DungeonBoard-style: a map defaults fully hidden once
-   enabled, revealed via a freehand-painted mask and/or toggling a region "revealed".
+4. **Fog of war — ✅ built (2026-10-22).** DungeonBoard-style: a map defaults fully
+   hidden once enabled, revealed via a freehand-painted mask and/or toggling a region
+   "revealed". Enforced server-side — see HANDOFF.md §7.8e.
 5. **Party/army/faction tokens. ✅ built.** A `token`-shaped marker with a
    self-referential `parent_marker_id`, for tracking a splitting party or moving
    factions — a party token can have squad tokens grouped under it, arbitrarily deep.

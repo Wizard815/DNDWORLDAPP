@@ -559,6 +559,11 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           map.scale !== null
             ? `Scale: 1 ${map.scale.unit} = ${map.scale.pxPerUnit} px (distance between two points = pixel distance / ${map.scale.pxPerUnit})`
             : "Scale: not calibrated (see set_map_scale)",
+          // Read-only on purpose: revealing or hiding fog is the DM's live-session
+          // call, made in the map editor, not something an agent does (ROADMAP §6).
+          map.fogEnabled
+            ? "Fog of war: on. Players only see what the DM has revealed; markers under the fog are hidden from them. No tool changes the fog."
+            : "Fog of war: off.",
         ];
         if (markers.length === 0) {
           parts.push("No markers yet.");

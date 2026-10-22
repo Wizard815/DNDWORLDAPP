@@ -16,7 +16,7 @@ hover-to-link), field-definition templates with typed per-node fields, and map n
 (Leaflet `CRS.Simple`, background tiling for large images, typed markers that inherit a
 linked page's title/icon, region/zone polygons, party/army tokens, and toggleable display
 groups). The UI has three themes (Midnight, Ember, Parchment) and works at phone width.
-Next: map-editor polish and fog of war, then relations and a graph view — the ordered
+Next: relations and a graph view — the ordered
 list is in [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md). No bulk importer is planned;
 content moves in through the API/MCP as needed.
 
@@ -114,7 +114,9 @@ uploaded images. Backup is a copy of that directory.
   you override them — and if the linked page is itself a map, clicking the pin opens it,
   giving you nested maps for free. Images over 2000px tile automatically in the
   background (no page reload needed once ready). Party/army tokens and toggleable
-  display groups are built; fog of war is next.
+  display groups are built, and so is fog of war: the DM paints reveals (or marks a
+  room revealed) and players only ever receive the revealed parts — enforced by the
+  server, not hidden in the browser.
   A marker's icon can be an emoji or one of ~5,500 searchable library icons
   (game-icons.net's fantasy art plus Font Awesome), served by the app itself, and a DM
   can save any marker's look as a world-wide preset ("Tavern", "Enemy camp") to stamp
@@ -173,9 +175,8 @@ drift from what the server actually validates:
 
 ## What does not exist yet
 
-Fog of war, party/army tokens, map layers, calendars,
-timelines, query views, boards, statblocks. Those are the rest of P4 through P6 in the
-plan, in that order. No bulk importer from Kanka or LegendKeeper is planned — content
+Map layers, relations and a graph view, calendars, timelines, query views, boards,
+statblocks, realtime push. The order is in [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md). No bulk importer from Kanka or LegendKeeper is planned — content
 moves over by hand through the API/MCP as needed.
 
 ## Layout
@@ -209,7 +210,7 @@ docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.js
 
 ```bash
 npm test          # unit: fractional indexing, wiki-link parsing, secret blocks
-npm run smoke     # 301 end-to-end API checks (needs an EMPTY data/ dir + running server)
+npm run smoke     # 337 end-to-end API checks (needs an EMPTY data/ dir + running server)
 npm run test:mcp  # drives the MCP server over stdio (needs a running server)
 npm run typecheck
 ```

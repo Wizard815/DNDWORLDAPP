@@ -403,6 +403,7 @@ await api("DELETE", `/worlds/${world.id}/marker-presets/${shrine.body.preset.id}
 console.log("\n== map scale ==");
 const unscaled = await callTool("get_map", { node_id: mapNodeId });
 check("get_map says when a map isn't calibrated", unscaled.text.includes("Scale: not calibrated"), unscaled.text);
+check("get_map reports fog of war status", unscaled.text.includes("Fog of war: off."), unscaled.text);
 const setScale = await callTool("set_map_scale", { node_id: mapNodeId, px_per_unit: 12.5, unit: "mi" });
 const scaledMap = await callTool("get_map", { node_id: mapNodeId });
 check("set_map_scale calibrates and get_map reports it", !setScale.isError && scaledMap.text.includes("Scale: 1 mi = 12.5 px"), scaledMap.text);

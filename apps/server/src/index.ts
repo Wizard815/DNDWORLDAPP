@@ -6,6 +6,7 @@ import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { ZodError } from "zod";
+import { isGameMaster } from "./auth/policy.ts";
 import { purgeExpiredSessions } from "./auth/session.ts";
 import { appliedMigrations, closeDatabase, db } from "./db/index.ts";
 import { assertProductionSafe, env, paths } from "./env.ts";
@@ -19,7 +20,8 @@ import { openApiRoutes } from "./routes/openapi.ts";
 import { shareRoutes } from "./routes/share.ts";
 import { tokenRoutes } from "./routes/tokens.ts";
 import { worldRoutes } from "./routes/worlds.ts";
-import { recoverStuckTiling } from "./services/maps.ts";
+import { foggedTile } from "./services/fog.ts";
+import { getMapRowIfAny, mapImageInfo, recoverStuckTiling } from "./services/maps.ts";
 import { backfillLinksStrippedOfSecrets, requireVisibleNode } from "./services/nodes.ts";
 
 assertProductionSafe();
@@ -77,6 +79,31 @@ app.addHook("onRequest", async (request, reply) => {
   try {
     const { viewer } = viewerForNode(request, mapNodeId);
     requireVisibleNode(mapNodeId, viewer);
+
+    // Fog of war: a player's tiles are darkened here, from the same files,
+    // so the raw pyramid is never served to them. `?as=player` lets a DM's
+    // "view as a player" preview get the same tiles — it only ever narrows.
+    const row = getMapRowIfAny(mapNodeId);
+    const asPlayer = /[?&]as=player(&|$)/.test(request.url);
+    if (row !== null && row.fog_enabled === 1 && (asPlayer || !isGameMaster(viewer.role))) {
+      const match = /^\/tiles\/[^/]+\/(\d+)\/(\d+)\/(\d+)\.webp(\?|$)/.exec(request.url);
+      const tilePath = match !== null ? path.join(paths.tiles, mapNodeId, match[1]!, match[2]!, `${match[3]}.webp`) : null;
+      if (match === null || tilePath === null || !fs.existsSync(tilePath)) {
+        return reply.code(404).send({ error: { code: "not_found", message: "No such tile." } });
+      }
+      const image = mapImageInfo(row);
+      const tile = await foggedTile(
+        row,
+        tilePath,
+        { z: Number(match[1]), row: Number(match[2]), col: Number(match[3]) },
+        image.width,
+        image.height,
+      );
+      return reply
+        .header("cache-control", /[?&]v=/.test(request.url) ? "private, max-age=31536000, immutable" : "private, no-cache")
+        .type("image/webp")
+        .send(tile);
+    }
   } catch (error) {
     if (error instanceof HttpError) {
       return reply

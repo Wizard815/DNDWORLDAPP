@@ -4195,6 +4195,260 @@
         }
       }
     },
+    "/nodes/{nodeId}/map/view.webp": {
+      "get": {
+        "tags": [
+          "maps"
+        ],
+        "summary": "The map image as players see it under fog of war",
+        "description": "When fog is on, a non-DM's MapDto.assetUrl points here instead of at the raw image: the image with every unrevealed area darkened, server-side. Tiled maps' /tiles/ URLs are darkened the same way for non-DMs (append ?as=player to preview as a DM).",
+        "parameters": [
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A WebP image",
+            "content": {
+              "image/webp": {}
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nodes/{nodeId}/map/fog": {
+      "get": {
+        "tags": [
+          "maps"
+        ],
+        "summary": "The painted fog-of-war mask (owner/DM only)",
+        "description": "A grayscale PNG at fogMaskSize() of the image (a quarter resolution, longest side capped at 2048): white revealed, black hidden. Region markers with revealed=true clear the fog inside them on top of this.",
+        "parameters": [
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A PNG image",
+            "content": {
+              "image/png": {}
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "maps"
+        ],
+        "summary": "Replace the painted fog-of-war mask (owner/DM only)",
+        "description": "The whole mask as a base64 PNG of exactly fogMaskSize() pixels; only the first channel is read.",
+        "parameters": [
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutFogMaskInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "map": {
+                      "$ref": "#/components/schemas/MapDto"
+                    }
+                  },
+                  "required": [
+                    "map"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/nodes/{nodeId}/map": {
       "get": {
         "tags": [
@@ -4287,8 +4541,8 @@
         "tags": [
           "maps"
         ],
-        "summary": "Update a map's settings (its distance scale)",
-        "description": "Needs edit rights on the map page. `scale` is source-image pixels per unit plus the unit's name, used by the measuring tool; null clears it. Replacing the image keeps the scale.",
+        "summary": "Update a map's settings: distance scale, fog of war on/off",
+        "description": "Needs edit rights on the map page. `scale` is source-image pixels per unit plus the unit's name, used by the measuring tool; null clears it. Replacing the image keeps the scale. `fogEnabled` is owner/DM only.",
         "parameters": [
           {
             "name": "nodeId",
@@ -6356,6 +6610,10 @@
           "fogEnabled": {
             "type": "boolean"
           },
+          "fogVersion": {
+            "type": "string",
+            "nullable": true
+          },
           "scale": {
             "type": "object",
             "properties": {
@@ -6383,6 +6641,7 @@
           "maxZoom",
           "tilingStatus",
           "fogEnabled",
+          "fogVersion",
           "scale"
         ],
         "additionalProperties": false
@@ -7300,8 +7559,25 @@
             ],
             "additionalProperties": false,
             "nullable": true
+          },
+          "fogEnabled": {
+            "type": "boolean"
           }
         },
+        "additionalProperties": false
+      },
+      "PutFogMaskInput": {
+        "type": "object",
+        "properties": {
+          "png": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000000
+          }
+        },
+        "required": [
+          "png"
+        ],
         "additionalProperties": false
       },
       "CreateMarkerInput": {

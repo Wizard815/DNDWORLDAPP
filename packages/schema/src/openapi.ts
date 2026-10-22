@@ -62,6 +62,7 @@ const UpdateFieldInput = ref("UpdateFieldInput", S.updateFieldInputSchema);
 const MoveFieldInput = ref("MoveFieldInput", S.moveFieldInputSchema);
 const SetMapImageInput = ref("SetMapImageInput", S.setMapImageInputSchema);
 const UpdateMapInput = ref("UpdateMapInput", S.updateMapInputSchema);
+const PutFogMaskInput = ref("PutFogMaskInput", S.putFogMaskInputSchema);
 const CreateMarkerInput = ref("CreateMarkerInput", S.createMarkerInputSchema);
 const UpdateMarkerInput = ref("UpdateMarkerInput", S.updateMarkerInputSchema);
 const CreateMarkerPresetInput = ref("CreateMarkerPresetInput", S.createMarkerPresetInputSchema);
@@ -532,6 +533,34 @@ const paths: Json = {
     },
   },
 
+  "/nodes/{nodeId}/map/view.webp": {
+    get: {
+      tags: ["maps"],
+      summary: "The map image as players see it under fog of war",
+      description:
+        "When fog is on, a non-DM's MapDto.assetUrl points here instead of at the raw image: the image with every unrevealed area darkened, server-side. Tiled maps' /tiles/ URLs are darkened the same way for non-DMs (append ?as=player to preview as a DM).",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: { description: "A WebP image", content: { "image/webp": {} } }, ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/map/fog": {
+    get: {
+      tags: ["maps"],
+      summary: "The painted fog-of-war mask (owner/DM only)",
+      description:
+        "A grayscale PNG at fogMaskSize() of the image (a quarter resolution, longest side capped at 2048): white revealed, black hidden. Region markers with revealed=true clear the fog inside them on top of this.",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: { description: "A PNG image", content: { "image/png": {} } }, ...ERRORS },
+    },
+    put: {
+      tags: ["maps"],
+      summary: "Replace the painted fog-of-war mask (owner/DM only)",
+      description: "The whole mask as a base64 PNG of exactly fogMaskSize() pixels; only the first channel is read.",
+      parameters: [pathParam("nodeId", "Node id")],
+      requestBody: body(PutFogMaskInput),
+      responses: { 200: ok(obj({ map: MapDto }, ["map"])), ...ERRORS },
+    },
+  },
   "/nodes/{nodeId}/map": {
     get: {
       tags: ["maps"],
@@ -541,9 +570,9 @@ const paths: Json = {
     },
     patch: {
       tags: ["maps"],
-      summary: "Update a map's settings (its distance scale)",
+      summary: "Update a map's settings: distance scale, fog of war on/off",
       description:
-        "Needs edit rights on the map page. `scale` is source-image pixels per unit plus the unit's name, used by the measuring tool; null clears it. Replacing the image keeps the scale.",
+        "Needs edit rights on the map page. `scale` is source-image pixels per unit plus the unit's name, used by the measuring tool; null clears it. Replacing the image keeps the scale. `fogEnabled` is owner/DM only.",
       parameters: [pathParam("nodeId", "Node id")],
       requestBody: body(UpdateMapInput),
       responses: { 200: ok(obj({ map: MapDto }, ["map"])), ...ERRORS },

@@ -258,6 +258,9 @@ export const api = {
 
   map: (nodeId: string) => request<{ map: MapDto }>(`/nodes/${nodeId}/map`),
 
+  putFogMask: (nodeId: string, png: string) =>
+    request<{ map: MapDto }>(`/nodes/${nodeId}/map/fog`, { method: "PUT", ...json({ png }) }),
+
   updateMap: (nodeId: string, input: UpdateMapInput) =>
     request<{ map: MapDto }>(`/nodes/${nodeId}/map`, { method: "PATCH", ...json(input) }),
 

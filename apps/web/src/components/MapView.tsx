@@ -10,6 +10,7 @@ import { latLngToPixel, pixelToLatLng } from "../lib/mapCoords.ts";
 import { navigate } from "../lib/nav.ts";
 import { Glyph, glyphHtml } from "./Glyph.tsx";
 import { IconPicker } from "./IconPicker.tsx";
+import { FogEditorLayer, FogPanel, type FogTool } from "./MapFog.tsx";
 import { MeasureLayer, MeasurePanel, type MeasureMode } from "./MapMeasure.tsx";
 
 /**
@@ -214,6 +215,9 @@ function DrawHandler({
  * instead, via Leaflet's own setters, so they take effect immediately no
  * matter when they change.
  */
+/** How often a player's map re-checks the fog while it's on. */
+const FOG_POLL_MS = 4000;
+
 /** Tolerance for comparing fractional zooms (zoomSnap is 0), so a marker set to exactly the current zoom doesn't flicker. */
 const ZOOM_EPSILON = 0.01;
 
@@ -587,13 +591,20 @@ export function MapView({
     // Tiling runs in the background server-side (no queue — see services/maps.ts's
     // startTiling); poll while it's in flight so the view upgrades from ImageOverlay
     // to TileLayer the moment it finishes, with no user action needed.
+    // Also polled for a player while fog is on, so the DM's reveals show up
+    // within a few seconds — there's no push channel yet (ROADMAP §5).
     refetchInterval: (query) =>
-      query.state.data?.tilingStatus === "pending" || query.state.data?.tilingStatus === "running" ? 2000 : false,
+      query.state.data?.tilingStatus === "pending" || query.state.data?.tilingStatus === "running"
+        ? 2000
+        : query.state.data?.fogEnabled === true && !isGameMaster
+          ? FOG_POLL_MS
+          : false,
   });
   const markersQuery = useQuery({
-    queryKey: ["map-markers", node.id],
+    queryKey: ["map-markers", node.id, mapQuery.data?.fogVersion ?? null],
     queryFn: () => api.mapMarkers(node.id),
     enabled: mapQuery.data != null,
+    placeholderData: (previous) => previous,
   });
   const groupsQuery = useQuery({
     queryKey: ["map-groups", node.id],
@@ -618,6 +629,12 @@ export function MapView({
   /** The measuring tool's route, in map pixel space. null = tool closed. Local only; see MapMeasure.tsx. */
   const [measurePoints, setMeasurePoints] = useState<MarkerPoint[] | null>(null);
   const [measureMode, setMeasureMode] = useState<MeasureMode>("points");
+  // Owner/DM fog controls — see MapFog.tsx.
+  const [fogPanelOpen, setFogPanelOpen] = useState(false);
+  const [fogTool, setFogTool] = useState<FogTool>("reveal");
+  const [fogBrushPx, setFogBrushPx] = useState(40);
+  const [fogFill, setFogFill] = useState<{ seq: number; fill: "reveal" | "hide" } | null>(null);
+  const [fogSaveState, setFogSaveState] = useState<string | null>(null);
   // "Groups" (visibility filter) and "Markers" (browse/jump-to) share one
   // bottom-left slot — they're both read-oriented side panels, not edit
   // tools, so showing both at once would just be two lists competing for
@@ -685,6 +702,11 @@ export function MapView({
       setActivePreset(null);
       setSelectedId(result.marker.id);
     },
+  });
+
+  const toggleFog = useMutation({
+    mutationFn: (enabled: boolean) => api.updateMap(node.id, { fogEnabled: enabled }),
+    onSuccess: invalidateMap,
   });
 
   const saveScale = useMutation({
@@ -799,6 +821,7 @@ export function MapView({
 
   const startDraft = (shape: DrawShape, replaceId: string | null = null) => {
     setMeasurePoints(null);
+    setFogPanelOpen(false);
     setDropShape(null);
     setDraftError(null);
     setDraft({ shape, points: [], anchor: null, replaceId });
@@ -1003,6 +1026,7 @@ export function MapView({
             setDropShape(null);
             setActivePreset(null);
             setDraft(null);
+            setFogPanelOpen(false);
             setMeasurePoints([]);
           }}
           title="Measure distances on this map"
@@ -1012,6 +1036,26 @@ export function MapView({
         >
           📏 Measure
         </button>
+        {isGameMaster && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!fogPanelOpen) {
+                setMeasurePoints(null);
+                setDropShape(null);
+                setActivePreset(null);
+                setDraft(null);
+              }
+              setFogPanelOpen(!fogPanelOpen);
+            }}
+            title="Fog of war: hide parts of this map from players"
+            className={`rounded px-2 py-1 text-xs ${
+              fogPanelOpen ? "bg-accent text-on-accent" : map.fogEnabled ? "text-fg-strong hover:bg-press" : "text-fg-soft hover:bg-press"
+            }`}
+          >
+            🌫 Fog{map.fogEnabled ? " ●" : ""}
+          </button>
+        )}
         {node.canEdit && (
           <>
             <div className="mx-0.5 w-px self-stretch bg-line" />
@@ -1065,6 +1109,7 @@ export function MapView({
                   onClick={() => {
                     setActivePreset(null);
                     setMeasurePoints(null);
+                    setFogPanelOpen(false);
                     setDropShape(dropShape === shape && activePreset === null ? null : shape);
                   }}
                   className={`rounded px-2 py-1 text-xs ${
@@ -1225,7 +1270,14 @@ export function MapView({
             // See mapTileUrlTemplate's own comment (packages/schema) for why
             // this is {z}/{y}/{x} and not the more-familiar {z}/{x}/{y} — and
             // docs/HANDOFF.md §7.8 for the bug this fixed.
-            url={mapTileUrlTemplate(node.id)}
+            url={
+              map.fogEnabled && !isGameMaster
+                ? // The server darkens a player's tiles; `v` busts the browser cache when the fog
+                  // changes, and `as=player` makes a DM's "view as a player" preview get the same
+                  // tiles (it only ever narrows, so it's a no-op for a real player).
+                  `${mapTileUrlTemplate(node.id)}?v=${map.fogVersion ?? ""}&as=player`
+                : mapTileUrlTemplate(node.id)
+            }
             minZoom={map.minZoom}
             maxZoom={map.maxZoom}
             tileSize={256}
@@ -1251,6 +1303,22 @@ export function MapView({
           <div className="absolute left-3 top-14 z-[1000] rounded-md border border-line bg-surface/95 px-2.5 py-1.5 text-xs text-fg-subtle">
             Tiling this map for smoother zoom…
           </div>
+        )}
+        {isGameMaster && map.fogEnabled && (
+          <FogEditorLayer
+            map={map}
+            markers={markers}
+            bounds={bounds!}
+            pixelScale={scale}
+            tool={fogPanelOpen ? fogTool : null}
+            brushPx={fogBrushPx}
+            fillRequest={fogFill}
+            onSaved={() => {
+              setFogSaveState("Saved");
+              invalidateMap();
+            }}
+            onSaveError={setFogSaveState}
+          />
         )}
         {measurePoints !== null && (
           <MeasureLayer
@@ -1346,6 +1414,20 @@ export function MapView({
         )}
       </MapContainer>
 
+      {fogPanelOpen && isGameMaster && (
+        <FogPanel
+          map={map}
+          tool={fogTool}
+          brushPx={fogBrushPx}
+          saveState={fogSaveState}
+          onToggleFog={(enabled) => toggleFog.mutate(enabled)}
+          onToolChange={setFogTool}
+          onBrushChange={setFogBrushPx}
+          onFill={(fill) => setFogFill((prev) => ({ seq: (prev?.seq ?? 0) + 1, fill }))}
+          onClose={() => setFogPanelOpen(false)}
+        />
+      )}
+
       {measurePoints !== null && (
         <MeasurePanel
           points={measurePoints}
@@ -1378,6 +1460,7 @@ export function MapView({
               : undefined
           }
           magnification={magnification}
+          canRevealFog={isGameMaster && map.fogEnabled}
           onSavePreset={
             isGameMaster
               ? (name) =>
@@ -1758,6 +1841,7 @@ function MarkerInspector({
   onRedraw,
   onSavePreset,
   magnification,
+  canRevealFog,
 }: {
   marker: MapMarkerDto;
   allNodes: NodeSummary[];
@@ -1772,6 +1856,8 @@ function MarkerInspector({
   onSavePreset?: (name: string) => void;
   /** The map's current and allowed zoom, as magnification (0 = 100%) — bounds the zoom-range slider. */
   magnification: { current: number; min: number; max: number } | null;
+  /** Owner/DM on a map with fog on: a region can be marked as clearing the fog inside it. */
+  canRevealFog: boolean;
 }) {
   const [presetName, setPresetName] = useState<string | null>(null);
   const [label, setLabel] = useState(marker.label ?? "");
@@ -2049,6 +2135,18 @@ function MarkerInspector({
               ))}
             </select>
           </label>
+
+          {canRevealFog && marker.shape === "polygon" && (
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-fg">
+              <input
+                type="checkbox"
+                checked={marker.revealed}
+                onChange={(e) => onSave({ revealed: e.target.checked })}
+                className="accent-accent"
+              />
+              Reveals the fog inside it
+            </label>
+          )}
 
           {magnification !== null && (
             <ZoomRangeControl

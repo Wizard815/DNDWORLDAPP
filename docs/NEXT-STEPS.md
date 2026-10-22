@@ -7,6 +7,13 @@ is not kept here — `git log` and HANDOFF have it.
 
 ## Just done (2026-10-22)
 
+### Fog of war (P4.4)
+
+The DM turns fog on per map (🌫 Fog in the map toolbar), paints reveals with a brush
+(DungeonBoard-style), or marks a region "Reveals the fog". Enforced server-side: players
+get darkened images/tiles and no markers under the fog, and their open maps catch up
+within ~4 s. HANDOFF §7.8e has the design and its known limits.
+
 ### Distance measurement
 
 "📏 Measure" on every map: point-to-point legs or a freehand route, with a running
@@ -75,19 +82,14 @@ Details in HANDOFF §7.8a.
    2. ~~Reusable marker templates~~ — done as marker presets, see above.
    3. ~~Visibility-by-zoom~~ — done, see above (markers pop in/out; a fade is not done).
    4. ~~Distance measurement~~ — done, see above.
-2. **P4.4 fog of war** — two techniques: upgrade `map_markers.revealed` to a three-state
-   room reveal, plus a freehand pixel mask (`maps.fog_enabled`, `fog_mask_updated_at`,
-   both already in the schema). Ship flat feathered fog first, defer animated cloud
-   drift; a DM/player view split is required. (An earlier version of this file pointed
-   at a fog design section in ROADMAP; there isn't one — these notes are the design.)
-   References the owner named (HANDOFF §7.8): **DungeonBoard** (McAJBen, MIT) for the
-   paint-to-reveal mechanic; mimir and VeilCast-VTT in `DNDWORLDREF` for live-session
-   DM controls. Those folders are on the owner's machine, not in the repo.
+2. ~~**P4.4 fog of war**~~ — done, see above. Still open from the original design: a
+   three-state room reveal ("explored but dimmed") and animated cloud drift.
 3. **P3 content model** — relations (a `relations` table and a "Connections" panel that
    merges them with backlinks), then a graph view, then icons-as-images, a table of
    contents, and an index view. ROADMAP §3–§4.
 
-   Ordering confirmed with the owner 2026-10-22: fog of war first, then this.
+   **This is next.** Ordering confirmed with the owner 2026-10-22: fog of war first,
+   then this.
 4. **API realtime groundwork** — push updates, needed before the desktop companion's
    live-session features. ROADMAP §5.
 5. **DM desktop companion v1**, then the **player app** as a mode of it. ROADMAP §6–§7.
