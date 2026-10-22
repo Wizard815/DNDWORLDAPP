@@ -3,7 +3,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, CircleMarker, ImageOverlay, MapContainer, Marker, Polygon, Polyline, TileLayer, useMap, useMapEvents } from "react-leaflet";
-import type { FieldVisibility, MapGroupDto, MapMarkerDto, MarkerPoint, NodeDetail, NodeSummary } from "@dndworldapp/schema";
+import type { FieldVisibility, MapGroupDto, MapMarkerDto, MarkerPoint, MarkerPresetDto, NodeDetail, NodeSummary } from "@dndworldapp/schema";
 import { formatMarkerPoints, mapTileUrlTemplate, parseMarkerPoints } from "@dndworldapp/schema";
 import { ApiError, api } from "../api.ts";
 import { navigate } from "../lib/nav.ts";
@@ -108,6 +108,25 @@ function iconFor(marker: MapMarkerDto): L.DivIcon {
     iconSize: [28, 28],
     iconAnchor: [14, 14],
   });
+}
+
+/** The part of a preset a new marker copies. Empty when there's no preset, so it can be spread unconditionally. */
+function presetLook(preset: MarkerPresetDto | null): { icon?: string | null; color?: string | null; radius?: number | null } {
+  if (preset === null) return {};
+  return { icon: preset.icon, color: preset.color, radius: preset.shape === "circle" ? preset.radius : null };
+}
+
+/** A preset's look in miniature, for the presets menu. */
+function PresetSwatch({ preset }: { preset: MarkerPresetDto }) {
+  const background = safeColor(preset.color, "#3d5ab5");
+  return (
+    <span
+      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] text-white"
+      style={{ background }}
+    >
+      {preset.shape === "pin" || preset.shape === "token" ? <Glyph icon={preset.icon ?? (preset.shape === "token" ? DEFAULT_TOKEN_ICON : "📍")} /> : null}
+    </span>
+  );
 }
 
 function escapeHtml(s: string): string {
@@ -533,7 +552,16 @@ function anchorFor(marker: MapMarkerDto): { x: number; y: number } | null {
   return onVertex ? centroidOf(points) : { x: marker.x, y: marker.y };
 }
 
-export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSummary[] }) {
+export function MapView({
+  node,
+  allNodes,
+  isGameMaster,
+}: {
+  node: NodeDetail;
+  allNodes: NodeSummary[];
+  /** Marker presets are world configuration — only the owner/DM can save or delete one. */
+  isGameMaster: boolean;
+}) {
   const queryClient = useQueryClient();
   const mapQuery = useQuery({
     queryKey: ["map", node.id],
@@ -562,8 +590,20 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
     enabled: mapQuery.data != null,
   });
   const hiddenGroups = useHiddenMapGroups(node.id);
+  const presetsQuery = useQuery({
+    queryKey: ["marker-presets", node.worldId],
+    queryFn: () => api.markerPresets(node.worldId),
+    enabled: node.canEdit,
+  });
 
   const [dropShape, setDropShape] = useState<AddableShape | null>(null);
+  /**
+   * The preset the next placed or drawn marker copies its look from. Copied,
+   * not linked — see migration 0011 — so it only rides along until the marker
+   * is created, and picking a plain shape button clears it.
+   */
+  const [activePreset, setActivePreset] = useState<MarkerPresetDto | null>(null);
+  const [presetMenuOpen, setPresetMenuOpen] = useState(false);
   // "Groups" (visibility filter) and "Markers" (browse/jump-to) share one
   // bottom-left slot — they're both read-oriented side panels, not edit
   // tools, so showing both at once would just be two lists competing for
@@ -622,13 +662,35 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
 
   const create = useMutation({
     mutationFn: (input: { shape: AddableShape; x: number; y: number }) =>
-      api.createMarker(node.id, { ...input, visibility: "members" }),
+      api.createMarker(node.id, { ...input, ...presetLook(activePreset), visibility: "members" }),
     onSuccess: (result) => {
       invalidateMarkers();
       setDropShape(null);
+      setActivePreset(null);
       setSelectedId(result.marker.id);
     },
   });
+
+  const invalidatePresets = () => queryClient.invalidateQueries({ queryKey: ["marker-presets", node.worldId] });
+  const savePreset = useMutation({
+    mutationFn: (input: Parameters<typeof api.createMarkerPreset>[1]) => api.createMarkerPreset(node.worldId, input),
+    onSuccess: invalidatePresets,
+  });
+  const removePreset = useMutation({
+    mutationFn: (presetId: string) => api.deleteMarkerPreset(node.worldId, presetId),
+    onSuccess: invalidatePresets,
+  });
+
+  function placeFromPreset(preset: MarkerPresetDto): void {
+    setPresetMenuOpen(false);
+    if ((DRAW_SHAPES as readonly string[]).includes(preset.shape)) {
+      startDraft(preset.shape as DrawShape);
+    } else {
+      setDraft(null);
+      setDropShape(preset.shape as AddableShape);
+    }
+    setActivePreset(preset);
+  }
 
   const createDraft = useMutation({
     mutationFn: (d: { shape: DrawShape; points: MarkerPoint[]; anchor: { x: number; y: number }; replaceId: string | null }) =>
@@ -643,10 +705,12 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
             x: d.anchor.x,
             y: d.anchor.y,
             points: formatMarkerPoints(d.points),
+            ...presetLook(activePreset),
             visibility: "members",
           }),
     onSuccess: (result) => {
       setDraft(null);
+      setActivePreset(null);
       setDraftError(null);
       invalidateMarkers();
       setSelectedId(result.marker.id);
@@ -719,6 +783,7 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
   const cancelDraft = () => {
     setDraft(null);
     setDraftError(null);
+    setActivePreset(null);
   };
   const onDraftVertex = (points: MarkerPoint[]) => {
     setDraftError(null);
@@ -843,7 +908,14 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
         player as much as a DM, so neither can live inside the edit-only
         block the way "Replace image"/shape-adder/Done-Cancel legitimately do.
       */}
-      <div className="absolute right-3 top-3 z-[1000] flex gap-1 rounded-md border border-line bg-surface/95 p-1 shadow-lg">
+      {/*
+        Wraps onto a second row instead of shrinking: with the edit controls
+        open there are more buttons than a narrow map has room for, and a
+        shrinking row both broke labels over two lines and slid left over
+        Leaflet's zoom buttons. z-[1001] keeps its dropdowns (Presets) above
+        the marker inspector, which sits at z-[1000] below it.
+      */}
+      <div className="absolute right-3 top-3 z-[1001] flex max-w-[calc(100%-4.5rem)] flex-wrap justify-end gap-1 rounded-md border border-line bg-surface/95 p-1 shadow-lg [&_button]:whitespace-nowrap">
         <button
           type="button"
           onClick={() => setOpenPanel(openPanel === "groups" ? null : "groups")}
@@ -900,9 +972,12 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
                 <button
                   key={shape}
                   type="button"
-                  onClick={() => startDraft(shape as DrawShape)}
+                  onClick={() => {
+                    setActivePreset(null);
+                    startDraft(shape as DrawShape);
+                  }}
                   className={`rounded px-2 py-1 text-xs ${
-                    draft?.shape === shape ? "bg-violet-solid text-white" : "text-fg-soft hover:bg-press"
+                    draft?.shape === shape && activePreset === null ? "bg-violet-solid text-white" : "text-fg-soft hover:bg-press"
                   }`}
                 >
                   ✏ {SHAPE_LABEL[shape]}
@@ -911,15 +986,70 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
                 <button
                   key={shape}
                   type="button"
-                  onClick={() => setDropShape(dropShape === shape ? null : shape)}
+                  onClick={() => {
+                    setActivePreset(null);
+                    setDropShape(dropShape === shape && activePreset === null ? null : shape);
+                  }}
                   className={`rounded px-2 py-1 text-xs ${
-                    dropShape === shape ? "bg-accent text-on-accent" : "text-fg-soft hover:bg-press"
+                    dropShape === shape && activePreset === null ? "bg-accent text-on-accent" : "text-fg-soft hover:bg-press"
                   }`}
                 >
                   + {SHAPE_LABEL[shape]}
                 </button>
               ),
             )}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setPresetMenuOpen(!presetMenuOpen)}
+                title="Place a marker from one of this world's presets"
+                className={`rounded px-2 py-1 text-xs ${
+                  activePreset !== null || presetMenuOpen ? "bg-accent text-on-accent" : "text-fg-soft hover:bg-press"
+                }`}
+              >
+                ★ {activePreset !== null ? activePreset.name : "Presets"}
+              </button>
+              {presetMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-[1002]" onClick={() => setPresetMenuOpen(false)} />
+                  <div className="absolute right-0 z-[1003] mt-1 max-h-72 w-56 overflow-y-auto rounded-lg border border-line bg-raised py-1 shadow-pop">
+                    {(presetsQuery.data?.presets ?? []).length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-fg-muted">
+                        No presets yet.{" "}
+                        {isGameMaster
+                          ? "Style a marker, then use “Save look as preset” in its inspector."
+                          : "The owner or a DM can make some."}
+                      </p>
+                    ) : (
+                      (presetsQuery.data?.presets ?? []).map((preset) => (
+                        <div key={preset.id} className="group flex items-center">
+                          <button type="button" onClick={() => placeFromPreset(preset)} className="menu-item">
+                            <PresetSwatch preset={preset} />
+                            <span className="truncate">{preset.name}</span>
+                            <span className="ml-auto text-[10px] text-fg-faint">{SHAPE_LABEL[preset.shape]}</span>
+                          </button>
+                          {isGameMaster && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Delete the "${preset.name}" preset? Markers already placed with it stay as they are.`)) {
+                                  removePreset.mutate(preset.id);
+                                }
+                              }}
+                              title="Delete this preset"
+                              aria-label={`Delete preset ${preset.name}`}
+                              className="hidden shrink-0 px-2 text-xs text-fg-muted hover:text-danger group-hover:block"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
             {draft !== null && (
               <>
                 <button
@@ -1072,7 +1202,10 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
                 {draftError !== null && <span className="text-danger">{draftError}</span>}
               </>
             ) : (
-              <>Click to place a {SHAPE_LABEL[dropShape ?? ""]?.toLowerCase() ?? ""}, or pick another shape to change.</>
+              <>
+                Click to place {activePreset !== null ? `a “${activePreset.name}”` : `a ${SHAPE_LABEL[dropShape ?? ""]?.toLowerCase() ?? ""}`}, or
+                pick another shape to change.
+              </>
             )}
           </div>
         )}
@@ -1139,6 +1272,18 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
           onRedraw={
             node.canEdit && (selected.shape === "polygon" || selected.shape === "path")
               ? () => startDraft(selected.shape as DrawShape, selected.id)
+              : undefined
+          }
+          onSavePreset={
+            isGameMaster
+              ? (name) =>
+                  savePreset.mutate({
+                    name,
+                    shape: selected.shape,
+                    icon: selected.icon,
+                    color: selected.color,
+                    radius: selected.shape === "circle" ? selected.radius : null,
+                  })
               : undefined
           }
         />
@@ -1507,6 +1652,7 @@ function MarkerInspector({
   onSave,
   onDelete,
   onRedraw,
+  onSavePreset,
 }: {
   marker: MapMarkerDto;
   allNodes: NodeSummary[];
@@ -1517,7 +1663,10 @@ function MarkerInspector({
   onSave: (input: Parameters<typeof api.updateMarker>[1]) => void;
   onDelete: () => void;
   onRedraw?: () => void;
+  /** Owner/DM only: store this marker's shape/icon/color as a world-wide preset. */
+  onSavePreset?: (name: string) => void;
 }) {
+  const [presetName, setPresetName] = useState<string | null>(null);
   const [label, setLabel] = useState(marker.label ?? "");
   const [color, setColor] = useState(marker.color ?? "");
   const [radius, setRadius] = useState(marker.radius ?? DEFAULT_CIRCLE_RADIUS_PX);
@@ -1791,6 +1940,43 @@ function MarkerInspector({
               ))}
             </select>
           </label>
+
+          {onSavePreset !== undefined &&
+            (presetName === null ? (
+              <button
+                type="button"
+                onClick={() => setPresetName(marker.label ?? marker.targetNode?.title ?? "")}
+                title="Reuse this shape, icon and color for new markers on any map in this world"
+                className="w-full rounded border border-line px-2 py-1 text-xs text-fg-soft hover:bg-press"
+              >
+                ★ Save look as preset
+              </button>
+            ) : (
+              <form
+                className="flex gap-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (presetName.trim().length === 0) return;
+                  onSavePreset(presetName.trim());
+                  setPresetName(null);
+                }}
+              >
+                <input
+                  autoFocus
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setPresetName(null);
+                  }}
+                  placeholder="Preset name, e.g. Tavern"
+                  aria-label="Preset name"
+                  className="min-w-0 flex-1 rounded border border-line bg-canvas px-2 py-1 text-xs text-fg outline-none focus:border-line-strong"
+                />
+                <button type="submit" className="shrink-0 rounded bg-accent px-2 text-xs text-on-accent hover:bg-accent-hover">
+                  Save
+                </button>
+              </form>
+            ))}
 
           <button
             type="button"

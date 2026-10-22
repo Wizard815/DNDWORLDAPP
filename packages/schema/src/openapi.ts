@@ -40,6 +40,7 @@ const MapDto = ref("MapDto", S.mapDtoSchema);
 const MapMarkerDto = ref("MapMarkerDto", S.mapMarkerDtoSchema);
 const ApiError = ref("ApiError", S.apiErrorSchema);
 const IconHit = ref("IconHit", S.iconHitSchema);
+const MarkerPresetDto = ref("MarkerPresetDto", S.markerPresetDtoSchema);
 
 const SetupInput = ref("SetupInput", S.setupInputSchema);
 const LoginInput = ref("LoginInput", S.loginInputSchema);
@@ -62,6 +63,8 @@ const MoveFieldInput = ref("MoveFieldInput", S.moveFieldInputSchema);
 const SetMapImageInput = ref("SetMapImageInput", S.setMapImageInputSchema);
 const CreateMarkerInput = ref("CreateMarkerInput", S.createMarkerInputSchema);
 const UpdateMarkerInput = ref("UpdateMarkerInput", S.updateMarkerInputSchema);
+const CreateMarkerPresetInput = ref("CreateMarkerPresetInput", S.createMarkerPresetInputSchema);
+const UpdateMarkerPresetInput = ref("UpdateMarkerPresetInput", S.updateMarkerPresetInputSchema);
 
 const obj = (properties: Json, required?: string[]): Json => ({
   type: "object",
@@ -304,6 +307,42 @@ const paths: Json = {
       description:
         "Owner or DM only. Pages using it keep their already-instantiated field values; only their templateId is cleared.",
       parameters: [pathParam("worldId", "World id"), pathParam("templateId", "Template id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+
+  "/worlds/{worldId}/marker-presets": {
+    get: {
+      tags: ["maps"],
+      summary: "This world's marker presets",
+      description: "Any member. A preset is a named shape + icon + color to place markers with.",
+      parameters: [pathParam("worldId", "World id")],
+      responses: { 200: ok(obj({ presets: arr(MarkerPresetDto) }, ["presets"])), ...ERRORS },
+    },
+    post: {
+      tags: ["maps"],
+      summary: "Create a marker preset",
+      description:
+        "Owner or DM only. To place a marker from a preset, copy its shape/icon/color/radius into POST /nodes/{nodeId}/map/markers — markers do not link to presets, so editing or deleting one never changes a placed marker.",
+      parameters: [pathParam("worldId", "World id")],
+      requestBody: body(CreateMarkerPresetInput),
+      responses: { 201: ok(obj({ preset: MarkerPresetDto }, ["preset"])), ...ERRORS },
+    },
+  },
+  "/worlds/{worldId}/marker-presets/{presetId}": {
+    patch: {
+      tags: ["maps"],
+      summary: "Update a marker preset",
+      description: "Owner or DM only. Markers already placed with it are unaffected.",
+      parameters: [pathParam("worldId", "World id"), pathParam("presetId", "Preset id")],
+      requestBody: body(UpdateMarkerPresetInput),
+      responses: { 200: ok(obj({ preset: MarkerPresetDto }, ["preset"])), ...ERRORS },
+    },
+    delete: {
+      tags: ["maps"],
+      summary: "Delete a marker preset",
+      description: "Owner or DM only. Markers already placed with it are unaffected.",
+      parameters: [pathParam("worldId", "World id"), pathParam("presetId", "Preset id")],
       responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
     },
   },

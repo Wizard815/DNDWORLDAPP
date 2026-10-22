@@ -9,6 +9,7 @@ import type {
   MapDto,
   MapGroupDto,
   MapMarkerDto,
+  MarkerPresetDto,
   MoveMapGroupInput,
   MoveNodeInput,
   NodeDetail,
@@ -116,6 +117,10 @@ export class WorldClient {
   search(worldId: string, q: string, limit = 25) {
     const query = `q=${encodeURIComponent(q)}&limit=${limit}`;
     return this.request<{ hits: SearchHit[] }>("GET", `/worlds/${worldId}/search?${query}`);
+  }
+
+  markerPresets(worldId: string) {
+    return this.request<{ presets: MarkerPresetDto[] }>("GET", `/worlds/${worldId}/marker-presets`);
   }
 
   searchIcons(q: string, set?: string, limit = 40) {

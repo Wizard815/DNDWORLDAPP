@@ -61,7 +61,7 @@ planned — see §9.4.
 Verified by:
 - `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 276 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 287 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
@@ -70,7 +70,7 @@ Verified by:
   markers, and a player-can-list-groups-without-edit-rights check — see the "Resolved"
   bullet under Known open items for why that last one is a real bug, not a formality).
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All
-  pass (80 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
+  pass (86 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
   `== map display groups ==` section for the 5 new group-CRUD tools).
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
@@ -442,7 +442,7 @@ When the editor is upgraded to TipTap, it must round-trip markdown on load/save.
 
 ### 6.4 Migrations are append-only SQL
 
-Add `migrations/00NN_whatever.sql` (next is `0011`). Never edit an applied migration.
+Add `migrations/00NN_whatever.sql` (next is `0012`). Never edit an applied migration.
 Update `src/db/types.ts` by hand in the same commit — nothing checks this for you.
 
 ### 6.5 A leak surface needs a test in the same commit that opens it
@@ -1371,6 +1371,21 @@ printed as plain text in the tree, breadcrumbs, mentions, the quick switcher, sh
 views and MCP output; each of those needs `Glyph` before pages can use library icons —
 that is the "icons-as-images" item in ROADMAP §4.
 
+### 7.8b Marker presets
+
+A world's reusable marker looks — a named shape + icon + color (+ radius for circles),
+in `marker_presets` (migration 0011), at `/api/v1/worlds/{worldId}/marker-presets`. Any
+member lists them; only the owner/DM creates, edits or deletes one, same split as
+templates.
+
+**A preset is copied, never linked.** `map_markers` has no `preset_id`: placing a marker
+"from a preset" means the client (the ★ Presets menu in the map's edit toolbar) or the
+MCP tool (`place_marker`'s `preset_id`) copies the preset's values into an ordinary
+create-marker call, with explicit arguments winning. Editing or deleting a preset never
+reaches a marker already on a map — the same non-retroactive rule as templates (§10),
+and smoke asserts it. A DM makes a preset from any styled marker with "★ Save look as
+preset" in the marker inspector. The server runs `assertKnownIcon` on presets too.
+
 ### 7.9 Sidebar right-click menu, the "+ New" chooser, and pinned pages
 
 Three additions the owner asked for after comparing this app to a LegendKeeper trial:
@@ -1533,7 +1548,7 @@ Registered: `list_worlds`, `get_tree`, `get_subtree`, `find_nodes`, `get_node`,
 `list_templates`, `list_unresolved_links`, `create_node`, `update_node`, `move_node`,
 `archive_node`, `create_post`, `update_post`, `set_node_template`, `set_field`,
 `delete_field`, `apply_template` (see §7.7), `get_map`, `place_marker`, `update_marker`,
-`delete_marker`, `search_icons` (see §7.8). `get_subtree` renders just one page's descendant hierarchy as
+`delete_marker`, `search_icons`, `list_marker_presets` (see §7.8). `get_subtree` renders just one page's descendant hierarchy as
 an indented outline (client-side filter over the same `GET .../tree` payload `get_tree`
 already uses — no new server route), for "find the family/faction/region node, then see
 what's nested under it" without pulling in the whole world. Plus `add_event` and

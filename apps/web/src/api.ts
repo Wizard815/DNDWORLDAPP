@@ -7,6 +7,7 @@ import type {
   CreateFieldInput,
   CreateMapGroupInput,
   CreateMarkerInput,
+  CreateMarkerPresetInput,
   CreateNodeInput,
   CreateTemplateInput,
   CreateTokenInput,
@@ -22,6 +23,7 @@ import type {
   MapDto,
   MapGroupDto,
   MapMarkerDto,
+  MarkerPresetDto,
   MemberDto,
   MoveFieldInput,
   MoveMapGroupInput,
@@ -281,6 +283,15 @@ export const api = {
 
   deleteMapGroup: (groupId: string) => request<{ ok: true }>(`/map-groups/${groupId}`, { method: "DELETE" }),
 
+  markerPresets: (worldId: string) =>
+    request<{ presets: MarkerPresetDto[] }>(`/worlds/${worldId}/marker-presets`),
+
+  createMarkerPreset: (worldId: string, input: CreateMarkerPresetInput) =>
+    request<{ preset: MarkerPresetDto }>(`/worlds/${worldId}/marker-presets`, { method: "POST", ...json(input) }),
+
+  deleteMarkerPreset: (worldId: string, presetId: string) =>
+    request<{ ok: true }>(`/worlds/${worldId}/marker-presets/${presetId}`, { method: "DELETE" }),
+
   searchIcons: (q: string, set?: IconSet, limit = 120) => {
     const params = new URLSearchParams({ q, limit: String(limit) });
     if (set !== undefined) params.set("set", set);
@@ -309,6 +320,7 @@ export type {
   FieldVisibility,
   MapDto,
   MapMarkerDto,
+  MarkerPresetDto,
   MemberDto,
   NodeDetail,
   NodeSummary,

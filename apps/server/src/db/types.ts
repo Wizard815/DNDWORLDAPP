@@ -151,3 +151,15 @@ export type MapGroupRow = {
   created_at: number;
   updated_at: number;
 }
+
+export type MarkerPresetRow = {
+  id: string;
+  world_id: string;
+  name: string;
+  shape: MarkerShape;
+  icon: string | null;
+  color: string | null;
+  radius: number | null;
+  created_at: number;
+  updated_at: number;
+}

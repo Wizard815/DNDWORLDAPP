@@ -299,7 +299,7 @@ export function NodeView({
           {node.kind === "map" ? (
             <div className="overflow-hidden rounded-md border border-divider">
               <Suspense fallback={<div className="p-8 text-center text-sm text-fg-muted">Loading map…</div>}>
-                <MapView node={node} allNodes={allNodes} />
+                <MapView node={node} allNodes={allNodes} isGameMaster={isGameMaster} />
               </Suspense>
             </div>
           ) : (

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fieldVisibilitySchema, markerShapeSchema, parseMarkerPoints, visibilitySchema } from "@dndworldapp/schema";
-import type { NodeSummary } from "@dndworldapp/schema";
+import type { MarkerPresetDto, NodeSummary } from "@dndworldapp/schema";
 import { ApiError, type WorldClient } from "./client.ts";
 
 /**
@@ -611,6 +611,33 @@ export function registerTools(server: McpServer, client: WorldClient): void {
   );
 
   server.registerTool(
+    "list_marker_presets",
+    {
+      title: "List marker presets",
+      description:
+        "This world's reusable marker looks (a named shape + icon + color, e.g. 'Tavern' or 'Enemy camp'). Pass a preset's id as place_marker's preset_id to place a marker that looks like it.",
+      inputSchema: { world_id: worldIdArg },
+    },
+    async ({ world_id }) => {
+      try {
+        const worldId = await client.resolveWorldId(world_id);
+        const { presets } = await client.markerPresets(worldId);
+        if (presets.length === 0) return text("This world has no marker presets yet. The owner or a DM creates them in the map editor.");
+        return text(
+          presets
+            .map((p) => {
+              const look = [p.icon, p.color, p.radius !== null ? `radius ${p.radius}` : null].filter((v) => v !== null).join(", ");
+              return `- [${p.id}] "${p.name}" ${p.shape}${look.length > 0 ? ` (${look})` : ""}`;
+            })
+            .join("\n"),
+        );
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "place_marker",
     {
       title: "Place a marker on a map",
@@ -618,7 +645,11 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         "Add a pin, label, circle, region polygon, or party/army token to a map page. A marker linked via target_node_id shows that page's title/icon unless label/icon are set explicitly.",
       inputSchema: {
         node_id: z.string().describe("The map page's id."),
-        shape: markerShapeSchema.optional().describe("Default 'pin'."),
+        preset_id: z
+          .string()
+          .optional()
+          .describe("A preset from list_marker_presets. Its shape, icon, color and radius are used for anything you don't pass explicitly."),
+        shape: markerShapeSchema.optional().describe("Default 'pin', or the preset's shape."),
         x: z.number().describe("Pixel x position, in the map image's own pixel space."),
         y: z.number().describe("Pixel y position."),
         target_node_id: z.string().nullable().optional().describe("A page this marker links to and inherits title/icon from."),
@@ -656,17 +687,27 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         visibility: fieldVisibilitySchema.optional().describe("public | members | dm. Default members."),
       },
     },
-    async ({ node_id, shape, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, group_id, visibility }) => {
+    async ({ node_id, preset_id, shape, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, group_id, visibility }) => {
       try {
+        // A preset is copied, not linked (see migration 0011), so resolving it
+        // here — explicit arguments win — needs no server-side support at all.
+        let preset: MarkerPresetDto | undefined;
+        if (preset_id !== undefined) {
+          const { node } = await client.node(node_id);
+          preset = (await client.markerPresets(node.worldId)).presets.find((p) => p.id === preset_id);
+          if (preset === undefined) {
+            return { ...text(`No marker preset [${preset_id}] in this map's world. See list_marker_presets.`), isError: true };
+          }
+        }
         const { marker } = await client.createMarker(node_id, {
-          shape: shape ?? "pin",
+          shape: shape ?? preset?.shape ?? "pin",
           x,
           y,
           targetNodeId: target_node_id,
           label,
-          icon,
-          color,
-          radius,
+          icon: icon ?? preset?.icon ?? undefined,
+          color: color ?? preset?.color ?? undefined,
+          radius: radius ?? preset?.radius ?? undefined,
           points,
           members,
           parentMarkerId: parent_marker_id,

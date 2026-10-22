@@ -1555,6 +1555,61 @@ const emojiStillFine = await dm("PATCH", `/markers/${iconMarker.body.marker.id}`
 check("an emoji icon is still accepted as-is", emojiStillFine.status === 200 && emojiStillFine.body.marker.icon === "🐉", emojiStillFine.body);
 await dm("DELETE", `/markers/${iconMarker.body.marker.id}`);
 
+console.log("\n== marker presets ==");
+const noPresets = await player("GET", `/worlds/${worldId}/marker-presets`);
+check("a player can list marker presets", noPresets.status === 200 && Array.isArray(noPresets.body.presets), noPresets.body);
+const playerPreset = await player("POST", `/worlds/${worldId}/marker-presets`, { name: "Sneaky", shape: "pin" });
+check("a player cannot create a marker preset", playerPreset.status === 403, playerPreset.body);
+const tavernPreset = await dm("POST", `/worlds/${worldId}/marker-presets`, {
+  name: "Tavern",
+  shape: "pin",
+  icon: "game-icons:beer-stein",
+  color: "#8c3b20",
+});
+check(
+  "the DM can create a marker preset",
+  tavernPreset.status === 201 && tavernPreset.body.preset.icon === "game-icons:beer-stein" && tavernPreset.body.preset.shape === "pin",
+  tavernPreset.body,
+);
+const fakeIconPreset = await dm("POST", `/worlds/${worldId}/marker-presets`, { name: "Bad", icon: "game-icons:no-such-icon" });
+check("a preset with an unknown library icon is rejected", fakeIconPreset.status === 400, fakeIconPreset.body);
+const badShapePreset = await dm("POST", `/worlds/${worldId}/marker-presets`, { name: "Bad", shape: "hexagon" });
+check("a preset with an unknown shape is rejected", badShapePreset.status === 400, badShapePreset.body);
+const campPreset = await dm("POST", `/worlds/${worldId}/marker-presets`, { name: "Enemy camp", shape: "circle", color: "#a8323a", radius: 120 });
+const presetList = (await player("GET", `/worlds/${worldId}/marker-presets`)).body.presets.map((p) => p.name);
+check("presets list alphabetically, case-insensitively", presetList.join("|") === "Enemy camp|Tavern", presetList);
+const otherWorldPreset = await dm("PATCH", `/worlds/${secondWorldForExisting.id}/marker-presets/${tavernPreset.body.preset.id}`, { name: "Moved" });
+check("a preset can't be edited through another world's URL", otherWorldPreset.status === 404, otherWorldPreset.body);
+const otherWorldList = (await dm("GET", `/worlds/${secondWorldForExisting.id}/marker-presets`)).body.presets;
+check("presets are scoped to their own world", otherWorldList.length === 0, otherWorldList);
+
+// Placing "from a preset" is just copying its look into a normal create call.
+const placedFromPreset = await dm("POST", `/nodes/${mapNode.id}/map/markers`, {
+  shape: tavernPreset.body.preset.shape,
+  x: 9,
+  y: 9,
+  icon: tavernPreset.body.preset.icon,
+  color: tavernPreset.body.preset.color,
+});
+const renamedPreset = await dm("PATCH", `/worlds/${worldId}/marker-presets/${tavernPreset.body.preset.id}`, {
+  name: "Inn",
+  icon: "fa6-solid:beer-mug-empty",
+});
+check("the DM can update a preset", renamedPreset.status === 200 && renamedPreset.body.preset.name === "Inn", renamedPreset.body);
+const playerDeletePreset = await player("DELETE", `/worlds/${worldId}/marker-presets/${campPreset.body.preset.id}`);
+check("a player cannot delete a preset", playerDeletePreset.status === 403, playerDeletePreset.body);
+await dm("DELETE", `/worlds/${worldId}/marker-presets/${tavernPreset.body.preset.id}`);
+await dm("DELETE", `/worlds/${worldId}/marker-presets/${campPreset.body.preset.id}`);
+const afterPresetGone = (await dm("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers.find(
+  (m) => m.id === placedFromPreset.body.marker.id,
+);
+check(
+  "editing then deleting a preset leaves markers placed with it unchanged",
+  afterPresetGone !== undefined && afterPresetGone.icon === "game-icons:beer-stein" && afterPresetGone.color === "#8c3b20",
+  afterPresetGone,
+);
+await dm("DELETE", `/markers/${placedFromPreset.body.marker.id}`);
+
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);
 check("archive succeeds", archived.status === 200, archived.body);

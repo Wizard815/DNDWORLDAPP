@@ -7,6 +7,14 @@ is not kept here — `git log` and HANDOFF have it.
 
 ## Just done (2026-10-22)
 
+### Marker presets
+
+Named shape + icon + color combos per world ("Tavern", "Enemy camp"): "★ Save look as
+preset" in the marker inspector (owner/DM), a ★ Presets menu in the map's edit toolbar to
+place from one, and `list_marker_presets` / `place_marker`'s `preset_id` over MCP. Copied
+onto a marker, never linked. HANDOFF §7.8b. The edit toolbar also wraps onto a second
+row now instead of squeezing its labels and sliding under the zoom buttons.
+
 ### Marker icon library
 
 ~5,500 searchable icons (game-icons.net + Font Awesome) as a third marker icon source
@@ -49,7 +57,7 @@ Details in HANDOFF §7.8a.
 1. **Map-editor polish** (confirmed with the owner 2026-09-23; the browse panel and the
    collapsible edit toolbar are already done):
    1. ~~Searchable icon library~~ — done, see above.
-   2. Reusable marker templates — named presets of icon/color/shape.
+   2. ~~Reusable marker templates~~ — done as marker presets, see above.
    3. Visibility-by-zoom — a marker fades in or out past a per-marker zoom range,
       set with a two-handle slider in `MarkerInspector`.
    4. Distance measurement — calibrate a scale, then point-to-point or freehand.

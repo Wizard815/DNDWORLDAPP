@@ -1,17 +1,26 @@
 import type { FastifyInstance } from "fastify";
 import {
   addMemberInputSchema,
+  createMarkerPresetInputSchema,
   createNodeInputSchema,
   createTemplateInputSchema,
   createWorldInputSchema,
   resetPasswordInputSchema,
   searchQuerySchema,
+  updateMarkerPresetInputSchema,
   updateTemplateInputSchema,
 } from "@dndworldapp/schema";
 import { canCreate, isGameMaster } from "../auth/policy.ts";
 import { badRequest, forbidden } from "../lib/errors.ts";
 import { requireUser, viewerForWorld } from "../http/context.ts";
 import { storeAsset } from "../services/assets.ts";
+import { assertKnownIcon } from "../services/icons.ts";
+import {
+  createMarkerPreset,
+  deleteMarkerPreset,
+  listMarkerPresets,
+  updateMarkerPreset,
+} from "../services/markerPresets.ts";
 import { createNode, getTree, searchNodes, unresolvedLinks } from "../services/nodes.ts";
 import { createTemplate, deleteTemplate, listTemplates, updateTemplate } from "../services/templates.ts";
 import {
@@ -31,6 +40,10 @@ interface WorldParams {
 interface TemplateParams {
   worldId: string;
   templateId: string;
+}
+interface PresetParams {
+  worldId: string;
+  presetId: string;
 }
 
 export async function worldRoutes(app: FastifyInstance): Promise<void> {
@@ -167,6 +180,42 @@ export async function worldRoutes(app: FastifyInstance): Promise<void> {
       const viewer = viewerForWorld(request, request.params.worldId);
       if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can delete templates.");
       deleteTemplate(request.params.templateId, request.params.worldId);
+      return { ok: true };
+    },
+  );
+
+  /** Marker presets. Any member reads (anyone placing markers can use one); only the owner/DM authors them. */
+  app.get<{ Params: WorldParams }>("/api/v1/worlds/:worldId/marker-presets", async (request) => {
+    viewerForWorld(request, request.params.worldId);
+    return { presets: listMarkerPresets(request.params.worldId) };
+  });
+
+  app.post<{ Params: WorldParams }>("/api/v1/worlds/:worldId/marker-presets", async (request, reply) => {
+    const viewer = viewerForWorld(request, request.params.worldId);
+    if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can create marker presets.");
+    const input = createMarkerPresetInputSchema.parse(request.body);
+    assertKnownIcon(input.icon);
+    reply.code(201);
+    return { preset: createMarkerPreset(request.params.worldId, input) };
+  });
+
+  app.patch<{ Params: PresetParams }>(
+    "/api/v1/worlds/:worldId/marker-presets/:presetId",
+    async (request) => {
+      const viewer = viewerForWorld(request, request.params.worldId);
+      if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can edit marker presets.");
+      const input = updateMarkerPresetInputSchema.parse(request.body);
+      assertKnownIcon(input.icon);
+      return { preset: updateMarkerPreset(request.params.presetId, request.params.worldId, input) };
+    },
+  );
+
+  app.delete<{ Params: PresetParams }>(
+    "/api/v1/worlds/:worldId/marker-presets/:presetId",
+    async (request) => {
+      const viewer = viewerForWorld(request, request.params.worldId);
+      if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can delete marker presets.");
+      deleteMarkerPreset(request.params.presetId, request.params.worldId);
       return { ok: true };
     },
   );

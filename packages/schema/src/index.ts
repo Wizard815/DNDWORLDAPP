@@ -547,6 +547,45 @@ export const updateMarkerInputSchema = z
 export type UpdateMarkerInput = z.infer<typeof updateMarkerInputSchema>;
 
 // ---------------------------------------------------------------------------
+// Marker presets — a world's reusable marker looks (shape + icon + color). A
+// preset is copied onto a marker when it's placed, never linked: editing one
+// later doesn't touch markers already on a map. See migration 0011.
+// ---------------------------------------------------------------------------
+
+export const markerPresetDtoSchema = z.object({
+  id: z.string(),
+  worldId: z.string(),
+  name: z.string(),
+  shape: markerShapeSchema,
+  icon: z.string().nullable(),
+  color: z.string().nullable(),
+  radius: z.number().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+export type MarkerPresetDto = z.infer<typeof markerPresetDtoSchema>;
+
+export const createMarkerPresetInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  shape: markerShapeSchema.default("pin"),
+  icon: z.string().max(60).nullable().optional(),
+  color: z.string().max(60).nullable().optional(),
+  radius: z.number().positive().nullable().optional(),
+});
+export type CreateMarkerPresetInput = z.infer<typeof createMarkerPresetInputSchema>;
+
+export const updateMarkerPresetInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    shape: markerShapeSchema,
+    icon: z.string().max(60).nullable(),
+    color: z.string().max(60).nullable(),
+    radius: z.number().positive().nullable(),
+  })
+  .partial();
+export type UpdateMarkerPresetInput = z.infer<typeof updateMarkerPresetInputSchema>;
+
+// ---------------------------------------------------------------------------
 // Map groups (Kanka's MapGroup) — a named, colored, orderable category any
 // marker can belong to, nestable via parentGroupId. Distinct from a token's
 // own parentMarkerId (P4.5's party/squad hierarchy): this is pure display

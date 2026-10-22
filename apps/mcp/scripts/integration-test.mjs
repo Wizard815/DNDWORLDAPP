@@ -163,6 +163,7 @@ for (const expected of [
   "apply_template",
   "get_map",
   "search_icons",
+  "list_marker_presets",
   "place_marker",
   "update_marker",
   "delete_marker",
@@ -377,6 +378,26 @@ check("get_map shows a marker's icon", iconMap.text.includes('pin game-icons:cas
 const badIcon = await callTool("update_marker", { marker_id: iconPinId, icon: "game-icons:invented-name" });
 check("update_marker rejects an icon that isn't in the library", badIcon.isError === true && badIcon.text.includes("search_icons"), badIcon.text);
 await callTool("delete_marker", { marker_id: iconPinId });
+
+console.log("\n== marker presets ==");
+const presetsEmpty = await callTool("list_marker_presets", {});
+check("list_marker_presets works with none or some", !presetsEmpty.isError, presetsEmpty.text);
+const shrine = await api("POST", `/worlds/${world.id}/marker-presets`, { name: "MCP Shrine", shape: "pin", icon: "game-icons:temple-gate", color: "#6d4ca0" });
+const presetsListed = await callTool("list_marker_presets", {});
+check("list_marker_presets shows a preset's id and look", presetsListed.text.includes(`[${shrine.body.preset.id}] "MCP Shrine" pin (game-icons:temple-gate, #6d4ca0)`), presetsListed.text);
+const fromPreset = await callTool("place_marker", { node_id: mapNodeId, x: 4, y: 4, label: "Old Shrine", preset_id: shrine.body.preset.id });
+const fromPresetId = fromPreset.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+const presetMap = await callTool("get_map", { node_id: mapNodeId });
+check("place_marker with preset_id copies the preset's icon", !fromPreset.isError && presetMap.text.includes('pin game-icons:temple-gate "Old Shrine"'), presetMap.text);
+const overridePreset = await callTool("place_marker", { node_id: mapNodeId, x: 5, y: 5, label: "Other", preset_id: shrine.body.preset.id, icon: "🕯️" });
+const overrideId = overridePreset.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+const overrideMap = await callTool("get_map", { node_id: mapNodeId });
+check("an explicit icon beats the preset's", overrideMap.text.includes('pin 🕯️ "Other"'), overrideMap.text);
+const badPreset = await callTool("place_marker", { node_id: mapNodeId, x: 5, y: 5, preset_id: "nope" });
+check("place_marker reports an unknown preset_id", badPreset.isError === true && badPreset.text.includes("list_marker_presets"), badPreset.text);
+await callTool("delete_marker", { marker_id: fromPresetId });
+await callTool("delete_marker", { marker_id: overrideId });
+await api("DELETE", `/worlds/${world.id}/marker-presets/${shrine.body.preset.id}`);
 
 // Map display groups (Kanka's own MapGroup) — a separate, purely organizational
 // feature from the party-group hierarchy above. Any shape can join one.
