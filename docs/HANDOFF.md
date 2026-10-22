@@ -1486,6 +1486,27 @@ reveals show up on their screens on their own.
 Still open: animated fog; a player with edit rights who somehow knew a hidden marker's
 id could still PATCH it (ids are never sent to them).
 
+### 7.8f Clustering and image icons
+
+**Clustering.** `MapView` wraps point markers (`pin`, `token`) in a
+`react-leaflet-cluster` `MarkerClusterGroup` whenever the map is *not* in edit mode
+(`isClusterable`, `clusterIcon`); everything else — polygons, paths, circles, text
+labels — renders outside it as before, and in edit mode every marker renders directly so
+Leaflet's drag works. The badge is a plain `divIcon` styled by `.map-cluster` in
+styles.css (theme tokens), not the package's default CSS, though the package still
+imports its own stylesheet for the split/merge animation. 2.x is the line that targets
+react-leaflet 4 / React 18; 4.x needs react-leaflet 5.
+
+**Image icons.** `img:/media/<2hex>/<sha256>.<ext>` in the existing `icon` column
+(max length raised to 200 for markers and presets). `imageIconUrl()` in
+packages/schema is the single pattern check — the server's `assertKnownIcon` refuses
+any `img:` value that doesn't match it (so no external URLs, no path tricks), and the
+client only ever renders what matches, which is also why the URL can go straight into
+`glyphHtml`'s innerHTML. `Glyph` renders it as an `<img>`; `iconFor` draws it 40px with
+a drop shadow and no colored disc. The picker's "Image" tab (`ImageIcons` in
+IconPicker.tsx) needs a `worldId` to upload into; `MarkerInspector` passes the map's
+other image icons as `recentImages`.
+
 ### 7.10 Live events (WebSocket)
 
 `GET /api/v1/worlds/{worldId}/events`, upgraded to a WebSocket (`@fastify/websocket`,

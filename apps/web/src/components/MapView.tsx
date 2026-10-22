@@ -3,8 +3,9 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, CircleMarker, ImageOverlay, MapContainer, Marker, Polygon, Polyline, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import MarkerClusterGroup from "react-leaflet-cluster";
 import type { FieldVisibility, MapDto, MapGroupDto, MapMarkerDto, MarkerPoint, MarkerPresetDto, NodeDetail, NodeSummary } from "@dndworldapp/schema";
-import { formatMarkerPoints, mapTileUrlTemplate, parseMarkerPoints } from "@dndworldapp/schema";
+import { formatMarkerPoints, imageIconUrl, mapTileUrlTemplate, parseMarkerPoints } from "@dndworldapp/schema";
 import { ApiError, api } from "../api.ts";
 import { useLiveConnected } from "../lib/liveEvents.ts";
 import { latLngToPixel, pixelToLatLng } from "../lib/mapCoords.ts";
@@ -100,6 +101,16 @@ function iconFor(marker: MapMarkerDto): L.DivIcon {
   }
   const bg = safeColor(marker.color, "#3d5ab5");
   const fallbackIcon = marker.shape === "token" ? DEFAULT_TOKEN_ICON : "📍";
+  // An uploaded image IS the symbol (a map-brush castle, a Noun Project
+  // glyph) — no disc behind it, just a shadow so it sits on any terrain.
+  if (imageIconUrl(marker.icon) !== null) {
+    return L.divIcon({
+      className: "",
+      html: `<div style="width:40px;height:40px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.7))">${glyphHtml(marker.icon!, escapeHtml)}</div>`,
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+    });
+  }
   return L.divIcon({
     className: "",
     html: `<div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9999px;background:${bg};border:2px solid #17181b;box-shadow:0 1px 3px rgba(0,0,0,.5);font-size:15px;line-height:1">${glyphHtml(marker.icon ?? fallbackIcon, escapeHtml, "#fff")}</div>`,
@@ -134,6 +145,23 @@ function PresetSwatch({ preset }: { preset: MarkerPresetDto }) {
       {preset.shape === "pin" || preset.shape === "token" ? <Glyph icon={preset.icon ?? (preset.shape === "token" ? DEFAULT_TOKEN_ICON : "📍")} /> : null}
     </span>
   );
+}
+
+/** Kanka-style clustering: one badge with a count, splitting apart as you zoom in. */
+function clusterIcon(cluster: { getChildCount: () => number }): L.DivIcon {
+  const count = cluster.getChildCount();
+  const size = count >= 100 ? 44 : count >= 10 ? 38 : 32;
+  return L.divIcon({
+    className: "",
+    html: `<div class="map-cluster" style="width:${size}px;height:${size}px">${count}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+/** Point markers that cluster when the map is just being viewed — never shapes, labels, or anything while editing. */
+function isClusterable(marker: MapMarkerDto): boolean {
+  return marker.shape === "pin" || marker.shape === "token";
 }
 
 function escapeHtml(s: string): string {
@@ -1417,7 +1445,27 @@ export function MapView({
             )}
           </div>
         )}
-        {drawnMarkers.map((marker) =>
+        {!editing && (
+          <MarkerClusterGroup
+            key={`cluster:${map.assetUrl}`}
+            chunkedLoading
+            maxClusterRadius={48}
+            showCoverageOnHover={false}
+            spiderfyOnMaxZoom
+            zoomToBoundsOnClick
+            iconCreateFunction={clusterIcon}
+          >
+            {drawnMarkers.filter(isClusterable).map((marker) => (
+              <Marker
+                key={marker.id}
+                position={pixelToLatLng(marker.x, marker.y, scale)}
+                icon={iconFor(marker)}
+                eventHandlers={{ click: () => setSelectedId(marker.id) }}
+              />
+            ))}
+          </MarkerClusterGroup>
+        )}
+        {drawnMarkers.filter((marker) => editing || !isClusterable(marker)).map((marker) =>
           draft !== null && draft.replaceId === marker.id ? null : marker.shape === "polygon" || marker.shape === "path" ? (
             <PolygonShapeMarker
               key={marker.id}
@@ -1515,6 +1563,7 @@ export function MapView({
           allNodes={allNodes}
           markers={markers}
           groups={groups}
+          worldId={node.worldId}
           canEdit={node.canEdit}
           onClose={() => setSelectedId(null)}
           onSave={(input) => update.mutate({ id: selected.id, ...input })}
@@ -2002,6 +2051,7 @@ function MarkerInspector({
   allNodes,
   markers,
   groups,
+  worldId,
   canEdit,
   onClose,
   onSave,
@@ -2015,6 +2065,8 @@ function MarkerInspector({
   allNodes: NodeSummary[];
   markers: MapMarkerDto[];
   groups: MapGroupDto[];
+  /** For uploading an image as the marker's icon. */
+  worldId: string;
   canEdit: boolean;
   onClose: () => void;
   onSave: (input: Parameters<typeof api.updateMarker>[1]) => void;
@@ -2131,6 +2183,8 @@ function MarkerInspector({
                   disabled={false}
                   onChange={(icon) => onSave({ icon })}
                   allowLibrary
+                  worldId={worldId}
+                  recentImages={markers.map((m) => m.icon).filter((i): i is string => i !== null && imageIconUrl(i) !== null)}
                   fallback={marker.targetNode?.icon ?? (marker.shape === "token" ? DEFAULT_TOKEN_ICON : "📍")}
                 />
                 <span className="text-[10px] text-fg-muted">

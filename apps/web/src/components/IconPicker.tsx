@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { ICON_SETS, type IconSet } from "@dndworldapp/schema";
+import { useEffect, useRef, useState } from "react";
+import { ICON_SETS, imageIconUrl, type IconSet } from "@dndworldapp/schema";
 import { api } from "../api.ts";
 import { Glyph } from "./Glyph.tsx";
 
@@ -22,6 +22,8 @@ export function IconPicker({
   onChange,
   allowLibrary = false,
   fallback = "📄",
+  worldId,
+  recentImages = [],
 }: {
   value: string | null;
   disabled: boolean;
@@ -35,10 +37,14 @@ export function IconPicker({
   allowLibrary?: boolean;
   /** Shown on the button when nothing is picked. */
   fallback?: string;
+  /** With `allowLibrary`: enables the "Image" tab, which uploads into this world. */
+  worldId?: string;
+  /** Image icons already used elsewhere (e.g. on this map's other markers), offered as one-click picks. */
+  recentImages?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
-  const [tab, setTab] = useState<"emoji" | "library">("emoji");
+  const [tab, setTab] = useState<"emoji" | "library" | "image">(imageIconUrl(value) !== null ? "image" : "emoji");
   /**
    * Viewport coordinates, captured when the picker opens. `fixed`, not
    * `absolute`: inside a map's marker inspector the picker sits in an
@@ -95,7 +101,7 @@ export function IconPicker({
           >
             {allowLibrary && (
               <div className="mb-2 flex gap-1 rounded-md bg-canvas p-0.5 text-xs" role="tablist">
-                {(["emoji", "library"] as const).map((t) => (
+                {(worldId !== undefined ? (["emoji", "library", "image"] as const) : (["emoji", "library"] as const)).map((t) => (
                   <button
                     key={t}
                     type="button"
@@ -104,13 +110,15 @@ export function IconPicker({
                     onClick={() => setTab(t)}
                     className={`flex-1 rounded px-2 py-1 ${tab === t ? "bg-selected text-fg-strong" : "text-fg-muted hover:text-fg"}`}
                   >
-                    {t === "emoji" ? "Emoji" : "Icon library"}
+                    {t === "emoji" ? "Emoji" : t === "library" ? "Icon library" : "Image"}
                   </button>
                 ))}
               </div>
             )}
             {tab === "library" ? (
               <IconLibrary onPick={choose} />
+            ) : tab === "image" && worldId !== undefined ? (
+              <ImageIcons worldId={worldId} current={value} recent={recentImages} onPick={choose} />
             ) : (
               <>
                 <div className="mb-2 grid grid-cols-6 gap-1">
@@ -223,6 +231,90 @@ function IconLibrary({ onPick }: { onPick: (icon: string) => void }) {
       <p className="mt-1 text-[9px] leading-snug text-fg-faint">
         Icons: {ICON_SETS["game-icons"].attribution}; {ICON_SETS["fa6-solid"].attribution}.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Bring-your-own icon: any PNG/SVG/WebP/JPG — the Noun Project, K.M.
+ * Alexander's map brushes, Tom Cartos' assets, freesvg.org, a screenshot of
+ * a symbol — uploaded as an ordinary world asset and stored on the marker as
+ * `img:` + its /media URL (see imageIconUrl in packages/schema).
+ */
+function ImageIcons({
+  worldId,
+  current,
+  recent,
+  onPick,
+}: {
+  worldId: string;
+  current: string | null;
+  recent: string[];
+  onPick: (icon: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const choices = Array.from(new Set([current, ...recent].filter((i): i is string => i !== null && imageIconUrl(i) !== null)));
+
+  async function upload(file: File): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const asset = await api.uploadAsset(worldId, file);
+      onPick(`img:${asset.url}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/svg+xml,image/webp,image/jpeg,image/gif,image/avif"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file !== undefined) void upload(file);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => fileRef.current?.click()}
+        className="mb-2 w-full rounded-md bg-accent px-2 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
+      >
+        {busy ? "Uploading…" : "Upload an image…"}
+      </button>
+      <p className="mb-2 text-[10px] leading-snug text-fg-faint">
+        PNG with transparency or SVG works best. It's drawn as the marker itself, about 40px on the map, so
+        simple bold symbols read better than detailed art.
+      </p>
+      {choices.length > 0 && (
+        <>
+          <p className="mb-1 text-[10px] uppercase tracking-wide text-fg-muted">Already uploaded</p>
+          <div className="grid max-h-40 grid-cols-6 gap-1 overflow-y-auto">
+            {choices.map((icon) => (
+              <button
+                key={icon}
+                type="button"
+                onClick={() => onPick(icon)}
+                className={`flex aspect-square items-center justify-center rounded border p-1 hover:bg-highlight ${
+                  icon === current ? "border-accent" : "border-line"
+                }`}
+              >
+                <img src={imageIconUrl(icon) ?? ""} alt="" className="h-full w-full object-contain" />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {error !== null && <p className="mt-2 text-[11px] text-danger">{error}</p>}
     </div>
   );
 }

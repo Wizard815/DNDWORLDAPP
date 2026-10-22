@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { parseIconRef, type IconHit, type IconSet } from "@dndworldapp/schema";
+import { imageIconUrl, isImageIconRef, parseIconRef, type IconHit, type IconSet } from "@dndworldapp/schema";
 import { badRequest } from "../lib/errors.ts";
 
 /**
@@ -91,6 +91,9 @@ export function iconSvg(set: IconSet, name: string): string | null {
  * without a library prefix is an emoji and passes through untouched.
  */
 export function assertKnownIcon(icon: string | null | undefined): void {
+  if (isImageIconRef(icon) && imageIconUrl(icon) === null) {
+    throw badRequest('An image icon must be "img:" + the /media/… URL of an uploaded asset (POST /worlds/{id}/assets), nothing external.');
+  }
   if (icon == null || !/^(game-icons|fa6-solid):/.test(icon)) return;
   const ref = parseIconRef(icon);
   if (ref === null || iconSvg(ref.set, ref.name) === null) {

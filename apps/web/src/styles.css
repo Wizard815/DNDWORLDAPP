@@ -437,6 +437,30 @@ a.tag-chip:hover {
   margin-bottom: 0;
 }
 
+/* Marker clusters (react-leaflet-cluster): a count badge that splits as you zoom in. */
+.map-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border: 2px solid var(--color-canvas-deep);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent),
+    0 1px 3px rgb(0 0 0 / 50%);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.leaflet-cluster-anim .leaflet-marker-icon,
+.leaflet-cluster-anim .leaflet-marker-shadow {
+  transition:
+    transform 0.25s ease-out,
+    opacity 0.25s ease-in;
+}
+
 /* The live editor's own content root (see editor/Editor.tsx). */
 .tiptap-editor .ProseMirror {
   outline: none;

@@ -658,7 +658,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
     {
       title: "List marker presets",
       description:
-        "This world's reusable marker looks (a named shape + icon + color, e.g. 'Tavern' or 'Enemy camp'). Pass a preset's id as place_marker's preset_id to place a marker that looks like it.",
+        "This world's reusable marker looks (a named shape + icon + color, e.g. 'Tavern' or 'Enemy camp'). Pass a preset's id as place_marker's preset_id to place a marker that looks like it. An icon is an emoji, a library ref (search_icons), or 'img:' + an uploaded asset's /media URL.",
       inputSchema: { world_id: worldIdArg },
     },
     async ({ world_id }) => {

@@ -607,7 +607,7 @@ export const createMarkerInputSchema = z.object({
   points: pointsSchema,
   targetNodeId: z.string().nullable().optional(),
   label: z.string().max(300).nullable().optional(),
-  icon: z.string().max(60).nullable().optional(),
+  icon: z.string().max(200).nullable().optional(),
   color: z.string().max(60).nullable().optional(),
   radius: z.number().positive().nullable().optional(),
   members: z.string().max(2_000).nullable().optional(),
@@ -626,7 +626,7 @@ export const updateMarkerInputSchema = z
     points: pointsSchema,
     targetNodeId: z.string().nullable(),
     label: z.string().max(300).nullable(),
-    icon: z.string().max(60).nullable(),
+    icon: z.string().max(200).nullable(),
     color: z.string().max(60).nullable(),
     radius: z.number().positive().nullable(),
     members: z.string().max(2_000).nullable(),
@@ -665,7 +665,7 @@ export type MarkerPresetDto = z.infer<typeof markerPresetDtoSchema>;
 export const createMarkerPresetInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
   shape: markerShapeSchema.default("pin"),
-  icon: z.string().max(60).nullable().optional(),
+  icon: z.string().max(200).nullable().optional(),
   color: z.string().max(60).nullable().optional(),
   radius: z.number().positive().nullable().optional(),
   visibility: fieldVisibilitySchema.default("members"),
@@ -678,7 +678,7 @@ export const updateMarkerPresetInputSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
     shape: markerShapeSchema,
-    icon: z.string().max(60).nullable(),
+    icon: z.string().max(200).nullable(),
     color: z.string().max(60).nullable(),
     radius: z.number().positive().nullable(),
     visibility: fieldVisibilitySchema,
@@ -889,6 +889,25 @@ export function parseIconRef(icon: string | null | undefined): { set: IconSet; n
   const match = ICON_REF_PATTERN.exec(icon);
   if (match === null) return null;
   return { set: match[1] as IconSet, name: match[2]! };
+}
+
+/**
+ * A marker icon can also be an uploaded image: `img:` + the asset's own
+ * `/media/...` URL (what POST /worlds/{id}/assets returns). Kanka's "custom
+ * SVG icon", minus the lookup — the URL is content-addressed and immutable,
+ * so storing it beats storing an id that would need resolving on every
+ * render. Only this app's own /media path is accepted, never an external URL.
+ */
+const IMAGE_ICON_PATTERN = /^img:(\/media\/[a-f0-9]{2}\/[a-f0-9]{64}\.[a-z0-9]{1,5})$/;
+
+/** The image URL when `icon` is an uploaded-image icon, else null. */
+export function imageIconUrl(icon: string | null | undefined): string | null {
+  if (icon == null) return null;
+  return IMAGE_ICON_PATTERN.exec(icon)?.[1] ?? null;
+}
+
+export function isImageIconRef(icon: string | null | undefined): boolean {
+  return icon != null && icon.startsWith("img:");
 }
 
 /** Where the server serves a library icon's SVG. Public and immutable — icons are not campaign data. */

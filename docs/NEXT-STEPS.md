@@ -7,22 +7,30 @@ is not kept here — `git log` and HANDOFF have it.
 
 ## Open, in order (2026-10-22)
 
-1. **Marker clustering** (Kanka-style: one badge with a count that splits as you zoom
-   in). Research done: use `react-leaflet-cluster` **2.x** — the line that targets
-   react-leaflet 4 / React 18 (4.x needs react-leaflet 5). It wraps Leaflet.markercluster;
-   polygons/paths/circles stay outside the cluster group, only point markers go in.
-2. **Map icons the owner actually wants.** The bundled library (game-icons + Font
-   Awesome) works but reads as "terrible for D&D maps" — thin monochrome glyphs in a
-   colored circle. No open-licensed fantasy-cartography SVG set turned up (Inkwell Ideas'
-   free sets are PNG + attribution; Kenney's CC0 "cartography pack" is PNG tiles; the
-   itch.io sets are personal-use only). Two realistic moves, either or both:
-   (a) let a marker's icon be an **uploaded image** (Kanka's model) so any purchased or
-   free PNG pack can be used; (b) render library icons larger, optionally without the
-   circle, in the marker's color. Decide with the owner before building.
-3. **Tags → relations → graph.** Tags stay pages for now (filterable via `#tag` in the
+1. **Tags → relations → graph.** Tags stay pages for now (filterable via `#tag` in the
    sidebar filter and Ctrl+K). The owner wants tags to be part of the relations/graph
    work, not a separate system — design that together (ROADMAP §3).
-4. P3 query views, P5 calendars/timelines, P6 play mode, P7 hardening — unchanged.
+2. **Library icons could render better** — bigger, optionally without the colored disc,
+   in the marker's color — if the owner still wants the bundled set after trying image
+   icons. Not started; ask first.
+3. P3 query views, P5 calendars/timelines, P6 play mode, P7 hardening — unchanged.
+
+## Just done (2026-10-22, third pass)
+
+### Marker clustering
+Outside edit mode, pins and tokens that crowd together collapse into one count badge
+that splits apart as you zoom in (click to zoom to it, spiderfies at max zoom). Shapes,
+circles and text labels never cluster; in edit mode nothing does, so dragging works.
+`react-leaflet-cluster` 2.x (the react-leaflet 4 line). HANDOFF §7.8f.
+
+### Image marker icons
+A marker's icon can be an uploaded PNG/SVG/WebP/JPG — the "Image" tab in the marker
+inspector's icon picker uploads it as an ordinary world asset and stores `img:` + its
+`/media/…` URL on the marker (markers and presets only; page icons stay emoji). It's drawn
+as the symbol itself (40px, drop shadow, no disc), which is how brush-style map art from
+K.M. Alexander, Tom Cartos, the Noun Project or freesvg.org is meant to be used. External
+URLs are refused server-side. Images already used on the map are offered as one-click
+picks. HANDOFF §7.8f.
 
 ## Just done (2026-10-22, second pass)
 

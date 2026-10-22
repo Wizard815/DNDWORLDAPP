@@ -1968,6 +1968,19 @@ await guestAgain("POST", "/auth/guest");
 const guestAfterPromote = (await guestAgain("GET", `/worlds/${worldId}/tree`)).body.nodes.map((n) => n.id);
 check("promoting the guest account in the member panel does not unlock DM pages", !guestAfterPromote.includes(guestDmOnly.id));
 
+console.log("\n== image marker icons ==");
+const iconMapNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Icon map", parentId: rootId, kind: "map" })).body.node;
+await dm("PUT", `/nodes/${iconMapNode.id}/map`, { assetId: mapAsset.body.asset.id });
+const iconAsset = await uploadPng(dm, worldId);
+const imgMarker = await dm("POST", `/nodes/${iconMapNode.id}/map/markers`, { shape: "pin", x: 1, y: 1, icon: `img:${iconAsset.body.asset.url}`, visibility: "members" });
+check("a marker can use an uploaded image as its icon", (imgMarker.status === 200 || imgMarker.status === 201) && imgMarker.body.marker.icon === `img:${iconAsset.body.asset.url}`, imgMarker.body);
+const extIcon = await dm("POST", `/nodes/${iconMapNode.id}/map/markers`, { shape: "pin", x: 1, y: 1, icon: "img:https://example.com/x.png", visibility: "members" });
+check("an external image URL is rejected as an icon", extIcon.status === 400, extIcon.body);
+const badIconPath = await dm("POST", `/nodes/${iconMapNode.id}/map/markers`, { shape: "pin", x: 1, y: 1, icon: "img:/media/../../etc/passwd", visibility: "members" });
+check("a non-asset /media path is rejected as an icon", badIconPath.status === 400, badIconPath.body);
+const imgPreset = await dm("POST", `/worlds/${worldId}/marker-presets`, { name: "Image preset", shape: "pin", icon: `img:${iconAsset.body.asset.url}` });
+check("a preset can carry an image icon", imgPreset.status === 201 || imgPreset.status === 200, imgPreset.body);
+
 console.log("\n== inherited visibility ==");
 const dmFolder = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "DM folder", parentId: rootId, visibility: "dm" })).body.node;
 const inheritChildCreated = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Inherit child", parentId: dmFolder.id, bodyMd: "Tagged #inherittag" })).body.node;

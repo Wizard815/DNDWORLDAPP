@@ -8181,7 +8181,7 @@
           },
           "icon": {
             "type": "string",
-            "maxLength": 60,
+            "maxLength": 200,
             "nullable": true
           },
           "color": {
@@ -8260,7 +8260,7 @@
           },
           "icon": {
             "type": "string",
-            "maxLength": 60,
+            "maxLength": 200,
             "nullable": true
           },
           "color": {
@@ -8335,7 +8335,7 @@
           },
           "icon": {
             "type": "string",
-            "maxLength": 60,
+            "maxLength": 200,
             "nullable": true
           },
           "color": {
@@ -8397,7 +8397,7 @@
           },
           "icon": {
             "type": "string",
-            "maxLength": 60,
+            "maxLength": 200,
             "nullable": true
           },
           "color": {
