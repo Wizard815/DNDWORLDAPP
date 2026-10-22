@@ -74,16 +74,16 @@ export const SlashCommandList = forwardRef<SlashCommandListHandle, Props>(functi
 
   if (activeItems.length === 0) {
     return (
-      <div className="w-64 rounded-md border border-[#33363d] bg-[#22242a] px-3 py-2 text-xs text-[#6b6e77] shadow-lg">
+      <div className="w-64 rounded-md border border-line bg-raised px-3 py-2 text-xs text-fg-faint shadow-lg">
         No matching command.
       </div>
     );
   }
 
   return (
-    <div className="w-72 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg">
+    <div className="w-72 overflow-hidden rounded-md border border-line bg-raised shadow-lg">
       {submenuOf !== null && (
-        <div className="flex items-center gap-1.5 border-b border-[#2c2f36] px-3 py-1.5 text-[11px] text-[#7a7d86]">
+        <div className="flex items-center gap-1.5 border-b border-selected px-3 py-1.5 text-[11px] text-fg-muted">
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
@@ -91,7 +91,7 @@ export const SlashCommandList = forwardRef<SlashCommandListHandle, Props>(functi
               setSubmenuOf(null);
               setIndex(0);
             }}
-            className="hover:text-[#d7d8dc]"
+            className="hover:text-fg"
           >
             ← Back
           </button>
@@ -110,15 +110,15 @@ export const SlashCommandList = forwardRef<SlashCommandListHandle, Props>(functi
               onClick={() => select(item)}
               onMouseEnter={() => setIndex(i)}
               className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left ${
-                i === index ? "bg-[#2f333b]" : ""
+                i === index ? "bg-highlight" : ""
               }`}
             >
               <span className="text-base">{item.icon}</span>
               <span className="min-w-0 flex-1">
-                <div className="text-sm text-[#f0f1f4]">{item.title}</div>
-                <div className="truncate text-[11px] text-[#8d9099]">{item.description}</div>
+                <div className="text-sm text-fg-strong">{item.title}</div>
+                <div className="truncate text-[11px] text-fg-subtle">{item.description}</div>
               </span>
-              {item.submenu !== undefined && <span className="text-[#6b6e77]">›</span>}
+              {item.submenu !== undefined && <span className="text-fg-faint">›</span>}
             </button>
           </li>
         ))}

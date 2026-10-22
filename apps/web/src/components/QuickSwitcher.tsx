@@ -53,11 +53,11 @@ export function QuickSwitcher({
   return (
     <div
       // z-[2050], not z-50: must clear MapView's in-map overlays (z-[1000]) when the current page is a map.
-      className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[12vh]"
+      className="modal-backdrop pt-[12vh]"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg overflow-hidden rounded-lg border border-[#33363d] bg-[#1d1f23] shadow-2xl"
+        className="w-full max-w-lg overflow-hidden rounded-lg border border-line bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <input
@@ -85,7 +85,7 @@ export function QuickSwitcher({
             }
           }}
           placeholder="Jump to a page, or search everything…"
-          className="w-full border-b border-[#2c2f36] bg-transparent px-4 py-3 text-sm outline-none"
+          className="w-full border-b border-selected bg-transparent px-4 py-3 text-sm outline-none"
         />
 
         <ul className="max-h-80 overflow-y-auto py-1">
@@ -96,20 +96,20 @@ export function QuickSwitcher({
                 onMouseEnter={() => setIndex(i)}
                 onClick={() => open(node.id)}
                 className={`flex w-full items-center gap-2 px-4 py-2 text-left text-sm ${
-                  i === index ? "bg-[#2b2e35] text-[#f0f1f4]" : "text-[#b6b8bf]"
+                  i === index ? "bg-hover-strong text-fg-strong" : "text-fg-soft"
                 }`}
               >
                 <span>{node.icon ?? "📄"}</span>
                 <span className="truncate">{node.title}</span>
                 {node.visibility === "dm" && (
-                  <span className="ml-auto text-[10px] text-[#c9a227]">DM</span>
+                  <span className="ml-auto text-[10px] text-secret">DM</span>
                 )}
               </button>
             </li>
           ))}
 
           {bodyOnly.length > 0 && (
-            <li className="px-4 pb-1 pt-3 text-[10px] uppercase tracking-wide text-[#6b6e77]">
+            <li className="px-4 pb-1 pt-3 text-[10px] uppercase tracking-wide text-fg-faint">
               In page text
             </li>
           )}
@@ -122,14 +122,14 @@ export function QuickSwitcher({
                   onMouseEnter={() => setIndex(position)}
                   onClick={() => open(hit.nodeId)}
                   className={`block w-full px-4 py-2 text-left ${
-                    position === index ? "bg-[#2b2e35]" : ""
+                    position === index ? "bg-hover-strong" : ""
                   }`}
                 >
-                  <span className="block truncate text-sm text-[#b6b8bf]">
+                  <span className="block truncate text-sm text-fg-soft">
                     {hit.icon ?? "📄"} {hit.title}
                   </span>
                   <span
-                    className="block truncate text-xs text-[#7a7d86] [&_mark]:bg-[#4a4526] [&_mark]:text-[#f4edcc]"
+                    className="block truncate text-xs text-fg-muted [&_mark]:bg-mark [&_mark]:text-mark-fg"
                     dangerouslySetInnerHTML={{ __html: sanitizeSnippet(hit.snippet) }}
                   />
                 </button>
@@ -138,7 +138,7 @@ export function QuickSwitcher({
           })}
 
           {total === 0 && (
-            <li className="px-4 py-6 text-center text-xs text-[#6b6e77]">No pages found.</li>
+            <li className="px-4 py-6 text-center text-xs text-fg-faint">No pages found.</li>
           )}
         </ul>
       </div>

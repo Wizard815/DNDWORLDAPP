@@ -38,7 +38,7 @@ export function IconPicker({
         onClick={() => setOpen(!open)}
         aria-label="Change icon"
         title={disabled ? undefined : "Change icon"}
-        className="rounded px-1 text-2xl leading-none hover:bg-[#232529] disabled:hover:bg-transparent"
+        className="rounded px-1 text-2xl leading-none hover:bg-hover disabled:hover:bg-transparent"
       >
         {value ?? "📄"}
       </button>
@@ -46,14 +46,14 @@ export function IconPicker({
       {open && (
         <>
           <div className="fixed inset-0 z-[2010]" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 z-[2020] mt-1 w-64 rounded-md border border-[#33363d] bg-[#22242a] p-3 shadow-lg">
+          <div className="absolute left-0 z-[2020] mt-1 w-64 rounded-md border border-line bg-raised p-3 shadow-lg">
             <div className="mb-2 grid grid-cols-6 gap-1">
               {PRESETS.map((icon) => (
                 <button
                   key={icon}
                   type="button"
                   onClick={() => choose(icon)}
-                  className="rounded p-1 text-lg hover:bg-[#2f333b]"
+                  className="rounded p-1 text-lg hover:bg-highlight"
                 >
                   {icon}
                 </button>
@@ -67,12 +67,12 @@ export function IconPicker({
                   if (e.key === "Enter" && custom.trim().length > 0) choose(custom.trim());
                 }}
                 placeholder="or paste any emoji"
-                className="min-w-0 flex-1 rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs outline-none focus:border-[#4a4d55]"
+                className="min-w-0 flex-1 rounded border border-line bg-canvas px-2 py-1 text-xs outline-none focus:border-line-strong"
               />
               <button
                 type="button"
                 onClick={() => choose(null)}
-                className="rounded border border-[#33363d] px-2 py-1 text-[10px] text-[#7a7d86] hover:text-[#d7d8dc]"
+                className="rounded border border-line px-2 py-1 text-[10px] text-fg-muted hover:text-fg"
                 title="Clear the icon"
               >
                 Clear

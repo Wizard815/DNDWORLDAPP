@@ -13,10 +13,10 @@ const VISIBILITY_LABEL: Record<Visibility, string> = {
 };
 
 const badgeClass: Record<Visibility, string> = {
-  public: "text-[#7fb08a] border-[#3c5c43]",
-  members: "text-[#8d9099] border-[#3a3d44]",
-  dm: "text-[#c9a227] border-[#5c5023]",
-  private: "text-[#a98bc9] border-[#4b3c5c]",
+  public: "text-success border-success-line",
+  members: "text-fg-subtle border-line",
+  dm: "text-secret border-secret-line",
+  private: "text-violet border-violet-line",
 };
 
 /**
@@ -118,8 +118,8 @@ export function PostCard({
 
   return (
     <article
-      className={`rounded-lg border bg-[#1b1d21] p-4 ${
-        post.visibility === "dm" ? "border-[#4a4222]" : "border-[#2a2d33]"
+      className={`rounded-lg border bg-surface p-4 ${
+        post.visibility === "dm" ? "border-secret-line" : "border-line"
       }`}
     >
       <div className="mb-2 flex items-center gap-2">
@@ -127,11 +127,11 @@ export function PostCard({
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#f0f1f4] outline-none"
+            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-fg-strong outline-none"
             placeholder="Section title"
           />
         ) : (
-          <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-[#f0f1f4]">
+          <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-fg-strong">
             {post.title.length > 0 ? post.title : "Untitled section"}
           </h3>
         )}
@@ -140,7 +140,7 @@ export function PostCard({
           value={post.visibility}
           onChange={(e) => void changeVisibility(e.target.value as Visibility)}
           disabled={!canEdit}
-          className={`rounded border bg-[#1d1f23] px-1.5 py-0.5 text-[10px] ${badgeClass[post.visibility]}`}
+          className={`rounded border bg-surface px-1.5 py-0.5 text-[10px] ${badgeClass[post.visibility]}`}
         >
           {(Object.keys(VISIBILITY_LABEL) as Visibility[]).map((v) => (
             <option key={v} value={v}>
@@ -154,14 +154,14 @@ export function PostCard({
             <button
               type="button"
               onClick={() => (editing ? void save() : setEditing(true))}
-              className="text-[10px] text-[#7a7d86] hover:text-[#d7d8dc]"
+              className="text-[10px] text-fg-muted hover:text-fg"
             >
               {editing ? "Save" : "Edit"}
             </button>
             <button
               type="button"
               onClick={() => void remove()}
-              className="text-[10px] text-[#7a7d86] hover:text-[#e0888a]"
+              className="text-[10px] text-fg-muted hover:text-danger"
             >
               Delete
             </button>
@@ -175,7 +175,7 @@ export function PostCard({
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={insertSecretBlock}
-            className="mb-1.5 rounded border border-[#5c5023] px-2 py-0.5 text-[10px] text-[#c9a227] hover:bg-[#221f14]"
+            className="mb-1.5 rounded border border-secret-line px-2 py-0.5 text-[10px] text-secret hover:bg-secret-bg"
             title="Only the owner or a DM ever sees this — hidden from everyone else, even in search."
           >
             🔒 Insert secret
@@ -186,7 +186,7 @@ export function PostCard({
             onChange={(e) => setBody(e.target.value)}
             onBlur={() => void save()}
             placeholder="Markdown. [[Links]] work here too."
-            className="min-h-24 w-full resize-none rounded border border-[#2c2f36] bg-[#1a1c20] p-3 font-mono text-xs outline-none focus:border-[#3f434b]"
+            className="min-h-24 w-full resize-none rounded border border-selected bg-panel p-3 font-mono text-xs outline-none focus:border-line-strong"
           />
         </div>
       ) : (

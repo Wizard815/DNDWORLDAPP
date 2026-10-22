@@ -761,13 +761,13 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
   );
 
   if (mapQuery.isLoading) {
-    return <div className="h-64 p-8 text-sm text-[#7a7d86]">Loading…</div>;
+    return <div className="h-64 p-8 text-sm text-fg-muted">Loading…</div>;
   }
 
   if (map === null || map === undefined) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-3 p-8">
-        <p className="text-sm text-[#7a7d86]">No map image set yet.</p>
+        <p className="text-sm text-fg-muted">No map image set yet.</p>
         {node.canEdit && (
           <>
             <input
@@ -785,11 +785,11 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={upload.isPending}
-              className="rounded-md bg-[#3d5ab5] px-3 py-1.5 text-sm text-white hover:bg-[#4867cc] disabled:opacity-50"
+              className="rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent hover:bg-accent-hover disabled:opacity-50"
             >
               {upload.isPending ? "Uploading…" : "Upload map image"}
             </button>
-            {uploadError !== null && <p className="text-xs text-[#e0888a]">{uploadError}</p>}
+            {uploadError !== null && <p className="text-xs text-danger">{uploadError}</p>}
           </>
         )}
       </div>
@@ -842,13 +842,13 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
         player as much as a DM, so neither can live inside the edit-only
         block the way "Replace image"/shape-adder/Done-Cancel legitimately do.
       */}
-      <div className="absolute right-3 top-3 z-[1000] flex gap-1 rounded-md border border-[#33363d] bg-[#1d1f23]/95 p-1 shadow-lg">
+      <div className="absolute right-3 top-3 z-[1000] flex gap-1 rounded-md border border-line bg-surface/95 p-1 shadow-lg">
         <button
           type="button"
           onClick={() => setOpenPanel(openPanel === "groups" ? null : "groups")}
           title="Show/hide marker groups"
           className={`rounded px-2 py-1 text-xs ${
-            openPanel === "groups" ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+            openPanel === "groups" ? "bg-accent text-on-accent" : "text-fg-soft hover:bg-press"
           }`}
         >
           🗂 Groups
@@ -858,14 +858,14 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
           onClick={() => setOpenPanel(openPanel === "markers" ? null : "markers")}
           title="Browse markers on this map"
           className={`rounded px-2 py-1 text-xs ${
-            openPanel === "markers" ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+            openPanel === "markers" ? "bg-accent text-on-accent" : "text-fg-soft hover:bg-press"
           }`}
         >
           📋 Markers
         </button>
         {node.canEdit && (
           <>
-            <div className="mx-0.5 w-px self-stretch bg-[#33363d]" />
+            <div className="mx-0.5 w-px self-stretch bg-line" />
             <button
               type="button"
               onClick={() => setEditToolbarOpen(!editToolbarOpen)}
@@ -874,7 +874,7 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
               // !== null` on the block below, not just this highlight.
               title="Show/hide map editing controls"
               className={`rounded px-2 py-1 text-xs ${
-                editToolbarOpen || draft !== null ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+                editToolbarOpen || draft !== null ? "bg-accent text-on-accent" : "text-fg-soft hover:bg-press"
               }`}
             >
               ✏️ Edit
@@ -883,17 +883,17 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
         )}
         {node.canEdit && (editToolbarOpen || draft !== null) && (
           <>
-            <div className="mx-0.5 w-px self-stretch bg-[#33363d]" />
+            <div className="mx-0.5 w-px self-stretch bg-line" />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={upload.isPending}
               title="Replace this map's source image"
-              className="rounded px-2 py-1 text-xs text-[#b6b8bf] hover:bg-[#26282e] disabled:opacity-50"
+              className="rounded px-2 py-1 text-xs text-fg-soft hover:bg-press disabled:opacity-50"
             >
               {upload.isPending ? "Uploading…" : "🖼 Replace image"}
             </button>
-            <div className="mx-0.5 w-px self-stretch bg-[#33363d]" />
+            <div className="mx-0.5 w-px self-stretch bg-line" />
             {ADDABLE_SHAPES.map((shape) =>
               (DRAW_SHAPES as readonly string[]).includes(shape) ? (
                 <button
@@ -901,7 +901,7 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
                   type="button"
                   onClick={() => startDraft(shape as DrawShape)}
                   className={`rounded px-2 py-1 text-xs ${
-                    draft?.shape === shape ? "bg-[#8b6cf0] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+                    draft?.shape === shape ? "bg-violet-solid text-white" : "text-fg-soft hover:bg-press"
                   }`}
                 >
                   ✏ {SHAPE_LABEL[shape]}
@@ -912,7 +912,7 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
                   type="button"
                   onClick={() => setDropShape(dropShape === shape ? null : shape)}
                   className={`rounded px-2 py-1 text-xs ${
-                    dropShape === shape ? "bg-[#3d5ab5] text-white" : "text-[#b6b8bf] hover:bg-[#26282e]"
+                    dropShape === shape ? "bg-accent text-on-accent" : "text-fg-soft hover:bg-press"
                   }`}
                 >
                   + {SHAPE_LABEL[shape]}
@@ -924,14 +924,14 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
                 <button
                   type="button"
                   onClick={() => finishDraft(draft.points)}
-                  className="rounded bg-[#3f7d4e] px-2 py-1 text-xs text-white hover:bg-[#4a9160]"
+                  className="rounded bg-success-solid px-2 py-1 text-xs text-white hover:bg-success-solid-hover"
                 >
                   Done
                 </button>
                 <button
                   type="button"
                   onClick={cancelDraft}
-                  className="rounded px-2 py-1 text-xs text-[#c98b8b] hover:bg-[#26282e]"
+                  className="rounded px-2 py-1 text-xs text-danger-soft hover:bg-press"
                 >
                   Cancel
                 </button>
@@ -941,7 +941,7 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
         )}
       </div>
       {uploadError !== null && (
-        <div className="absolute right-3 top-14 z-[1000] max-w-xs rounded-md border border-[#33363d] bg-[#1d1f23]/95 px-2.5 py-1.5 text-xs text-[#e0888a] shadow-lg">
+        <div className="absolute right-3 top-14 z-[1000] max-w-xs rounded-md border border-line bg-surface/95 px-2.5 py-1.5 text-xs text-danger shadow-lg">
           {uploadError}
         </div>
       )}
@@ -998,7 +998,7 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
         // — that's expected, not a bug, and still strictly better than a
         // hard wall stopping them from zooming in at all.
         maxZoom={computedMaxZoom}
-        className="h-full w-full bg-[#17181b]"
+        className="h-full w-full bg-canvas"
         // Tiles are the DM's own uploaded map image, not a third-party
         // source (OSM etc.) that requires attribution — nothing to credit.
         attributionControl={false}
@@ -1039,7 +1039,7 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
           // top-14, not top-3: the shape toolbar sits at top-3 spanning most of
           // the width, and a left-anchored banner at that same row collided
           // with its Done/Cancel buttons on anything but a wide window.
-          <div className="absolute left-3 top-14 z-[1000] rounded-md border border-[#33363d] bg-[#1d1f23]/95 px-2.5 py-1.5 text-xs text-[#8d9099]">
+          <div className="absolute left-3 top-14 z-[1000] rounded-md border border-line bg-surface/95 px-2.5 py-1.5 text-xs text-fg-subtle">
             Tiling this map for smoother zoom…
           </div>
         )}
@@ -1063,12 +1063,12 @@ export function MapView({ node, allNodes }: { node: NodeDetail; allNodes: NodeSu
           // (top-14), so the two never fight for the same row even if both
           // happen to be visible at once (drawing while a large image is
           // still tiling in the background).
-          <div className="absolute left-3 top-24 z-[1000] max-w-md rounded-md border border-[#33363d] bg-[#1d1f23]/95 px-2.5 py-1.5 text-xs text-[#b6b8bf]">
+          <div className="absolute left-3 top-24 z-[1000] max-w-md rounded-md border border-line bg-surface/95 px-2.5 py-1.5 text-xs text-fg-soft">
             {draft !== null ? (
               <>
                 Drawing a {SHAPE_LABEL[draft.shape]?.toLowerCase() ?? draft.shape} — click to add points, Ctrl+Z to
                 undo the last point, double-click or Done to finish, Esc to cancel.{" "}
-                {draftError !== null && <span className="text-[#e0888a]">{draftError}</span>}
+                {draftError !== null && <span className="text-danger">{draftError}</span>}
               </>
             ) : (
               <>Click to place a {SHAPE_LABEL[dropShape ?? ""]?.toLowerCase() ?? ""}, or pick another shape to change.</>
@@ -1281,17 +1281,17 @@ function MapGroupsPanel({
     return (
       <div key={group.id}>
         <div
-          className="group flex items-center gap-1.5 rounded px-1 py-1 text-xs text-[#b6b8bf] hover:bg-[#232529]"
+          className="group flex items-center gap-1.5 rounded px-1 py-1 text-xs text-fg-soft hover:bg-hover"
           style={{ paddingLeft: `${depth * 14 + 4}px` }}
         >
           <input
             type="checkbox"
             checked={!hiddenGroups.hiddenIds.has(group.id)}
             onChange={() => hiddenGroups.toggle(group.id)}
-            className="shrink-0 accent-[#3d5ab5]"
+            className="shrink-0 accent-accent"
           />
           {group.color !== null && (
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-[#17181b]" style={{ background: group.color }} />
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-canvas" style={{ background: group.color }} />
           )}
           {renamingId === group.id ? (
             <input
@@ -1306,7 +1306,7 @@ function MapGroupsPanel({
                 if (e.key === "Enter") e.currentTarget.blur();
                 if (e.key === "Escape") setRenamingId(null);
               }}
-              className="min-w-0 flex-1 rounded border border-[#4a4d55] bg-[#17181b] px-1 text-[#f0f1f4] outline-none"
+              className="min-w-0 flex-1 rounded border border-line-strong bg-canvas px-1 text-fg-strong outline-none"
             />
           ) : (
             <span
@@ -1322,16 +1322,16 @@ function MapGroupsPanel({
           )}
           {canEdit && (
             <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-              <button type="button" title="Paint earlier (further back)" onClick={() => move(group, "earlier")} disabled={idx <= 0} className="px-1 text-[#7a7d86] hover:text-[#d7d8dc] disabled:opacity-30">
+              <button type="button" title="Paint earlier (further back)" onClick={() => move(group, "earlier")} disabled={idx <= 0} className="px-1 text-fg-muted hover:text-fg disabled:opacity-30">
                 ▲
               </button>
-              <button type="button" title="Paint later (further forward)" onClick={() => move(group, "later")} disabled={idx === siblings.length - 1} className="px-1 text-[#7a7d86] hover:text-[#d7d8dc] disabled:opacity-30">
+              <button type="button" title="Paint later (further forward)" onClick={() => move(group, "later")} disabled={idx === siblings.length - 1} className="px-1 text-fg-muted hover:text-fg disabled:opacity-30">
                 ▼
               </button>
-              <button type="button" title="Add a group nested under this one" onClick={() => { setAddingChildTo(group.id); setNewName(""); }} className="px-1 text-[#7a7d86] hover:text-[#d7d8dc]">
+              <button type="button" title="Add a group nested under this one" onClick={() => { setAddingChildTo(group.id); setNewName(""); }} className="px-1 text-fg-muted hover:text-fg">
                 +
               </button>
-              <button type="button" title="Delete this group (markers are ungrouped, not deleted)" onClick={() => onDelete(group.id)} className="px-1 text-[#c98b8b] hover:text-[#e0888a]">
+              <button type="button" title="Delete this group (markers are ungrouped, not deleted)" onClick={() => onDelete(group.id)} className="px-1 text-danger-soft hover:text-danger">
                 ✕
               </button>
             </div>
@@ -1348,9 +1348,9 @@ function MapGroupsPanel({
                 if (e.key === "Escape") setAddingChildTo(null);
               }}
               placeholder="New group name"
-              className="min-w-0 flex-1 rounded border border-[#33363d] bg-[#17181b] px-1.5 py-0.5 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+              className="min-w-0 flex-1 rounded border border-line bg-canvas px-1.5 py-0.5 text-xs text-fg outline-none focus:border-line-strong"
             />
-            <button type="button" onClick={() => submitNewChild(group.id)} className="rounded bg-[#3d5ab5] px-1.5 py-0.5 text-[10px] text-white">
+            <button type="button" onClick={() => submitNewChild(group.id)} className="rounded bg-accent px-1.5 py-0.5 text-[10px] text-on-accent">
               Add
             </button>
           </div>
@@ -1363,18 +1363,18 @@ function MapGroupsPanel({
   const topLevel = siblingsOf(null);
 
   return (
-    <div className="absolute bottom-3 left-3 z-[1000] w-64 rounded-md border border-[#33363d] bg-[#1d1f23] p-3 shadow-2xl">
+    <div className="absolute bottom-3 left-3 z-[1000] w-64 rounded-md border border-line bg-surface p-3 shadow-2xl">
       <div className="mb-1 flex items-center">
-        <h3 className="text-sm font-semibold text-[#f0f1f4]">Groups</h3>
-        <button type="button" onClick={onClose} className="ml-auto text-xs text-[#7a7d86] hover:text-[#d7d8dc]">
+        <h3 className="text-sm font-semibold text-fg-strong">Groups</h3>
+        <button type="button" onClick={onClose} className="ml-auto text-xs text-fg-muted hover:text-fg">
           Close
         </button>
       </div>
-      <p className="mb-2 text-[10px] text-[#7a7d86]">
+      <p className="mb-2 text-[10px] text-fg-muted">
         Checking a group only changes what you see. Later in the list paints on top.
       </p>
       {topLevel.length === 0 ? (
-        <p className="py-2 text-xs text-[#7a7d86]">No groups yet.</p>
+        <p className="py-2 text-xs text-fg-muted">No groups yet.</p>
       ) : (
         <div className="max-h-64 overflow-y-auto">{topLevel.map((g) => renderGroup(g, 0))}</div>
       )}
@@ -1390,9 +1390,9 @@ function MapGroupsPanel({
                 if (e.key === "Escape") setAddingTopLevel(false);
               }}
               placeholder="New group name"
-              className="min-w-0 flex-1 rounded border border-[#33363d] bg-[#17181b] px-1.5 py-0.5 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+              className="min-w-0 flex-1 rounded border border-line bg-canvas px-1.5 py-0.5 text-xs text-fg outline-none focus:border-line-strong"
             />
-            <button type="button" onClick={() => submitNewChild(null)} className="rounded bg-[#3d5ab5] px-1.5 py-0.5 text-[10px] text-white">
+            <button type="button" onClick={() => submitNewChild(null)} className="rounded bg-accent px-1.5 py-0.5 text-[10px] text-on-accent">
               Add
             </button>
           </div>
@@ -1403,7 +1403,7 @@ function MapGroupsPanel({
               setAddingTopLevel(true);
               setNewName("");
             }}
-            className="mt-2 w-full rounded border border-[#33363d] px-2 py-1 text-xs text-[#b6b8bf] hover:bg-[#232529]"
+            className="mt-2 w-full rounded border border-line px-2 py-1 text-xs text-fg-soft hover:bg-hover"
           >
             + New group
           </button>
@@ -1456,10 +1456,10 @@ function MarkerListPanel({
   }, [markers, query]);
 
   return (
-    <div className="absolute bottom-3 left-3 z-[1000] w-72 rounded-md border border-[#33363d] bg-[#1d1f23] p-3 shadow-2xl">
+    <div className="absolute bottom-3 left-3 z-[1000] w-72 rounded-md border border-line bg-surface p-3 shadow-2xl">
       <div className="mb-2 flex items-center">
-        <h3 className="text-sm font-semibold text-[#f0f1f4]">Markers</h3>
-        <button type="button" onClick={onClose} className="ml-auto text-xs text-[#7a7d86] hover:text-[#d7d8dc]">
+        <h3 className="text-sm font-semibold text-fg-strong">Markers</h3>
+        <button type="button" onClick={onClose} className="ml-auto text-xs text-fg-muted hover:text-fg">
           Close
         </button>
       </div>
@@ -1468,12 +1468,12 @@ function MarkerListPanel({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Find a marker by name…"
-        className="mb-2 w-full rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+        className="mb-2 w-full rounded border border-line bg-canvas px-2 py-1 text-xs text-fg outline-none focus:border-line-strong"
       />
       {markers.length === 0 ? (
-        <p className="py-2 text-xs text-[#7a7d86]">No markers on this map yet.</p>
+        <p className="py-2 text-xs text-fg-muted">No markers on this map yet.</p>
       ) : filtered.length === 0 ? (
-        <p className="py-2 text-xs text-[#7a7d86]">No markers match "{query}".</p>
+        <p className="py-2 text-xs text-fg-muted">No markers match "{query}".</p>
       ) : (
         <div className="max-h-64 space-y-0.5 overflow-y-auto">
           {filtered.map((m) => (
@@ -1481,12 +1481,12 @@ function MarkerListPanel({
               key={m.id}
               type="button"
               onClick={() => onSelect(m)}
-              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs text-[#d7d8dc] hover:bg-[#26282e]"
+              className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs text-fg hover:bg-press"
             >
               <span className="w-4 shrink-0 text-center">{iconTextOf(m)}</span>
               <span className="min-w-0 flex-1 truncate">{nameOf(m)}</span>
               {m.groupId !== null && groupsById.get(m.groupId) !== undefined && (
-                <span className="shrink-0 truncate text-[10px] text-[#7a7d86]">{groupsById.get(m.groupId)!.name}</span>
+                <span className="shrink-0 truncate text-[10px] text-fg-muted">{groupsById.get(m.groupId)!.name}</span>
               )}
             </button>
           ))}
@@ -1553,10 +1553,10 @@ function MarkerInspector({
   const groupOptions = markers.filter((m) => m.shape === "token" && !invalidParentIds.has(m.id));
 
   return (
-    <div className="absolute bottom-3 right-3 z-[1000] w-72 rounded-md border border-[#33363d] bg-[#1d1f23] p-4 shadow-2xl">
+    <div className="absolute bottom-3 right-3 z-[1000] w-72 rounded-md border border-line bg-surface p-4 shadow-2xl">
       <div className="mb-2 flex items-center">
-        <h3 className="text-sm font-semibold text-[#f0f1f4]">{SHAPE_LABEL[marker.shape] ?? marker.shape}</h3>
-        <button type="button" onClick={onClose} className="ml-auto text-xs text-[#7a7d86] hover:text-[#d7d8dc]">
+        <h3 className="text-sm font-semibold text-fg-strong">{SHAPE_LABEL[marker.shape] ?? marker.shape}</h3>
+        <button type="button" onClick={onClose} className="ml-auto text-xs text-fg-muted hover:text-fg">
           Close
         </button>
       </div>
@@ -1565,7 +1565,7 @@ function MarkerInspector({
         <button
           type="button"
           onClick={() => navigate(`/n/${marker.targetNode!.id}`)}
-          className="mb-2 flex w-full items-center gap-1 rounded bg-[#232529] px-2 py-1.5 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+          className="mb-2 flex w-full items-center gap-1 rounded bg-hover px-2 py-1.5 text-left text-xs text-fg-soft hover:bg-hover-strong"
         >
           {marker.targetNode.icon ?? "📄"} Open {marker.targetNode.title} →
         </button>
@@ -1577,17 +1577,17 @@ function MarkerInspector({
             <button
               type="button"
               onClick={onRedraw}
-              className="w-full rounded border border-[#4a4d55] bg-[#232529] px-2 py-1 text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+              className="w-full rounded border border-line-strong bg-hover px-2 py-1 text-xs text-fg-soft hover:bg-hover-strong"
             >
               ✏ Redraw shape
             </button>
           )}
-          <label className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">
+          <label className="block text-[10px] uppercase tracking-wide text-fg-muted">
             Link to a page
             <select
               value={marker.targetNode?.id ?? ""}
               onChange={(e) => onSave({ targetNodeId: e.target.value.length > 0 ? e.target.value : null })}
-              className="mt-1 w-full rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc]"
+              className="mt-1 w-full rounded border border-line bg-canvas px-2 py-1 text-xs text-fg"
             >
               <option value="">— none —</option>
               {allNodes.map((n) => (
@@ -1598,27 +1598,27 @@ function MarkerInspector({
             </select>
           </label>
 
-          <label className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">
+          <label className="block text-[10px] uppercase tracking-wide text-fg-muted">
             Label override
             <input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               onBlur={() => onSave({ label: label.length > 0 ? label : null })}
               placeholder={marker.targetNode?.title ?? ""}
-              className="mt-1 w-full rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+              className="mt-1 w-full rounded border border-line bg-canvas px-2 py-1 text-xs text-fg outline-none focus:border-line-strong"
             />
           </label>
 
           {marker.shape !== "label" && marker.shape !== "polygon" && marker.shape !== "path" && (
             <div>
-              <span className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">Icon override</span>
-              <div className="mt-1 flex items-center gap-2 rounded border border-[#33363d] bg-[#17181b] px-1 py-0.5">
+              <span className="block text-[10px] uppercase tracking-wide text-fg-muted">Icon override</span>
+              <div className="mt-1 flex items-center gap-2 rounded border border-line bg-canvas px-1 py-0.5">
                 <IconPicker
                   value={marker.icon}
                   disabled={false}
                   onChange={(icon) => onSave({ icon })}
                 />
-                <span className="text-[10px] text-[#7a7d86]">
+                <span className="text-[10px] text-fg-muted">
                   {marker.icon !== null ? "Click to change" : (marker.targetNode?.icon ?? "Click to pick")}
                 </span>
               </div>
@@ -1626,7 +1626,7 @@ function MarkerInspector({
           )}
 
           <div>
-            <span className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">Color</span>
+            <span className="block text-[10px] uppercase tracking-wide text-fg-muted">Color</span>
             <div className="mt-1 flex gap-1">
               <input
                 type="color"
@@ -1636,20 +1636,20 @@ function MarkerInspector({
                   onSave({ color: e.target.value });
                 }}
                 title="Pick a color"
-                className="h-[26px] w-8 shrink-0 cursor-pointer rounded border border-[#33363d] bg-[#17181b] p-0.5"
+                className="h-[26px] w-8 shrink-0 cursor-pointer rounded border border-line bg-canvas p-0.5"
               />
               <input
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
                 onBlur={() => onSave({ color: color.length > 0 ? color : null })}
                 placeholder="#3d5ab5"
-                className="min-w-0 flex-1 rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+                className="min-w-0 flex-1 rounded border border-line bg-canvas px-2 py-1 text-xs text-fg outline-none focus:border-line-strong"
               />
               <button
                 type="button"
                 onClick={() => setNamingFavorite(true)}
                 title="Save this color as a favorite"
-                className="shrink-0 rounded border border-[#33363d] px-1.5 text-xs text-[#7a7d86] hover:text-[#d7d8dc]"
+                className="shrink-0 rounded border border-line px-1.5 text-xs text-fg-muted hover:text-fg"
               >
                 +
               </button>
@@ -1669,7 +1669,7 @@ function MarkerInspector({
                     }
                     if (e.key === "Escape") setNamingFavorite(false);
                   }}
-                  className="min-w-0 flex-1 rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+                  className="min-w-0 flex-1 rounded border border-line bg-canvas px-2 py-1 text-xs text-fg outline-none focus:border-line-strong"
                 />
                 <button
                   type="button"
@@ -1680,7 +1680,7 @@ function MarkerInspector({
                       setNamingFavorite(false);
                     }
                   }}
-                  className="shrink-0 rounded bg-[#3d5ab5] px-2 text-xs text-white hover:bg-[#4867cc]"
+                  className="shrink-0 rounded bg-accent px-2 text-xs text-on-accent hover:bg-accent-hover"
                 >
                   Save
                 </button>
@@ -1701,7 +1701,7 @@ function MarkerInspector({
                       if (window.confirm(`Remove "${f.name}" from favorites?`)) favoriteColors.remove(i);
                     }}
                     title={`${f.name} (${f.color}) — right-click to remove`}
-                    className="h-5 w-5 rounded-full border border-[#33363d]"
+                    className="h-5 w-5 rounded-full border border-line"
                     style={{ background: f.color }}
                   />
                 ))}
@@ -1710,7 +1710,7 @@ function MarkerInspector({
           </div>
 
           {marker.shape === "circle" && (
-            <label className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">
+            <label className="block text-[10px] uppercase tracking-wide text-fg-muted">
               Size ({Math.round(radius)}px)
               <input
                 type="range"
@@ -1720,19 +1720,19 @@ function MarkerInspector({
                 onChange={(e) => setRadius(Number(e.target.value))}
                 onMouseUp={() => onSave({ radius })}
                 onKeyUp={() => onSave({ radius })}
-                className="mt-1 w-full accent-[#3d5ab5]"
+                className="mt-1 w-full accent-accent"
               />
             </label>
           )}
 
           {marker.shape === "token" && (
             <>
-              <label className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">
+              <label className="block text-[10px] uppercase tracking-wide text-fg-muted">
                 Group (parent token)
                 <select
                   value={marker.parentMarkerId ?? ""}
                   onChange={(e) => onSave({ parentMarkerId: e.target.value.length > 0 ? e.target.value : null })}
-                  className="mt-1 w-full rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc]"
+                  className="mt-1 w-full rounded border border-line bg-canvas px-2 py-1 text-xs text-fg"
                 >
                   <option value="">— none (top-level) —</option>
                   {groupOptions.map((m) => (
@@ -1742,7 +1742,7 @@ function MarkerInspector({
                   ))}
                 </select>
               </label>
-              <label className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">
+              <label className="block text-[10px] uppercase tracking-wide text-fg-muted">
                 Who's in this group
                 <textarea
                   value={members}
@@ -1750,19 +1750,19 @@ function MarkerInspector({
                   onBlur={() => onSave({ members: members.length > 0 ? members : null })}
                   placeholder="e.g. Kael, Brint, 4 mercenaries"
                   rows={2}
-                  className="mt-1 w-full resize-y rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+                  className="mt-1 w-full resize-y rounded border border-line bg-canvas px-2 py-1 text-xs text-fg outline-none focus:border-line-strong"
                 />
               </label>
             </>
           )}
 
           {groups.length > 0 && (
-            <label className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">
+            <label className="block text-[10px] uppercase tracking-wide text-fg-muted">
               Display group
               <select
                 value={marker.groupId ?? ""}
                 onChange={(e) => onSave({ groupId: e.target.value.length > 0 ? e.target.value : null })}
-                className="mt-1 w-full rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc]"
+                className="mt-1 w-full rounded border border-line bg-canvas px-2 py-1 text-xs text-fg"
               >
                 <option value="">— ungrouped —</option>
                 {groups.map((g) => (
@@ -1774,12 +1774,12 @@ function MarkerInspector({
             </label>
           )}
 
-          <label className="block text-[10px] uppercase tracking-wide text-[#7a7d86]">
+          <label className="block text-[10px] uppercase tracking-wide text-fg-muted">
             Visibility
             <select
               value={marker.visibility}
               onChange={(e) => onSave({ visibility: e.target.value as FieldVisibility })}
-              className="mt-1 w-full rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc]"
+              className="mt-1 w-full rounded border border-line bg-canvas px-2 py-1 text-xs text-fg"
             >
               {(Object.keys(VISIBILITY_LABEL) as FieldVisibility[]).map((v) => (
                 <option key={v} value={v}>
@@ -1792,13 +1792,13 @@ function MarkerInspector({
           <button
             type="button"
             onClick={onDelete}
-            className="w-full rounded border border-[#33363d] px-2 py-1 text-xs text-[#c98b8b] hover:bg-[#26282e]"
+            className="w-full rounded border border-line px-2 py-1 text-xs text-danger-soft hover:bg-press"
           >
             Delete marker
           </button>
         </div>
       ) : (
-        <p className="text-xs text-[#8d9099]">{marker.label ?? "(untitled)"}</p>
+        <p className="text-xs text-fg-subtle">{marker.label ?? "(untitled)"}</p>
       )}
     </div>
   );

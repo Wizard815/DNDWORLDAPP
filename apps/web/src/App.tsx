@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { MoveNodeInput, NodeDetail, NodeKind } from "@dndworldapp/schema";
 import { ApiError, api, setViewAsPlayer } from "./api.ts";
 import { AuthScreen } from "./components/Auth.tsx";
@@ -13,6 +13,7 @@ import { Sidebar } from "./components/Sidebar.tsx";
 import { Templates } from "./components/Templates.tsx";
 import { Tokens } from "./components/Tokens.tsx";
 import { navigate, nodeIdFromPath, usePath } from "./lib/nav.ts";
+import { useTheme } from "./lib/theme.ts";
 
 function shareTokenFromPath(path: string): string | null {
   const match = /^\/share\/([a-f0-9]+)/.exec(path);
@@ -60,6 +61,8 @@ export function App() {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [viewAsPlayer, setViewAsPlayerState] = useState(false);
   const [createChooser, setCreateChooser] = useState<{ parentId: string | null } | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   const session = useQuery({
     queryKey: ["me"],
@@ -95,6 +98,9 @@ export function App() {
   });
 
   const activeId = nodeIdFromPath(path);
+
+  // The off-canvas sidebar on a phone closes itself once a page is picked.
+  useEffect(() => setMobileNavOpen(false), [path]);
 
   const node = useQuery({
     queryKey: ["node", activeId],
@@ -197,7 +203,7 @@ export function App() {
   }
 
   if (session.isLoading) {
-    return <div className="p-8 text-sm text-[#7a7d86]">Loading…</div>;
+    return <CenteredNote>Loading…</CenteredNote>;
   }
 
   if (session.data == null) {
@@ -212,7 +218,7 @@ export function App() {
   }
 
   if (world === null) {
-    return <div className="p-8 text-sm text-[#7a7d86]">No world yet.</div>;
+    return <CenteredNote>{worlds.isLoading ? "Loading…" : "No world yet."}</CenteredNote>;
   }
 
   const nodes = tree.data?.nodes ?? [];
@@ -221,6 +227,27 @@ export function App() {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <PinnedStrip nodes={nodes} pinnedIds={pinnedIds} activeId={activeId} onUnpin={togglePin} />
+
+      {/* Phone-width top bar: the sidebar becomes a drawer below the md breakpoint. */}
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-divider bg-panel px-2 md:hidden">
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          className="rounded-md px-2 py-1 text-fg-soft hover:bg-hover"
+          aria-label="Open menu"
+        >
+          ☰
+        </button>
+        <span className="truncate font-display text-sm font-semibold text-fg-strong">{world.name}</span>
+        <button
+          type="button"
+          onClick={() => setSwitcherOpen(true)}
+          className="ml-auto rounded-md px-2 py-1 text-fg-soft hover:bg-hover"
+          aria-label="Search pages"
+        >
+          ⌕
+        </button>
+      </div>
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
@@ -239,6 +266,10 @@ export function App() {
           isGameMaster={isGameMaster}
           viewAsPlayer={viewAsPlayer}
           onToggleViewAsPlayer={toggleViewAsPlayer}
+          theme={theme}
+          onChangeTheme={setTheme}
+          mobileOpen={mobileNavOpen}
+          onCloseMobile={() => setMobileNavOpen(false)}
           onSignOut={() => {
             setViewAsPlayer(false);
             setViewAsPlayerState(false);
@@ -281,8 +312,8 @@ export function App() {
             />
           </>
         ) : (
-          <div className="flex-1 p-8 text-sm text-[#7a7d86]">
-            {node.isError ? "That page is not available." : "Pick a page."}
+          <div className="flex flex-1 items-center justify-center p-8 text-sm text-fg-muted">
+            {node.isError ? "That page is not available." : node.isLoading ? "" : "Pick a page from the sidebar."}
           </div>
         )}
 
@@ -322,4 +353,8 @@ export function App() {
       </div>
     </div>
   );
+}
+
+function CenteredNote({ children }: { children: ReactNode }) {
+  return <div className="flex h-screen items-center justify-center p-8 text-sm text-fg-muted">{children}</div>;
 }

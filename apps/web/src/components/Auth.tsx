@@ -1,11 +1,20 @@
 import { useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { ApiError, api } from "../api.ts";
 
 const inputClass =
-  "w-full rounded-md bg-[#1d1f23] border border-[#33363d] px-3 py-2 text-sm outline-none focus:border-[#6b7280]";
+  "w-full rounded-md bg-canvas border border-line px-3 py-2 text-sm text-fg outline-none placeholder:text-fg-faint focus:border-line-strong";
 const buttonClass =
-  "w-full rounded-md bg-[#3d5ab5] px-3 py-2 text-sm font-medium text-white hover:bg-[#4867cc] disabled:opacity-50";
+  "mt-2 w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50";
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-fg-subtle">{label}</span>
+      {children}
+    </label>
+  );
+}
 
 /**
  * There is no self-service signup. This screen either bootstraps the very
@@ -45,57 +54,69 @@ export function AuthScreen({ needsSetup, onDone }: { needsSetup: boolean; onDone
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-3">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-[#f0f1f4]">
-            {needsSetup ? "Set up your world" : "Sign in"}
+    <div className="flex min-h-screen items-center justify-center bg-canvas-deep p-6">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-sm space-y-3 rounded-xl border border-divider bg-surface p-7 shadow-pop"
+      >
+        <div className="mb-5 text-center">
+          <div className="mb-2 text-3xl" aria-hidden="true">
+            🐉
+          </div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-fg-strong">
+            {needsSetup ? "Set up your world" : "Welcome back"}
           </h1>
-          <p className="mt-1 text-sm text-[#8d9099]">
+          <p className="mt-1 text-sm text-fg-subtle">
             {needsSetup
               ? "This creates the owner account and your first world."
-              : "DNDWORLDAPP"}
+              : "Sign in to DNDWORLDAPP"}
           </p>
         </div>
 
         {needsSetup && (
-          <input
-            className={inputClass}
-            placeholder="Your name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
+          <Field label="Your name">
+            <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
+          </Field>
         )}
-        <input
-          className={inputClass}
-          type="text"
-          autoCapitalize="off"
-          autoCorrect="off"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-        />
-        <input
-          className={inputClass}
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        {needsSetup && (
+        <Field label="Username">
           <input
             className={inputClass}
-            placeholder="World name (e.g. BloodEarth)"
-            value={worldName}
-            onChange={(e) => setWorldName(e.target.value)}
+            type="text"
+            autoCapitalize="off"
+            autoCorrect="off"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             required
           />
+        </Field>
+        <Field label="Password">
+          <input
+            className={inputClass}
+            type="password"
+            autoComplete={needsSetup ? "new-password" : "current-password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </Field>
+        {needsSetup && (
+          <Field label="World name">
+            <input
+              className={inputClass}
+              placeholder="e.g. BloodEarth"
+              value={worldName}
+              onChange={(e) => setWorldName(e.target.value)}
+              required
+            />
+          </Field>
         )}
 
-        {error !== null && <p className="text-sm text-[#e0888a]">{error}</p>}
+        {error !== null && (
+          <p role="alert" className="rounded-md border border-danger-line px-3 py-2 text-sm text-danger">
+            {error}
+          </p>
+        )}
 
         <button className={buttonClass} disabled={busy} type="submit">
           {busy ? "Working…" : needsSetup ? "Create world" : "Sign in"}

@@ -39,16 +39,16 @@ export function AutoLinkPopover({
     <div
       ref={ref}
       style={{ position: "fixed", left: style?.left ?? -9999, top: style?.top ?? -9999 }}
-      className="z-[2030] flex items-center gap-2 rounded-md border border-[#33363d] bg-[#22242a] px-2.5 py-1.5 text-xs shadow-lg"
+      className="z-[2030] flex items-center gap-2 rounded-md border border-line bg-raised px-2.5 py-1.5 text-xs shadow-lg"
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      <span className="text-[#8d9099]">Link to</span>
-      <span className="font-medium text-[#f0f1f4]">{hover.target}</span>
+      <span className="text-fg-subtle">Link to</span>
+      <span className="font-medium text-fg-strong">{hover.target}</span>
       <button
         type="button"
         onClick={() => onLink(hover)}
-        className="rounded bg-[#3d5ab5] px-2 py-0.5 text-white hover:bg-[#4867cc]"
+        className="rounded bg-accent px-2 py-0.5 text-on-accent hover:bg-accent-hover"
       >
         Link
       </button>

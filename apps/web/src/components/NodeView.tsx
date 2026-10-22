@@ -4,6 +4,8 @@ import type { FieldDto, FieldType, NodeDetail, NodeSummary, Visibility } from "@
 import { ApiError, api } from "../api.ts";
 import { Editor } from "../editor/Editor.tsx";
 import { navigate } from "../lib/nav.ts";
+import { useEscapeKey } from "../lib/useEscapeKey.ts";
+import { nodeGlyph } from "../lib/kinds.ts";
 import { useResizablePanel } from "../lib/useResizablePanel.ts";
 import { Access } from "./Access.tsx";
 import { IconPicker } from "./IconPicker.tsx";
@@ -18,10 +20,10 @@ const VISIBILITY_LABEL: Record<Visibility, string> = {
 };
 
 export const VISIBILITY_CLASS: Record<Visibility, string> = {
-  public: "text-[#7fb08a] border-[#3c5c43]",
-  members: "text-[#8d9099] border-[#3a3d44]",
-  dm: "text-[#c9a227] border-[#5c5023]",
-  private: "text-[#a98bc9] border-[#4b3c5c]",
+  public: "text-success border-success-line",
+  members: "text-fg-subtle border-line",
+  dm: "text-secret border-secret-line",
+  private: "text-violet border-violet-line",
 };
 
 interface Props {
@@ -77,22 +79,25 @@ export function NodeView({
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className="border-b border-[#26282d] px-8 py-3">
-        <nav className="flex flex-wrap items-center gap-1 text-xs text-[#7a7d86]">
+      <header className="flex h-11 shrink-0 items-center border-b border-divider px-4 md:px-8">
+        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-fg-muted">
           {node.breadcrumb.map((crumb) => (
-            <span key={crumb.id} className="flex items-center gap-1">
+            <span key={crumb.id} className="flex min-w-0 shrink items-center gap-1">
               <button
                 type="button"
                 onClick={() => navigate(`/n/${crumb.id}`)}
-                className="hover:text-[#d7d8dc]"
+                className="truncate rounded px-1 py-0.5 hover:bg-hover hover:text-fg"
               >
                 {crumb.icon ?? "📄"} {crumb.title}
               </button>
-              <span className="text-[#4a4d55]">/</span>
+              <span className="text-line-strong">/</span>
             </span>
           ))}
-          <span className="text-[#b6b8bf]">{node.title}</span>
+          <span className="shrink-0 truncate px-1 text-fg-soft">{node.title}</span>
         </nav>
+        <span className="ml-auto shrink-0 pl-3 text-[10px] text-fg-faint" aria-live="polite">
+          {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
+        </span>
       </header>
 
       <div className="flex-1 overflow-y-auto">
@@ -106,8 +111,8 @@ export function NodeView({
          * the container's shape didn't match the image's, so Leaflet centered
          * it and left the mismatch as empty space.
          */}
-        <div className={node.kind === "map" ? "w-full px-8 py-6" : "mx-auto w-full max-w-3xl px-8 py-6"}>
-          <div className="mb-4 flex items-center gap-2">
+        <div className={node.kind === "map" ? "w-full px-4 py-6 md:px-8" : "mx-auto w-full max-w-3xl px-5 py-8 md:px-8 md:py-10"}>
+          <div className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-3">
             <IconPicker
               value={node.icon}
               disabled={!node.canEdit}
@@ -118,14 +123,16 @@ export function NodeView({
               onChange={(e) => setTitle(e.target.value)}
               onBlur={saveTitleIfChanged}
               disabled={!node.canEdit}
-              className="min-w-0 flex-1 bg-transparent text-2xl font-semibold text-[#f0f1f4] outline-none disabled:opacity-80"
+              aria-label="Page title"
+              className="min-w-0 flex-1 basis-[calc(100%-3rem)] sm:basis-0 bg-transparent font-display text-2xl font-semibold tracking-tight text-fg-strong outline-none placeholder:text-fg-faint disabled:opacity-90 md:text-3xl"
             />
             <select
               value={node.visibility}
               onChange={(e) => void patch({ visibility: e.target.value as Visibility })}
               disabled={!node.canEdit}
-              className={`rounded border bg-[#1d1f23] px-2 py-1 text-xs ${VISIBILITY_CLASS[node.visibility]}`}
+              className={`ml-auto shrink-0 cursor-pointer rounded-full border bg-surface px-2.5 py-1 text-xs disabled:cursor-default ${VISIBILITY_CLASS[node.visibility]}`}
               title="Who can see this page"
+              aria-label="Visibility"
             >
               {(Object.keys(VISIBILITY_LABEL) as Visibility[]).map((v) => (
                 <option key={v} value={v}>
@@ -133,16 +140,13 @@ export function NodeView({
                 </option>
               ))}
             </select>
-            <span className="w-12 text-right text-[10px] text-[#6b6e77]">
-              {saveState === "saving" ? "saving…" : saveState === "saved" ? "saved" : ""}
-            </span>
 
             {node.canEdit && (
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setMenuOpen(!menuOpen)}
-                  className="rounded border border-[#33363d] px-2 py-1 text-xs text-[#8d9099] hover:text-[#d7d8dc]"
+                  className="rounded-md px-2 py-1 text-sm leading-none text-fg-subtle hover:bg-hover hover:text-fg"
                   aria-label="Page actions"
                 >
                   ⋯
@@ -151,14 +155,14 @@ export function NodeView({
                   <>
                     {/* z-[20xx], not z-10/20: must clear MapView's in-map overlays (z-[1000]) when this page is a map — app chrome always wins over map content. */}
                     <div className="fixed inset-0 z-[2010]" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute right-0 z-[2020] mt-1 w-52 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg">
+                    <div className="absolute right-0 z-[2020] mt-1 w-52 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-pop">
                       <button
                         type="button"
                         onClick={() => {
                           setMenuOpen(false);
                           onOpenCreateChooser(node.id);
                         }}
-                        className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                        className="menu-item"
                       >
                         Add a page under…
                       </button>
@@ -168,7 +172,7 @@ export function NodeView({
                           setMenuOpen(false);
                           onTogglePin(node.id);
                         }}
-                        className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                        className="menu-item"
                       >
                         {pinnedIds.has(node.id) ? "Unpin" : "Pin"}
                       </button>
@@ -179,7 +183,7 @@ export function NodeView({
                             setMenuOpen(false);
                             setAccessOpen(true);
                           }}
-                          className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                          className="menu-item"
                         >
                           Access…
                         </button>
@@ -191,7 +195,7 @@ export function NodeView({
                             setMenuOpen(false);
                             setTemplatePickerOpen(true);
                           }}
-                          className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                          className="menu-item"
                         >
                           Template…
                         </button>
@@ -203,7 +207,7 @@ export function NodeView({
                             setMenuOpen(false);
                             void api.applyTemplate(node.id).then(onChanged);
                           }}
-                          className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                          className="menu-item"
                         >
                           Re-apply template
                         </button>
@@ -214,7 +218,7 @@ export function NodeView({
                           setMenuOpen(false);
                           setSourceOpen(true);
                         }}
-                        className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                        className="menu-item"
                       >
                         View source…
                       </button>
@@ -224,7 +228,7 @@ export function NodeView({
                           setMenuOpen(false);
                           onArchive(node);
                         }}
-                        className="block w-full px-3 py-2 text-left text-xs text-[#c98b8b] hover:bg-[#2b2e35]"
+                        className="menu-item menu-item-danger"
                       >
                         Archive page
                         {node.children.length > 0 && ` and ${node.children.length} inside`}
@@ -255,24 +259,24 @@ export function NodeView({
 
           {sourceOpen && (
             <div
-              className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[8vh]"
+              className="modal-backdrop pt-[8vh]"
               onClick={() => setSourceOpen(false)}
             >
               <div
-                className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-[#33363d] bg-[#1d1f23] p-6 shadow-2xl"
+                className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="mb-3 flex items-center">
-                  <h2 className="text-base font-semibold text-[#f0f1f4]">Source — {node.title}</h2>
+                  <h2 className="text-base font-semibold text-fg-strong">Source — {node.title}</h2>
                   <button
                     type="button"
                     onClick={() => setSourceOpen(false)}
-                    className="ml-auto text-sm text-[#7a7d86] hover:text-[#d7d8dc]"
+                    className="ml-auto text-sm text-fg-muted hover:text-fg"
                   >
                     Close
                   </button>
                 </div>
-                <pre className="whitespace-pre-wrap rounded-md border border-[#2c2f36] bg-[#17181b] p-4 font-mono text-xs text-[#b6b8bf]">
+                <pre className="whitespace-pre-wrap rounded-md border border-selected bg-canvas p-4 font-mono text-xs text-fg-soft">
                   {node.bodyMd.length > 0 ? node.bodyMd : "(empty)"}
                 </pre>
               </div>
@@ -280,7 +284,7 @@ export function NodeView({
           )}
 
           {node.kind === "map" ? (
-            <div className="overflow-hidden rounded-md border border-[#26282d]">
+            <div className="overflow-hidden rounded-md border border-divider">
               <MapView node={node} allNodes={allNodes} />
             </div>
           ) : (
@@ -302,7 +306,7 @@ export function NodeView({
 
           {node.children.length > 0 && (
             <section className="mt-10">
-              <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">
+              <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
                 Child pages
               </h2>
               <ul className="grid gap-1 sm:grid-cols-2">
@@ -311,12 +315,12 @@ export function NodeView({
                     <button
                       type="button"
                       onClick={() => navigate(`/n/${child.id}`)}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-[#b6b8bf] hover:bg-[#232529]"
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-fg-soft hover:bg-hover"
                     >
-                      <span>{child.icon ?? "📄"}</span>
+                      <span>{nodeGlyph(child)}</span>
                       <span className="truncate">{child.title}</span>
                       {child.childCount > 0 && (
-                        <span className="ml-auto text-[10px] text-[#6b6e77]">
+                        <span className="ml-auto text-[10px] text-fg-faint">
                           {child.childCount}
                         </span>
                       )}
@@ -330,7 +334,7 @@ export function NodeView({
           <button
             type="button"
             onClick={() => onOpenCreateChooser(node.id)}
-            className="mt-4 rounded px-2 py-1.5 text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+            className="mt-4 rounded px-2 py-1.5 text-xs text-fg-muted hover:bg-hover hover:text-fg"
           >
             + Add a page under {node.title}
           </button>
@@ -350,6 +354,7 @@ function TemplatePicker({
   onChanged: () => void;
   onClose: () => void;
 }) {
+  useEscapeKey(onClose);
   const { data } = useQuery({ queryKey: ["templates", node.worldId], queryFn: () => api.templates(node.worldId) });
   const templates = data?.templates ?? [];
   const [templateId, setTemplateId] = useState(node.templateId);
@@ -363,16 +368,16 @@ function TemplatePicker({
   });
 
   return (
-    <div className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[8vh]" onClick={onClose}>
+    <div className="modal-backdrop pt-[8vh]" onClick={onClose}>
       <div
-        className="w-full max-w-sm rounded-lg border border-[#33363d] bg-[#1d1f23] p-5 shadow-2xl"
+        className="w-full max-w-sm rounded-lg border border-line bg-surface p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-3 text-sm font-semibold text-[#f0f1f4]">Template</h2>
+        <h2 className="mb-3 text-sm font-semibold text-fg-strong">Template</h2>
         <select
           value={templateId ?? ""}
           onChange={(e) => setTemplateId(e.target.value.length > 0 ? e.target.value : null)}
-          className="mb-4 w-full rounded-md border border-[#33363d] bg-[#17181b] px-2 py-1.5 text-sm text-[#d7d8dc]"
+          className="mb-4 w-full rounded-md border border-line bg-canvas px-2 py-1.5 text-sm text-fg"
         >
           <option value="">None</option>
           {templates.map((t) => (
@@ -385,7 +390,7 @@ function TemplatePicker({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-[#33363d] px-3 py-1.5 text-sm text-[#b6b8bf] hover:bg-[#26282e]"
+            className="rounded-md border border-line px-3 py-1.5 text-sm text-fg-soft hover:bg-press"
           >
             Cancel
           </button>
@@ -393,7 +398,7 @@ function TemplatePicker({
             type="button"
             onClick={() => set.mutate()}
             disabled={set.isPending}
-            className="rounded-md bg-[#3d5ab5] px-3 py-1.5 text-sm text-white hover:bg-[#4867cc] disabled:opacity-50"
+            className="rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent hover:bg-accent-hover disabled:opacity-50"
           >
             {set.isPending ? "Setting…" : "Set"}
           </button>
@@ -421,11 +426,11 @@ export function Backlinks({
 
   if (panel.collapsed) {
     return (
-      <aside className="hidden h-screen w-8 shrink-0 flex-col items-center border-l border-[#26282d] bg-[#1a1c20] py-3 lg:flex">
+      <aside className="hidden h-full w-8 shrink-0 flex-col items-center border-l border-divider bg-panel py-3 lg:flex">
         <button
           type="button"
           onClick={panel.toggleCollapsed}
-          className="rounded p-1 text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+          className="rounded p-1 text-fg-muted hover:bg-hover hover:text-fg"
           title="Show panel"
           aria-label="Show panel"
         >
@@ -438,7 +443,7 @@ export function Backlinks({
   return (
     <aside
       style={{ width: panel.width }}
-      className="relative hidden h-screen shrink-0 overflow-y-auto border-l border-[#26282d] bg-[#1a1c20] px-4 py-4 lg:block"
+      className="relative hidden h-full shrink-0 overflow-y-auto border-l border-divider bg-panel px-4 py-4 lg:block"
     >
       <div
         role="separator"
@@ -448,12 +453,12 @@ export function Backlinks({
         onPointerDown={(e) => panel.startResize(e, "right")}
         onDoubleClick={panel.resetWidth}
         onKeyDown={(e) => panel.handleKeyDown(e, "right")}
-        className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-[#4a4d55] focus:bg-[#4a4d55] focus:outline-none"
+        className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-line-strong focus:bg-line-strong focus:outline-none"
       />
       <button
         type="button"
         onClick={panel.toggleCollapsed}
-        className="absolute right-2 top-2 rounded p-1 text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+        className="absolute right-2 top-2 rounded p-1 text-fg-muted hover:bg-hover hover:text-fg"
         title="Hide panel"
         aria-label="Hide panel"
       >
@@ -461,7 +466,7 @@ export function Backlinks({
       </button>
       {node.tags.length > 0 && (
         <>
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">Tags</h2>
+          <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-muted">Tags</h2>
           <div className="mb-6 flex flex-wrap gap-1.5">
             {node.tags.map((tag) => (
               <a
@@ -480,11 +485,11 @@ export function Backlinks({
         </>
       )}
 
-      <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">
+      <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
         Mentioned in
       </h2>
       {node.backlinks.length === 0 ? (
-        <p className="text-xs text-[#6b6e77]">Nothing links here yet.</p>
+        <p className="text-xs text-fg-faint">Nothing links here yet.</p>
       ) : (
         <ul className="space-y-1">
           {node.backlinks.map((link) => (
@@ -492,7 +497,7 @@ export function Backlinks({
               <button
                 type="button"
                 onClick={() => navigate(`/n/${link.nodeId}`)}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-[#b6b8bf] hover:bg-[#232529]"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-fg-soft hover:bg-hover"
               >
                 <span>{link.icon ?? "📄"}</span>
                 <span className="truncate">{link.title}</span>
@@ -504,10 +509,10 @@ export function Backlinks({
 
       {links.length > 0 && (
         <>
-          <h2 className="mb-1 mt-6 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">
+          <h2 className="mb-1 mt-6 text-xs font-medium uppercase tracking-wide text-fg-muted">
             Wanted pages
           </h2>
-          <p className="mb-2 text-[10px] text-[#6b6e77]">
+          <p className="mb-2 text-[10px] text-fg-faint">
             Linked to, but not written yet. Click to create.
           </p>
           <ul className="space-y-1">
@@ -516,11 +521,11 @@ export function Backlinks({
                 <button
                   type="button"
                   onClick={() => onCreateNamed(link.targetText)}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-[#c98b8b] hover:bg-[#232529]"
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-danger-soft hover:bg-hover"
                 >
                   <span className="truncate">{link.targetText}</span>
                   {link.count > 1 && (
-                    <span className="ml-auto text-[10px] text-[#6b6e77]">{link.count}</span>
+                    <span className="ml-auto text-[10px] text-fg-faint">{link.count}</span>
                   )}
                 </button>
               </li>
@@ -531,26 +536,26 @@ export function Backlinks({
 
       <FieldsPanel node={node} allNodes={allNodes} />
 
-      <h2 className="mb-2 mt-6 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">Page</h2>
-      <dl className="space-y-1 text-xs text-[#8d9099]">
+      <h2 className="mb-2 mt-6 text-xs font-medium uppercase tracking-wide text-fg-muted">Page</h2>
+      <dl className="space-y-1 text-xs text-fg-subtle">
         <div className="flex justify-between">
           <dt>Kind</dt>
-          <dd className="text-[#b6b8bf]">{node.kind}</dd>
+          <dd className="text-fg-soft">{node.kind}</dd>
         </div>
         <div className="flex justify-between">
           <dt>Visibility</dt>
-          <dd className={VISIBILITY_CLASS[node.visibility].split(" ")[0]}>{node.visibility}</dd>
+          <dd className={VISIBILITY_CLASS[node.visibility].split(" ")[0]}>{VISIBILITY_LABEL[node.visibility]}</dd>
         </div>
         <div className="flex justify-between">
           <dt>Children</dt>
-          <dd className="text-[#b6b8bf]">{node.children.length}</dd>
+          <dd className="text-fg-soft">{node.children.length}</dd>
         </div>
         <div className="flex justify-between">
           <dt>Updated</dt>
-          <dd className="text-[#b6b8bf]">{new Date(node.updatedAt).toLocaleDateString()}</dd>
+          <dd className="text-fg-soft">{new Date(node.updatedAt).toLocaleDateString()}</dd>
         </div>
       </dl>
-      <p className="mt-4 break-all text-[10px] text-[#5c5f67]">id {node.id}</p>
+      <p className="mt-4 break-all text-[10px] text-fg-faint">id {node.id}</p>
     </aside>
   );
 }
@@ -558,7 +563,7 @@ export function Backlinks({
 /** A gold dot marking a DM-only field, matching Sidebar's DM-only page marker. */
 function DmDot() {
   return (
-    <span className="text-[10px] text-[#c9a227]" title="DM only">
+    <span className="text-[10px] text-secret" title="DM only">
       ●
     </span>
   );
@@ -599,7 +604,7 @@ function FieldsPanel({ node, allNodes }: { node: NodeDetail; allNodes: NodeSumma
 
   return (
     <div className="mt-6">
-      <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">Fields</h2>
+      <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-muted">Fields</h2>
       <dl className="space-y-1.5">
         {fields.map((field) => (
           <FieldRow
@@ -610,7 +615,7 @@ function FieldsPanel({ node, allNodes }: { node: NodeDetail; allNodes: NodeSumma
             onSave={(value) => save.mutate({ fieldId: field.id, value })}
           />
         ))}
-        {fields.length === 0 && <p className="text-xs text-[#6b6e77]">No fields on this page.</p>}
+        {fields.length === 0 && <p className="text-xs text-fg-faint">No fields on this page.</p>}
       </dl>
 
       {node.canEdit &&
@@ -627,7 +632,7 @@ function FieldsPanel({ node, allNodes }: { node: NodeDetail; allNodes: NodeSumma
           <button
             type="button"
             onClick={() => setAddingOpen(true)}
-            className="mt-2 rounded px-1.5 py-1 text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+            className="mt-2 rounded px-1.5 py-1 text-xs text-fg-muted hover:bg-hover hover:text-fg"
           >
             + Add a field
           </button>
@@ -651,7 +656,7 @@ function FieldRow({
 
   if (field.type === "section") {
     return (
-      <div className="mt-3 flex items-center gap-1 border-b border-[#2c2f36] pb-1 text-[10px] font-medium uppercase tracking-wide text-[#7a7d86]">
+      <div className="mt-3 flex items-center gap-1 border-b border-selected pb-1 text-[10px] font-medium uppercase tracking-wide text-fg-muted">
         {field.label}
         {field.visibility === "dm" && <DmDot />}
       </div>
@@ -660,7 +665,7 @@ function FieldRow({
 
   return (
     <div className="flex items-start justify-between gap-3 text-xs">
-      <dt className="flex shrink-0 items-center gap-1 pt-1 text-[#8d9099]">
+      <dt className="flex shrink-0 items-center gap-1 pt-1 text-fg-subtle">
         {field.label}
         {field.visibility === "dm" && <DmDot />}
       </dt>
@@ -677,7 +682,7 @@ function FieldRow({
             value={typeof field.value === "string" ? field.value : ""}
             disabled={!canEdit}
             onChange={(e) => onSave(e.target.value.length > 0 ? e.target.value : null)}
-            className="w-full rounded border border-[#33363d] bg-[#17181b] px-1.5 py-0.5 text-right text-[#d7d8dc] disabled:opacity-70"
+            className="w-full rounded border border-line bg-canvas px-1.5 py-0.5 text-right text-fg disabled:opacity-70"
           >
             <option value="">—</option>
             {(field.options ?? []).map((opt) => (
@@ -692,7 +697,7 @@ function FieldRow({
             value={typeof field.value === "string" ? field.value : ""}
             disabled={!canEdit}
             onChange={(e) => onSave(e.target.value.length > 0 ? e.target.value : null)}
-            className="rounded border border-[#33363d] bg-[#17181b] px-1.5 py-0.5 text-[#d7d8dc] disabled:opacity-70"
+            className="rounded border border-line bg-canvas px-1.5 py-0.5 text-fg disabled:opacity-70"
           />
         ) : field.type === "link" ? (
           <div className="flex items-center justify-end gap-1">
@@ -700,7 +705,7 @@ function FieldRow({
               <button
                 type="button"
                 onClick={() => navigate(`/n/${field.refNode!.id}`)}
-                className="truncate rounded bg-[#232529] px-1.5 py-0.5 text-[#b6b8bf] hover:bg-[#2b2e35]"
+                className="truncate rounded bg-hover px-1.5 py-0.5 text-fg-soft hover:bg-hover-strong"
               >
                 {field.refNode.icon ?? "📄"} {field.refNode.title}
               </button>
@@ -709,7 +714,7 @@ function FieldRow({
               <select
                 value={typeof field.value === "string" ? field.value : ""}
                 onChange={(e) => onSave(e.target.value.length > 0 ? e.target.value : null)}
-                className="min-w-0 rounded border border-[#33363d] bg-[#17181b] px-1 py-0.5 text-[#d7d8dc]"
+                className="min-w-0 rounded border border-line bg-canvas px-1 py-0.5 text-fg"
               >
                 <option value="">—</option>
                 {allNodes.map((n) => (
@@ -727,7 +732,7 @@ function FieldRow({
             onChange={(e) => setText(e.target.value)}
             onBlur={() => onSave(text.length > 0 ? text : null)}
             rows={2}
-            className="w-full resize-y rounded border border-[#33363d] bg-[#17181b] px-1.5 py-1 text-right text-[#d7d8dc] outline-none focus:border-[#4a4d55] disabled:opacity-70"
+            className="w-full resize-y rounded border border-line bg-canvas px-1.5 py-1 text-right text-fg outline-none focus:border-line-strong disabled:opacity-70"
           />
         ) : (
           <input
@@ -736,7 +741,7 @@ function FieldRow({
             disabled={!canEdit}
             onChange={(e) => setText(e.target.value)}
             onBlur={() => onSave(text.length === 0 ? null : field.type === "number" ? Number(text) : text)}
-            className="w-full rounded border border-[#33363d] bg-[#17181b] px-1.5 py-0.5 text-right text-[#d7d8dc] outline-none focus:border-[#4a4d55] disabled:opacity-70"
+            className="w-full rounded border border-line bg-canvas px-1.5 py-0.5 text-right text-fg outline-none focus:border-line-strong disabled:opacity-70"
           />
         )}
       </dd>
@@ -776,12 +781,12 @@ function AddFieldForm({
         onChange={(e) => setKey(e.target.value)}
         placeholder="key"
         autoFocus
-        className="min-w-0 flex-1 rounded border border-[#33363d] bg-[#17181b] px-1.5 py-1 font-mono text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+        className="min-w-0 flex-1 rounded border border-line bg-canvas px-1.5 py-1 font-mono text-xs text-fg outline-none focus:border-line-strong"
       />
       <select
         value={type}
         onChange={(e) => setType(e.target.value as AddableFieldType)}
-        className="shrink-0 rounded border border-[#33363d] bg-[#17181b] px-1 py-1 text-xs text-[#d7d8dc]"
+        className="shrink-0 rounded border border-line bg-canvas px-1 py-1 text-xs text-fg"
       >
         {ADDABLE_FIELD_TYPES.map((t) => (
           <option key={t} value={t}>
@@ -789,13 +794,13 @@ function AddFieldForm({
           </option>
         ))}
       </select>
-      <button type="submit" disabled={create.isPending} className="shrink-0 text-xs text-[#7fb08a] hover:text-[#9cc9a6]">
+      <button type="submit" disabled={create.isPending} className="shrink-0 text-xs text-success hover:text-success">
         Add
       </button>
-      <button type="button" onClick={onCancel} className="shrink-0 text-xs text-[#7a7d86] hover:text-[#d7d8dc]">
+      <button type="button" onClick={onCancel} className="shrink-0 text-xs text-fg-muted hover:text-fg">
         ✕
       </button>
-      {error !== null && <p className="w-full text-[10px] text-[#e0888a]">{error}</p>}
+      {error !== null && <p className="w-full text-[10px] text-danger">{error}</p>}
     </form>
   );
 }

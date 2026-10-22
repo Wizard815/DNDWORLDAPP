@@ -28,7 +28,7 @@ export function SectionView({ node }: NodeViewProps) {
   return (
     <NodeViewWrapper data-post-id={postId} contentEditable={false}>
       {post === undefined ? (
-        <p className="my-2 text-xs text-[#6b6e77]">Loading section…</p>
+        <p className="my-2 text-xs text-fg-faint">Loading section…</p>
       ) : (
         <PostCard
           post={post}

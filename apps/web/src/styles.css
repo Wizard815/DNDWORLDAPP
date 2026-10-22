@@ -1,4 +1,145 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/fraunces";
+
+/*
+ * Design tokens. Every color in the app comes from here — components use
+ * semantic utilities (bg-surface, text-fg-muted, border-line, …), never raw
+ * hex. A theme is just a block below that re-assigns these variables, so
+ * adding one never touches a component. Same shape as argos's themes:
+ * register it in lib/theme.ts and add a matching block here.
+ */
+@theme static {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Fraunces Variable", ui-serif, Georgia, "Times New Roman", serif;
+
+  /* Surfaces, darkest to lightest (in a dark theme). */
+  --color-canvas-deep: #0f1013;
+  --color-canvas: #15161a;
+  --color-panel: #191a1f;
+  --color-surface: #1d1f24;
+  --color-raised: #23252b;
+  --color-hover: #24262c;
+  --color-press: #2a2c33;
+  --color-hover-strong: #2d3038;
+  --color-selected: #2c2f38;
+  --color-highlight: #323643;
+
+  /* Lines. */
+  --color-divider: #24262c;
+  --color-line: #31343c;
+  --color-line-strong: #4a4d57;
+
+  /* Text, most to least prominent. */
+  --color-fg-strong: #f2f2f5;
+  --color-fg: #d9dade;
+  --color-fg-soft: #b8bac2;
+  --color-fg-subtle: #90939c;
+  --color-fg-muted: #7c7f89;
+  --color-fg-faint: #62656e;
+
+  /* Brand accent, links. */
+  --color-accent: #4a63c4;
+  --color-accent-hover: #5874dc;
+  --color-accent-soft: #1b2444;
+  --color-link: #9db8ff;
+  --color-on-accent: #ffffff;
+
+  /* Status. */
+  --color-danger: #e58b8d;
+  --color-danger-soft: #cc8e8e;
+  --color-danger-line: #5c3a3a;
+  --color-success: #82b38d;
+  --color-success-line: #3c5c43;
+  --color-success-solid: #3f7d4e;
+  --color-success-solid-hover: #4a9160;
+  --color-violet: #ac8ecc;
+  --color-violet-line: #4b3c5c;
+  --color-violet-solid: #8b6cf0;
+  --color-tag: #b8a9e0;
+
+  /* DM-only content: secrets, DM notes, the "viewing as a player" banner. */
+  --color-secret: #cfa62a;
+  --color-secret-line: #5c5023;
+  --color-secret-bg: #221f14;
+  --color-secret-bg-strong: #3a2f16;
+  --color-secret-fg: #e8cf8a;
+  --color-mark: #4a4526;
+  --color-mark-fg: #f4edcc;
+
+  --shadow-pop: 0 10px 30px -8px rgb(0 0 0 / 55%), 0 2px 6px rgb(0 0 0 / 30%);
+}
+
+/* Ember — warm charcoal with a blood-red accent. */
+:root[data-theme="ember"] {
+  --color-canvas-deep: #100d0c;
+  --color-canvas: #171312;
+  --color-panel: #1c1716;
+  --color-surface: #211b19;
+  --color-raised: #28211f;
+  --color-hover: #2a2321;
+  --color-press: #312825;
+  --color-hover-strong: #352b28;
+  --color-selected: #3a2a27;
+  --color-highlight: #47302c;
+  --color-divider: #2a2220;
+  --color-line: #3a302d;
+  --color-line-strong: #574743;
+  --color-fg-strong: #f6efe9;
+  --color-fg: #e2d8d0;
+  --color-fg-soft: #c3b6ad;
+  --color-fg-subtle: #9b8d84;
+  --color-fg-muted: #887a71;
+  --color-fg-faint: #6c605a;
+  --color-accent: #a8323a;
+  --color-accent-hover: #c03d46;
+  --color-accent-soft: #3a1c1e;
+  --color-link: #f0a07a;
+}
+
+/* Parchment — a light, paper-toned theme for daylight prep. */
+:root[data-theme="parchment"] {
+  color-scheme: light;
+  --color-canvas-deep: #e4dccb;
+  --color-canvas: #f6f1e6;
+  --color-panel: #eee7d8;
+  --color-surface: #fbf8f1;
+  --color-raised: #fffdf8;
+  --color-hover: #e8e0cf;
+  --color-press: #e1d8c4;
+  --color-hover-strong: #ddd3bd;
+  --color-selected: #e0d4b9;
+  --color-highlight: #d8caa8;
+  --color-divider: #e1d8c6;
+  --color-line: #d6cbb5;
+  --color-line-strong: #b3a689;
+  --color-fg-strong: #241d14;
+  --color-fg: #362d22;
+  --color-fg-soft: #4d4335;
+  --color-fg-subtle: #6c604f;
+  --color-fg-muted: #7d705d;
+  --color-fg-faint: #9a8e7a;
+  --color-accent: #8c3b20;
+  --color-accent-hover: #a5482a;
+  --color-accent-soft: #f1dfd2;
+  --color-link: #8c3b20;
+  --color-danger: #b03a3a;
+  --color-danger-soft: #a14a4a;
+  --color-danger-line: #e2b4b4;
+  --color-success: #2f7a43;
+  --color-success-line: #a9d1b3;
+  --color-violet: #6d4ca0;
+  --color-violet-line: #cdbbe6;
+  --color-tag: #6d4ca0;
+  --color-secret: #8a6a0a;
+  --color-secret-line: #d9c27a;
+  --color-secret-bg: #f7eccb;
+  --color-secret-bg-strong: #efdba2;
+  --color-secret-fg: #5e4705;
+  --color-mark: #f3e29a;
+  --color-mark-fg: #3b2f05;
+  --shadow-pop: 0 10px 30px -10px rgb(60 40 10 / 30%), 0 2px 6px rgb(60 40 10 / 12%);
+}
 
 :root {
   color-scheme: dark;
@@ -6,10 +147,68 @@
 
 body {
   margin: 0;
-  background: #17181b;
-  color: #d7d8dc;
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+/* Thin, theme-aware scrollbars instead of the browser's bright default ones. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+
+/* In the base layer so a component's own `outline-none` utility still wins. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+    outline-offset: 1px;
+  }
+}
+
+/*
+ * Shared overlay behind every modal dialog. Paired with useEscapeKey in
+ * lib/useEscapeKey.ts so Escape and a backdrop click both close it.
+ */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2050;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(3px);
+  animation: fade-in 120ms ease-out;
+}
+.modal-backdrop > * {
+  box-shadow: var(--shadow-pop);
+  animation: pop-in 140ms ease-out;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .modal-backdrop > * {
+    animation: none;
+  }
 }
 
 /*
@@ -18,7 +217,7 @@ body {
  * fallback background — none of which was ever restyled, so a map sat inside
  * this dark app as a bright, foreign-looking rectangle full of white UI. Two
  * of these had to be `!important`: `.leaflet-container`'s own background
- * because MapView.tsx's Tailwind `bg-[#0e0f11]` class and this stylesheet's
+ * because MapView.tsx's Tailwind `bg-canvas-deep` class and this stylesheet's
  * `.leaflet-container` rule have equal specificity, so whichever loads later
  * in the bundle wins the tie — not reliable to depend on — and
  * `.leaflet-bar a`'s background for the same reason (it's one of Leaflet's
@@ -26,37 +225,37 @@ body {
  * only this app's maps use, so nothing else is affected.
  */
 .leaflet-container {
-  background: #17181b !important;
+  background: var(--color-canvas) !important;
 }
 .leaflet-bar {
   border: none !important;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 40%) !important;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 30%) !important;
 }
 .leaflet-bar a {
-  background: #22242a !important;
-  color: #d7d8dc !important;
-  border-bottom: 1px solid #33363d !important;
+  background: var(--color-raised) !important;
+  color: var(--color-fg) !important;
+  border-bottom: 1px solid var(--color-line) !important;
 }
 .leaflet-bar a:hover {
-  background: #2b2e35 !important;
+  background: var(--color-hover-strong) !important;
 }
 .leaflet-bar a.leaflet-disabled {
-  background: #1a1c20 !important;
-  color: #5c5f67 !important;
+  background: var(--color-panel) !important;
+  color: var(--color-fg-faint) !important;
 }
 
 /* Wiki links: an existing page reads as a link, a missing one as a to-do. */
 .wikilink {
-  color: #9db8ff;
+  color: var(--color-link);
   text-decoration: none;
-  border-bottom: 1px solid rgb(157 184 255 / 30%);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-link) 30%, transparent);
 }
 .wikilink:hover {
-  border-bottom-color: #9db8ff;
+  border-bottom-color: var(--color-link);
 }
 .wikilink-missing {
-  color: #c98b8b;
-  border-bottom: 1px dashed rgb(201 139 139 / 50%);
+  color: var(--color-danger-soft);
+  border-bottom: 1px dashed color-mix(in srgb, var(--color-danger-soft) 50%, transparent);
 }
 
 /* #tagname — a small pill, not an underlined link, so it reads as a label/category rather than a page reference. */
@@ -65,16 +264,16 @@ body {
   border-radius: 999px;
   padding: 0.05em 0.6em;
   font-size: 0.9em;
-  color: #b8a9e0;
-  background: rgb(157 130 224 / 12%);
+  color: var(--color-tag);
+  background: color-mix(in srgb, var(--color-tag) 14%, transparent);
   text-decoration: none;
 }
 a.tag-chip:hover {
-  background: rgb(157 130 224 / 22%);
+  background: color-mix(in srgb, var(--color-tag) 24%, transparent);
 }
 .tag-chip-pending {
-  color: #8d9099;
-  background: rgb(141 144 153 / 10%);
+  color: var(--color-fg-subtle);
+  background: color-mix(in srgb, var(--color-fg-subtle) 12%, transparent);
   cursor: default;
 }
 
@@ -84,16 +283,20 @@ a.tag-chip:hover {
 .prose-body h1,
 .prose-body h2,
 .prose-body h3 {
+  font-family: var(--font-display);
   font-weight: 600;
+  letter-spacing: -0.005em;
   line-height: 1.25;
   margin: 1.4em 0 0.5em;
-  color: #f0f1f4;
+  color: var(--color-fg-strong);
 }
 .prose-body h1 {
-  font-size: 1.6rem;
+  font-size: 1.75rem;
 }
 .prose-body h2 {
-  font-size: 1.3rem;
+  font-size: 1.4rem;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid var(--color-divider);
 }
 .prose-body h3 {
   font-size: 1.1rem;
@@ -113,19 +316,19 @@ a.tag-chip:hover {
   list-style: decimal;
 }
 .prose-body blockquote {
-  border-left: 3px solid #3a3d44;
+  border-left: 3px solid var(--color-line);
   margin: 1em 0;
   padding-left: 1em;
-  color: #a7a9b0;
+  color: var(--color-fg-soft);
 }
 .prose-body code {
-  background: #24262b;
+  background: var(--color-raised);
   padding: 0.1em 0.35em;
   border-radius: 4px;
   font-size: 0.9em;
 }
 .prose-body pre {
-  background: #1d1f23;
+  background: var(--color-surface);
   padding: 0.9em;
   border-radius: 8px;
   overflow-x: auto;
@@ -142,24 +345,24 @@ a.tag-chip:hover {
 }
 .prose-body th,
 .prose-body td {
-  border: 1px solid #33363d;
+  border: 1px solid var(--color-line);
   padding: 0.4em 0.7em;
   text-align: left;
 }
 .prose-body mark {
-  background: #4a4526;
-  color: #f4edcc;
+  background: var(--color-mark);
+  color: var(--color-mark-fg);
 }
 .prose-body img {
   max-width: 100%;
   border-radius: 8px;
 }
 .prose-body a {
-  color: #9db8ff;
+  color: var(--color-link);
 }
 .prose-body hr {
   border: 0;
-  border-top: 1px solid #2e3138;
+  border-top: 1px solid var(--color-line);
   margin: 1.5em 0;
 }
 
@@ -168,9 +371,9 @@ a.tag-chip:hover {
 .secret-block {
   margin: 1em 0;
   padding: 0.75em 1em;
-  border: 1px solid #5c5023;
+  border: 1px solid var(--color-secret-line);
   border-radius: 8px;
-  background: rgb(92 80 35 / 12%);
+  background: var(--color-secret-bg);
 }
 .secret-block-label {
   display: flex;
@@ -180,7 +383,7 @@ a.tag-chip:hover {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #c9a227;
+  color: var(--color-secret);
   margin-bottom: 0.4em;
 }
 .secret-block-reveal {
@@ -188,15 +391,15 @@ a.tag-chip:hover {
   font-weight: 500;
   letter-spacing: normal;
   text-transform: none;
-  color: #8a7527;
-  border: 1px solid #5c5023;
+  color: var(--color-secret);
+  border: 1px solid var(--color-secret-line);
   border-radius: 4px;
   padding: 1px 6px;
   cursor: pointer;
 }
 .secret-block-reveal:hover {
-  color: #c9a227;
-  background: rgb(92 80 35 / 20%);
+  color: var(--color-secret);
+  background: var(--color-secret-bg-strong);
 }
 .secret-block > *:last-child {
   margin-bottom: 0;
@@ -210,7 +413,7 @@ a.tag-chip:hover {
   content: attr(data-placeholder);
   float: left;
   height: 0;
-  color: #5c5f67;
+  color: var(--color-fg-faint);
   pointer-events: none;
 }
 
@@ -218,7 +421,7 @@ a.tag-chip:hover {
    from .wikilink-missing (a real link to a page that doesn't exist yet) —
    this is the opposite case, a page that exists but isn't linked yet. */
 .autolink-candidate {
-  border-bottom: 1px dotted rgb(157 184 255 / 45%);
+  border-bottom: 1px dotted color-mix(in srgb, var(--color-link) 45%, transparent);
   cursor: pointer;
 }
 
@@ -244,7 +447,7 @@ a.tag-chip:hover {
   grid-template-columns: 2fr 1fr;
 }
 [data-column] {
-  border: 1px dashed #2c2f36;
+  border: 1px dashed var(--color-line);
   border-radius: 8px;
   padding: 0.75em 1em;
   min-height: 2.5em;
@@ -263,16 +466,45 @@ a.tag-chip:hover {
 
 /* Drop indicators while dragging a page in the tree. */
 .drop-into {
-  background: rgb(157 184 255 / 12%);
-  outline: 1px solid rgb(157 184 255 / 40%);
+  background: color-mix(in srgb, var(--color-link) 12%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--color-link) 40%, transparent);
 }
 .drop-before {
-  box-shadow: inset 0 2px 0 0 #9db8ff;
+  box-shadow: inset 0 2px 0 0 var(--color-link);
 }
 .drop-after {
-  box-shadow: inset 0 -2px 0 0 #9db8ff;
+  box-shadow: inset 0 -2px 0 0 var(--color-link);
 }
 
 textarea {
   field-sizing: content;
+}
+
+/* Rows in a dropdown/context menu (page ⋯ menu, sidebar row menu, DM Menu). */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.75rem;
+  text-align: left;
+  font-size: 0.8125rem;
+  color: var(--color-fg-soft);
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--color-hover-strong);
+  color: var(--color-fg-strong);
+  outline: none;
+}
+.menu-item-danger {
+  color: var(--color-danger-soft);
+}
+.menu-item-danger:hover {
+  color: var(--color-danger);
+}
+.menu-separator {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--color-divider);
 }

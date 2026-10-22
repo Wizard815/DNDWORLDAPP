@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { AclEntryDto, Role, ShareLinkDto } from "@dndworldapp/schema";
 import { ApiError, api } from "../api.ts";
+import { useEscapeKey } from "../lib/useEscapeKey.ts";
 
 /** Only these are meaningful to grant — owner/dm already see and edit everything. */
 const GRANTABLE_ROLES: Role[] = ["player", "guest"];
@@ -25,6 +26,7 @@ export function Access({
   nodeTitle: string;
   onClose: () => void;
 }) {
+  useEscapeKey(onClose);
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ["acl", nodeId], queryFn: () => api.acl(nodeId) });
   const { data: membersData } = useQuery({
@@ -59,27 +61,27 @@ export function Access({
   const members = membersData?.members ?? [];
 
   return (
-    <div className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[8vh]" onClick={onClose}>
+    <div className="modal-backdrop pt-[8vh]" onClick={onClose}>
       <div
-        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-lg border border-[#33363d] bg-[#1d1f23] p-6 shadow-2xl"
+        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center">
-          <h2 className="min-w-0 truncate text-base font-semibold text-[#f0f1f4]">
+          <h2 className="min-w-0 truncate text-base font-semibold text-fg-strong">
             Access — {nodeTitle}
           </h2>
-          <button type="button" onClick={onClose} className="ml-auto shrink-0 text-sm text-[#7a7d86] hover:text-[#d7d8dc]">
+          <button type="button" onClick={onClose} className="ml-auto shrink-0 text-sm text-fg-muted hover:text-fg">
             Close
           </button>
         </div>
-        <p className="mb-5 text-xs text-[#8d9099]">
+        <p className="mb-5 text-xs text-fg-subtle">
           Grants only ever add to what this page's visibility already allows — there is no
           way to take access away from here. To hide the page from someone entirely, change
           its visibility instead.
         </p>
 
         <form
-          className="mb-6 space-y-3 rounded-md border border-[#2c2f36] p-4"
+          className="mb-6 space-y-3 rounded-md border border-selected p-4"
           onSubmit={(e) => {
             e.preventDefault();
             grant.mutate();
@@ -92,7 +94,7 @@ export function Access({
                 setSubjectType(e.target.value as "user" | "role");
                 setSubjectId("");
               }}
-              className="rounded-md border border-[#33363d] bg-[#17181b] px-2 py-2 text-sm"
+              className="rounded-md border border-line bg-canvas px-2 py-2 text-sm"
             >
               <option value="role">Anyone with role…</option>
               <option value="user">This person…</option>
@@ -103,7 +105,7 @@ export function Access({
                 value={subjectId}
                 onChange={(e) => setSubjectId(e.target.value)}
                 required
-                className="min-w-0 flex-1 rounded-md border border-[#33363d] bg-[#17181b] px-2 py-2 text-sm"
+                className="min-w-0 flex-1 rounded-md border border-line bg-canvas px-2 py-2 text-sm"
               >
                 <option value="" disabled>
                   Choose a role
@@ -119,7 +121,7 @@ export function Access({
                 value={subjectId}
                 onChange={(e) => setSubjectId(e.target.value)}
                 required
-                className="min-w-0 flex-1 rounded-md border border-[#33363d] bg-[#17181b] px-2 py-2 text-sm"
+                className="min-w-0 flex-1 rounded-md border border-line bg-canvas px-2 py-2 text-sm"
               >
                 <option value="" disabled>
                   Choose a member
@@ -134,11 +136,11 @@ export function Access({
           </div>
 
           <div className="flex gap-4">
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-[#b6b8bf]">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-fg-soft">
               <input type="checkbox" checked={canRead} onChange={(e) => setCanRead(e.target.checked)} />
               Can read
             </label>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-[#b6b8bf]">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-fg-soft">
               <input
                 type="checkbox"
                 checked={canEditGrant}
@@ -148,12 +150,12 @@ export function Access({
             </label>
           </div>
 
-          {error !== null && <p className="text-xs text-[#e0888a]">{error}</p>}
+          {error !== null && <p className="text-xs text-danger">{error}</p>}
 
           <button
             type="submit"
             disabled={grant.isPending || subjectId.length === 0 || (!canRead && !canEditGrant)}
-            className="rounded-md bg-[#3d5ab5] px-3 py-1.5 text-sm text-white hover:bg-[#4867cc] disabled:opacity-50"
+            className="rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent hover:bg-accent-hover disabled:opacity-50"
           >
             {grant.isPending ? "Granting…" : "Grant access"}
           </button>
@@ -163,7 +165,7 @@ export function Access({
           {entries.map((entry) => (
             <EntryRow key={entry.id} entry={entry} onRevoke={() => revoke.mutate(entry.id)} />
           ))}
-          {entries.length === 0 && <p className="text-xs text-[#6b6e77]">No extra grants on this page.</p>}
+          {entries.length === 0 && <p className="text-xs text-fg-faint">No extra grants on this page.</p>}
         </ul>
 
         <ShareLinksSection nodeId={nodeId} />
@@ -206,17 +208,17 @@ function ShareLinksSection({ nodeId }: { nodeId: string }) {
   const links = (data?.shareLinks ?? []).filter((l) => l.revokedAt === null);
 
   return (
-    <div className="mt-6 border-t border-[#2c2f36] pt-5">
-      <h3 className="mb-1 text-sm font-semibold text-[#d7d8dc]">Share links</h3>
-      <p className="mb-3 text-xs text-[#8d9099]">
+    <div className="mt-6 border-t border-selected pt-5">
+      <h3 className="mb-1 text-sm font-semibold text-fg">Share links</h3>
+      <p className="mb-3 text-xs text-fg-subtle">
         Anyone with the link can view this page and its subtree — no account needed. Reveals
         this page even if its visibility is normally members- or DM-only; pages underneath it
         still follow their own visibility.
       </p>
 
       {freshUrl !== null && (
-        <div className="mb-3 rounded-md border border-[#3d5ab5] bg-[#1a2440] p-3">
-          <p className="mb-2 text-xs text-[#b6b8bf]">
+        <div className="mb-3 rounded-md border border-accent bg-accent-soft p-3">
+          <p className="mb-2 text-xs text-fg-soft">
             Copy this now — it will not be shown again.
           </p>
           <div className="flex gap-2">
@@ -224,14 +226,14 @@ function ShareLinksSection({ nodeId }: { nodeId: string }) {
               readOnly
               value={freshUrl}
               onFocus={(e) => e.target.select()}
-              className="min-w-0 flex-1 rounded-md border border-[#33363d] bg-[#17181b] px-2 py-1.5 font-mono text-xs text-[#d7d8dc]"
+              className="min-w-0 flex-1 rounded-md border border-line bg-canvas px-2 py-1.5 font-mono text-xs text-fg"
             />
             <button
               type="button"
               onClick={() => {
                 void navigator.clipboard.writeText(freshUrl).then(() => setCopied(true));
               }}
-              className="shrink-0 rounded-md bg-[#3d5ab5] px-2.5 py-1.5 text-xs text-white hover:bg-[#4867cc]"
+              className="shrink-0 rounded-md bg-accent px-2.5 py-1.5 text-xs text-on-accent hover:bg-accent-hover"
             >
               {copied ? "Copied" : "Copy"}
             </button>
@@ -243,7 +245,7 @@ function ShareLinksSection({ nodeId }: { nodeId: string }) {
         type="button"
         onClick={() => create.mutate()}
         disabled={create.isPending}
-        className="mb-3 rounded-md border border-[#33363d] px-3 py-1.5 text-sm text-[#d7d8dc] hover:bg-[#26282e] disabled:opacity-50"
+        className="mb-3 rounded-md border border-line px-3 py-1.5 text-sm text-fg hover:bg-press disabled:opacity-50"
       >
         {create.isPending ? "Creating…" : "Create a share link"}
       </button>
@@ -253,7 +255,7 @@ function ShareLinksSection({ nodeId }: { nodeId: string }) {
           <ShareLinkRow key={link.id} link={link} onRevoke={() => revoke.mutate(link.id)} />
         ))}
         {links.length === 0 && freshUrl === null && (
-          <p className="text-xs text-[#6b6e77]">No active share links on this page.</p>
+          <p className="text-xs text-fg-faint">No active share links on this page.</p>
         )}
       </ul>
     </div>
@@ -262,14 +264,14 @@ function ShareLinksSection({ nodeId }: { nodeId: string }) {
 
 function ShareLinkRow({ link, onRevoke }: { link: ShareLinkDto; onRevoke: () => void }) {
   return (
-    <li className="flex items-center gap-3 rounded-md border border-[#2c2f36] px-3 py-2">
+    <li className="flex items-center gap-3 rounded-md border border-selected px-3 py-2">
       <div className="min-w-0 flex-1">
-        <code className="font-mono text-xs text-[#d7d8dc]">{link.prefix}…</code>
-        <div className="text-[11px] text-[#7a7d86]">
+        <code className="font-mono text-xs text-fg">{link.prefix}…</code>
+        <div className="text-[11px] text-fg-muted">
           Created {new Date(link.createdAt).toLocaleDateString()}
         </div>
       </div>
-      <button type="button" onClick={onRevoke} className="text-xs text-[#7a7d86] hover:text-[#e0888a]">
+      <button type="button" onClick={onRevoke} className="text-xs text-fg-muted hover:text-danger">
         Revoke
       </button>
     </li>
@@ -279,17 +281,17 @@ function ShareLinkRow({ link, onRevoke }: { link: ShareLinkDto; onRevoke: () => 
 function EntryRow({ entry, onRevoke }: { entry: AclEntryDto; onRevoke: () => void }) {
   const rights = [entry.canRead ? "read" : null, entry.canEdit ? "edit" : null].filter(Boolean).join(" + ");
   return (
-    <li className="flex items-center gap-3 rounded-md border border-[#2c2f36] px-3 py-2">
+    <li className="flex items-center gap-3 rounded-md border border-selected px-3 py-2">
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 text-sm text-[#d7d8dc]">
+        <div className="flex items-center gap-2 text-sm text-fg">
           <span className="truncate">{entry.subjectLabel}</span>
-          <code className="rounded bg-[#17181b] px-1.5 py-0.5 font-mono text-[10px] text-[#7a7d86]">
+          <code className="rounded bg-canvas px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
             {entry.subjectType === "role" ? "role" : "person"}
           </code>
         </div>
-        <div className="text-[11px] text-[#7a7d86]">{rights || "no rights"}</div>
+        <div className="text-[11px] text-fg-muted">{rights || "no rights"}</div>
       </div>
-      <button type="button" onClick={onRevoke} className="text-xs text-[#7a7d86] hover:text-[#e0888a]">
+      <button type="button" onClick={onRevoke} className="text-xs text-fg-muted hover:text-danger">
         Revoke
       </button>
     </li>

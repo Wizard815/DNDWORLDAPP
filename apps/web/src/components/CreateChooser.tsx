@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { NodeKind } from "@dndworldapp/schema";
 import { api } from "../api.ts";
+import { useEscapeKey } from "../lib/useEscapeKey.ts";
 
 interface Tile {
   kind: NodeKind | null;
@@ -33,18 +34,19 @@ export function CreateChooser({
   onClose: () => void;
   onCreate: (input: { kind?: NodeKind; templateId?: string }) => void;
 }) {
+  useEscapeKey(onClose);
   const { data } = useQuery({ queryKey: ["templates", worldId], queryFn: () => api.templates(worldId) });
   const templates = data?.templates ?? [];
 
   return (
-    <div className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[10vh]" onClick={onClose}>
+    <div className="modal-backdrop pt-[10vh]" onClick={onClose}>
       <div
-        className="w-full max-w-lg rounded-lg border border-[#33363d] bg-[#1d1f23] p-6 shadow-2xl"
+        className="w-full max-w-lg rounded-lg border border-line bg-surface p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center">
-          <h2 className="text-base font-semibold text-[#f0f1f4]">New page</h2>
-          <button type="button" onClick={onClose} className="ml-auto text-sm text-[#7a7d86] hover:text-[#d7d8dc]">
+          <h2 className="text-base font-semibold text-fg-strong">New page</h2>
+          <button type="button" onClick={onClose} className="ml-auto text-sm text-fg-muted hover:text-fg">
             Close
           </button>
         </div>
@@ -56,18 +58,18 @@ export function CreateChooser({
               type="button"
               disabled={tile.soon}
               onClick={() => onCreate({ kind: tile.kind ?? undefined })}
-              className="flex flex-col items-center gap-1.5 rounded-md border border-[#2c2f36] px-2 py-4 text-center hover:border-[#4a4d55] hover:bg-[#232529] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#2c2f36] disabled:hover:bg-transparent"
+              className="flex flex-col items-center gap-1.5 rounded-md border border-selected px-2 py-4 text-center hover:border-line-strong hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-selected disabled:hover:bg-transparent"
             >
               <span className="text-2xl">{tile.icon}</span>
-              <span className="text-xs font-medium text-[#d7d8dc]">{tile.label}</span>
-              <span className="text-[10px] text-[#7a7d86]">{tile.hint}</span>
+              <span className="text-xs font-medium text-fg">{tile.label}</span>
+              <span className="text-[10px] text-fg-muted">{tile.hint}</span>
             </button>
           ))}
         </div>
 
         {templates.length > 0 && (
-          <div className="mt-5 border-t border-[#2c2f36] pt-4">
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-[#7a7d86]">
+          <div className="mt-5 border-t border-selected pt-4">
+            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
               Or start from a template
             </h3>
             <ul className="space-y-1">
@@ -76,7 +78,7 @@ export function CreateChooser({
                   <button
                     type="button"
                     onClick={() => onCreate({ templateId: t.id })}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-[#b6b8bf] hover:bg-[#232529]"
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-fg-soft hover:bg-hover"
                   >
                     <span>{t.icon ?? "📋"}</span>
                     <span className="truncate">{t.name}</span>

@@ -66,7 +66,7 @@ export function ColumnsView({ editor, node, getPos }: NodeViewProps) {
     <NodeViewWrapper data-columns-wrapper="">
       <div
         contentEditable={false}
-        className="mb-1.5 flex items-center gap-1 text-[10px] text-[#7a7d86]"
+        className="mb-1.5 flex items-center gap-1 text-[10px] text-fg-muted"
       >
         <span className="mr-1">Columns</span>
         {(Object.keys(COLUMN_LAYOUTS) as ColumnLayout[]).map((key) => (
@@ -77,8 +77,8 @@ export function ColumnsView({ editor, node, getPos }: NodeViewProps) {
             title={COLUMN_LAYOUTS[key].label}
             className={`rounded border px-1.5 py-0.5 ${
               key === layout
-                ? "border-[#4a4d55] bg-[#2f333b] text-[#d7d8dc]"
-                : "border-[#33363d] text-[#7a7d86] hover:text-[#d7d8dc]"
+                ? "border-line-strong bg-highlight text-fg"
+                : "border-line text-fg-muted hover:text-fg"
             }`}
           >
             {LAYOUT_ICON[key]}
@@ -88,7 +88,7 @@ export function ColumnsView({ editor, node, getPos }: NodeViewProps) {
           type="button"
           onClick={removeColumns}
           title="Remove the column layout — keeps everything written inside it"
-          className="ml-1 rounded border border-[#33363d] px-1.5 py-0.5 text-[#c98b8b] hover:border-[#5c3a3a] hover:text-[#e0888a]"
+          className="ml-1 rounded border border-line px-1.5 py-0.5 text-danger-soft hover:border-danger-line hover:text-danger"
         >
           ✕ Remove
         </button>

@@ -47,14 +47,14 @@ export const MentionList = forwardRef<MentionListHandle, Props>(function Mention
 
   if (items.length === 0) {
     return (
-      <div className="w-64 rounded-md border border-[#33363d] bg-[#22242a] px-3 py-2 text-xs text-[#6b6e77] shadow-lg">
+      <div className="w-64 rounded-md border border-line bg-raised px-3 py-2 text-xs text-fg-faint shadow-lg">
         No matching page.
       </div>
     );
   }
 
   return (
-    <div className="w-72 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg">
+    <div className="w-72 overflow-hidden rounded-md border border-line bg-raised shadow-lg">
       <ul className="max-h-80 overflow-y-auto py-1">
         {items.map((item, i) => (
           <li key={`${item.isCreate ? "create:" : ""}${item.target}`}>
@@ -67,11 +67,11 @@ export const MentionList = forwardRef<MentionListHandle, Props>(function Mention
               onClick={() => command(item)}
               onMouseEnter={() => setIndex(i)}
               className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left ${
-                i === index ? "bg-[#2f333b]" : ""
+                i === index ? "bg-highlight" : ""
               }`}
             >
               <span className="text-base">{item.isCreate ? "➕" : (item.icon ?? "📄")}</span>
-              <span className="min-w-0 flex-1 truncate text-sm text-[#f0f1f4]">
+              <span className="min-w-0 flex-1 truncate text-sm text-fg-strong">
                 {item.isCreate ? `Create "${item.target}"` : item.target}
               </span>
             </button>

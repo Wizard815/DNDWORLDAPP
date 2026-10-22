@@ -2,7 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import { applyTheme, readTheme } from "./lib/theme.ts";
 import "./styles.css";
+
+// Before the first render, so a non-default theme never flashes the default one.
+applyTheme(readTheme());
 
 const queryClient = new QueryClient({
   defaultOptions: {

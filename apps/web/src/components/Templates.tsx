@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { FieldType, FieldVisibility, TemplateDto, TemplateFieldDef } from "@dndworldapp/schema";
 import { ApiError, api } from "../api.ts";
 import { IconPicker } from "./IconPicker.tsx";
+import { useEscapeKey } from "../lib/useEscapeKey.ts";
 
 const FIELD_TYPE_LABEL: Record<FieldType, string> = {
   text: "Text",
@@ -32,6 +33,7 @@ function newField(): TemplateFieldDef {
  * one document rather than per-field endpoints.
  */
 export function Templates({ worldId, onClose }: { worldId: string; onClose: () => void }) {
+  useEscapeKey(onClose);
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ["templates", worldId], queryFn: () => api.templates(worldId) });
   const templates = data?.templates ?? [];
@@ -58,15 +60,15 @@ export function Templates({ worldId, onClose }: { worldId: string; onClose: () =
   const selected = templates.find((t) => t.id === selectedId) ?? null;
 
   return (
-    <div className="fixed inset-0 z-[2050] flex items-start justify-center bg-black/50 pt-[6vh]" onClick={onClose}>
+    <div className="modal-backdrop pt-[6vh]" onClick={onClose}>
       <div
-        className="flex max-h-[86vh] w-full max-w-4xl overflow-hidden rounded-lg border border-[#33363d] bg-[#1d1f23] shadow-2xl"
+        className="flex max-h-[86vh] w-full max-w-4xl overflow-hidden rounded-lg border border-line bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="w-56 shrink-0 overflow-y-auto border-r border-[#2c2f36] p-3">
+        <div className="w-56 shrink-0 overflow-y-auto border-r border-selected p-3">
           <div className="mb-2 flex items-center">
-            <h2 className="text-sm font-semibold text-[#f0f1f4]">Templates</h2>
-            <button type="button" onClick={onClose} className="ml-auto text-xs text-[#7a7d86] hover:text-[#d7d8dc]">
+            <h2 className="text-sm font-semibold text-fg-strong">Templates</h2>
+            <button type="button" onClick={onClose} className="ml-auto text-xs text-fg-muted hover:text-fg">
               Close
             </button>
           </div>
@@ -77,7 +79,7 @@ export function Templates({ worldId, onClose }: { worldId: string; onClose: () =
                   type="button"
                   onClick={() => setSelectedId(t.id)}
                   className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${
-                    selectedId === t.id ? "bg-[#2c2f36] text-[#f0f1f4]" : "text-[#b6b8bf] hover:bg-[#232529]"
+                    selectedId === t.id ? "bg-selected text-fg-strong" : "text-fg-soft hover:bg-hover"
                   }`}
                 >
                   <span>{t.icon ?? "📋"}</span>
@@ -86,14 +88,14 @@ export function Templates({ worldId, onClose }: { worldId: string; onClose: () =
               </li>
             ))}
             {templates.length === 0 && (
-              <p className="px-2 py-2 text-xs text-[#6b6e77]">No templates yet.</p>
+              <p className="px-2 py-2 text-xs text-fg-faint">No templates yet.</p>
             )}
           </ul>
           <button
             type="button"
             onClick={() => create.mutate()}
             disabled={create.isPending}
-            className="mt-2 w-full rounded px-2 py-1.5 text-left text-xs text-[#8d9099] hover:bg-[#232529] hover:text-[#d7d8dc] disabled:opacity-50"
+            className="mt-2 w-full rounded px-2 py-1.5 text-left text-xs text-fg-subtle hover:bg-hover hover:text-fg disabled:opacity-50"
           >
             + New template
           </button>
@@ -101,7 +103,7 @@ export function Templates({ worldId, onClose }: { worldId: string; onClose: () =
 
         <div className="min-w-0 flex-1 overflow-y-auto p-5">
           {selected === null ? (
-            <p className="text-sm text-[#7a7d86]">Pick a template on the left, or create one.</p>
+            <p className="text-sm text-fg-muted">Pick a template on the left, or create one.</p>
           ) : (
             <TemplateEditor
               key={selected.id}
@@ -172,12 +174,12 @@ function TemplateEditor({
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="min-w-0 flex-1 rounded-md border border-[#33363d] bg-[#17181b] px-2 py-1.5 text-lg font-semibold text-[#f0f1f4] outline-none focus:border-[#4a4d55]"
+          className="min-w-0 flex-1 rounded-md border border-line bg-canvas px-2 py-1.5 text-lg font-semibold text-fg-strong outline-none focus:border-line-strong"
         />
         <button
           type="button"
           onClick={onDelete}
-          className="shrink-0 rounded-md border border-[#33363d] px-2.5 py-1.5 text-xs text-[#c98b8b] hover:bg-[#26282e]"
+          className="shrink-0 rounded-md border border-line px-2.5 py-1.5 text-xs text-danger-soft hover:bg-press"
         >
           Delete
         </button>
@@ -185,14 +187,14 @@ function TemplateEditor({
 
       <ul className="mb-3 space-y-2">
         {fields.map((field, index) => (
-          <li key={index} className="rounded-md border border-[#2c2f36] p-3">
+          <li key={index} className="rounded-md border border-selected p-3">
             <div className="flex items-center gap-2">
               <div className="flex shrink-0 flex-col">
                 <button
                   type="button"
                   onClick={() => moveField(index, -1)}
                   disabled={index === 0}
-                  className="text-[10px] text-[#7a7d86] hover:text-[#d7d8dc] disabled:opacity-30"
+                  className="text-[10px] text-fg-muted hover:text-fg disabled:opacity-30"
                   aria-label="Move up"
                 >
                   ▲
@@ -201,7 +203,7 @@ function TemplateEditor({
                   type="button"
                   onClick={() => moveField(index, 1)}
                   disabled={index === fields.length - 1}
-                  className="text-[10px] text-[#7a7d86] hover:text-[#d7d8dc] disabled:opacity-30"
+                  className="text-[10px] text-fg-muted hover:text-fg disabled:opacity-30"
                   aria-label="Move down"
                 >
                   ▼
@@ -211,18 +213,18 @@ function TemplateEditor({
                 value={field.key}
                 onChange={(e) => updateField(index, { key: e.target.value })}
                 placeholder="key"
-                className="w-28 shrink-0 rounded border border-[#33363d] bg-[#17181b] px-2 py-1 font-mono text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+                className="w-28 shrink-0 rounded border border-line bg-canvas px-2 py-1 font-mono text-xs text-fg outline-none focus:border-line-strong"
               />
               <input
                 value={field.label}
                 onChange={(e) => updateField(index, { label: e.target.value })}
                 placeholder="Label"
-                className="min-w-0 flex-1 rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-sm text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+                className="min-w-0 flex-1 rounded border border-line bg-canvas px-2 py-1 text-sm text-fg outline-none focus:border-line-strong"
               />
               <select
                 value={field.type}
                 onChange={(e) => updateField(index, { type: e.target.value as FieldType })}
-                className="shrink-0 rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc]"
+                className="shrink-0 rounded border border-line bg-canvas px-2 py-1 text-xs text-fg"
               >
                 {(Object.keys(FIELD_TYPE_LABEL) as FieldType[]).map((t) => (
                   <option key={t} value={t}>
@@ -233,7 +235,7 @@ function TemplateEditor({
               <select
                 value={field.visibility}
                 onChange={(e) => updateField(index, { visibility: e.target.value as FieldVisibility })}
-                className="shrink-0 rounded border border-[#33363d] bg-[#17181b] px-2 py-1 text-xs text-[#d7d8dc]"
+                className="shrink-0 rounded border border-line bg-canvas px-2 py-1 text-xs text-fg"
               >
                 {(Object.keys(VISIBILITY_LABEL) as FieldVisibility[]).map((v) => (
                   <option key={v} value={v}>
@@ -244,7 +246,7 @@ function TemplateEditor({
               <button
                 type="button"
                 onClick={() => removeField(index)}
-                className="shrink-0 text-xs text-[#7a7d86] hover:text-[#e0888a]"
+                className="shrink-0 text-xs text-fg-muted hover:text-danger"
               >
                 Remove
               </button>
@@ -259,13 +261,13 @@ function TemplateEditor({
                 }
                 placeholder="One option per line"
                 rows={3}
-                className="mt-2 w-full rounded border border-[#33363d] bg-[#17181b] px-2 py-1.5 text-xs text-[#d7d8dc] outline-none focus:border-[#4a4d55]"
+                className="mt-2 w-full rounded border border-line bg-canvas px-2 py-1.5 text-xs text-fg outline-none focus:border-line-strong"
               />
             )}
           </li>
         ))}
         {fields.length === 0 && (
-          <p className="rounded-md border border-dashed border-[#2c2f36] px-3 py-4 text-center text-xs text-[#6b6e77]">
+          <p className="rounded-md border border-dashed border-selected px-3 py-4 text-center text-xs text-fg-faint">
             No fields yet.
           </p>
         )}
@@ -274,19 +276,19 @@ function TemplateEditor({
       <button
         type="button"
         onClick={() => setFields((prev) => [...prev, newField()])}
-        className="mb-4 rounded px-2 py-1.5 text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+        className="mb-4 rounded px-2 py-1.5 text-xs text-fg-muted hover:bg-hover hover:text-fg"
       >
         + Add field
       </button>
 
-      {error !== null && <p className="mb-2 text-xs text-[#e0888a]">{error}</p>}
+      {error !== null && <p className="mb-2 text-xs text-danger">{error}</p>}
 
       <div>
         <button
           type="button"
           onClick={() => save.mutate()}
           disabled={save.isPending}
-          className="rounded-md bg-[#3d5ab5] px-3 py-1.5 text-sm text-white hover:bg-[#4867cc] disabled:opacity-50"
+          className="rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent hover:bg-accent-hover disabled:opacity-50"
         >
           {save.isPending ? "Saving…" : "Save template"}
         </button>

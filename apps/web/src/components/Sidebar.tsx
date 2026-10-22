@@ -1,18 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MoveNodeInput, NodeSummary } from "@dndworldapp/schema";
 import { api } from "../api.ts";
+import { nodeGlyph } from "../lib/kinds.ts";
 import { navigate } from "../lib/nav.ts";
+import { THEMES, type ThemeId } from "../lib/theme.ts";
 import { useResizablePanel } from "../lib/useResizablePanel.ts";
-
-const KIND_GLYPH: Record<string, string> = {
-  document: "📄",
-  map: "🗺️",
-  timeline: "🕰️",
-  calendar: "📅",
-  board: "🗂️",
-  view: "🔎",
-  tag: "🏷️",
-};
 
 type DropMode = "before" | "after" | "into";
 
@@ -33,14 +25,25 @@ interface Props {
   isGameMaster: boolean;
   viewAsPlayer: boolean;
   onToggleViewAsPlayer: () => void;
+  theme: ThemeId;
+  onChangeTheme: (theme: ThemeId) => void;
+  /** Below the md breakpoint the sidebar is an off-canvas drawer; this says whether it's open. */
+  mobileOpen: boolean;
+  onCloseMobile: () => void;
 }
 
 function useExpanded(worldName: string) {
   const storageKey = `dwa:expanded:${worldName}`;
+  const [stored] = useState(() => {
+    try {
+      return window.localStorage.getItem(storageKey);
+    } catch {
+      return null;
+    }
+  });
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     try {
-      const raw = window.localStorage.getItem(storageKey);
-      return new Set<string>(raw !== null ? (JSON.parse(raw) as string[]) : []);
+      return new Set<string>(stored !== null ? (JSON.parse(stored) as string[]) : []);
     } catch {
       return new Set<string>();
     }
@@ -58,7 +61,10 @@ function useExpanded(worldName: string) {
       return next;
     });
 
-  return { expanded, toggle, setExpanded };
+  /** True the very first time this world is opened in this browser — nothing has been expanded or collapsed yet. */
+  const isFirstVisit = stored === null;
+
+  return { expanded, toggle, setExpanded, isFirstVisit };
 }
 
 export function Sidebar({
@@ -78,11 +84,16 @@ export function Sidebar({
   isGameMaster,
   viewAsPlayer,
   onToggleViewAsPlayer,
+  theme,
+  onChangeTheme,
+  mobileOpen,
+  onCloseMobile,
 }: Props) {
   const [dmMenuOpen, setDmMenuOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const panel = useResizablePanel({ storageKey: "dwa:sidebar", defaultWidth: 290, minWidth: 200, maxWidth: 480 });
-  const { expanded, toggle, setExpanded } = useExpanded(worldName);
+  const { expanded, toggle, setExpanded, isFirstVisit } = useExpanded(worldName);
+  const [tagsOpen, setTagsOpen] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; mode: DropMode } | null>(null);
   const [menuForId, setMenuForId] = useState<string | null>(null);
@@ -113,6 +124,19 @@ export function Sidebar({
   }, [nodes]);
 
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+
+  // A world opened for the first time in this browser shows its root page's
+  // children instead of a single collapsed row. Runs once, when the tree lands.
+  const [seeded, setSeeded] = useState(!isFirstVisit);
+  useEffect(() => {
+    if (seeded || nodes.length === 0) return;
+    setSeeded(true);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const node of nodes) if (node.parentId === null && node.kind !== "tag") next.add(node.id);
+      return next;
+    });
+  }, [seeded, nodes, setExpanded]);
 
   /** When filtering, keep any node that matches or has a matching descendant. */
   const visible = useMemo(() => {
@@ -263,8 +287,8 @@ export function Sidebar({
             openMenuAt(node.id, e.clientX, e.clientY);
           }}
           className={[
-            "group relative flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-sm",
-            isActive ? "bg-[#2c2f36] text-[#f0f1f4]" : "text-[#b6b8bf] hover:bg-[#232529]",
+            "group relative flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-[5px] text-[13px]",
+            isActive ? "bg-selected font-medium text-fg-strong" : "text-fg-soft hover:bg-hover hover:text-fg",
             drop === "into" ? "drop-into" : "",
             drop === "before" ? "drop-before" : "",
             drop === "after" ? "drop-after" : "",
@@ -277,12 +301,12 @@ export function Sidebar({
               e.stopPropagation();
               toggle(node.id);
             }}
-            className={`w-3 shrink-0 text-[10px] text-[#7a7d86] ${children.length === 0 ? "invisible" : ""}`}
+            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-[9px] text-fg-muted hover:bg-hover-strong hover:text-fg ${children.length === 0 ? "invisible" : ""}`}
             aria-label={isOpen ? `Collapse ${node.title}` : `Expand ${node.title}`}
           >
             {isOpen ? "▾" : "▸"}
           </button>
-          <span className="shrink-0 text-xs">{node.icon ?? KIND_GLYPH[node.kind] ?? "📄"}</span>
+          <span className="shrink-0 text-[13px] leading-none">{nodeGlyph(node)}</span>
           {isRenaming ? (
             <input
               autoFocus
@@ -294,18 +318,18 @@ export function Sidebar({
                 if (e.key === "Enter") void commitRename(node);
                 if (e.key === "Escape") setRenamingId(null);
               }}
-              className="min-w-0 flex-1 rounded border border-[#4a4d55] bg-[#17181b] px-1 text-[#f0f1f4] outline-none"
+              className="min-w-0 flex-1 rounded border border-line-strong bg-canvas px-1 text-fg-strong outline-none"
             />
           ) : (
             <span className="truncate">{node.title}</span>
           )}
           {isPinned && (
-            <span className="shrink-0 text-[10px] text-[#c9a227]" title="Pinned">
+            <span className="shrink-0 text-[10px] text-secret" title="Pinned">
               ★
             </span>
           )}
           {node.visibility === "dm" && (
-            <span className="ml-auto shrink-0 text-[10px] text-[#c9a227]" title="DM only">
+            <span className="ml-auto shrink-0 text-[10px] text-secret" title="DM only">
               ●
             </span>
           )}
@@ -316,7 +340,7 @@ export function Sidebar({
               const rect = e.currentTarget.getBoundingClientRect();
               openMenuAt(node.id, rect.left, rect.bottom + 4);
             }}
-            className="ml-1 hidden shrink-0 px-1 text-[#7a7d86] hover:text-[#d7d8dc] group-hover:block"
+            className="ml-auto hidden shrink-0 rounded px-1 leading-none text-fg-muted hover:bg-hover-strong hover:text-fg group-hover:block"
             title="Page actions"
           >
             ⋯
@@ -338,7 +362,7 @@ export function Sidebar({
               <div
                 onClick={(e) => e.stopPropagation()}
                 style={{ top: menuPos.y, left: menuPos.x }}
-                className="fixed z-[2040] w-48 overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg"
+                className="fixed z-[2040] w-48 overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-pop"
               >
                 <button
                   type="button"
@@ -346,14 +370,14 @@ export function Sidebar({
                     closeMenu();
                     onOpenCreateChooser(node.id);
                   }}
-                  className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                  className="menu-item"
                 >
                   Add a page under…
                 </button>
                 <button
                   type="button"
                   onClick={() => startRename(node)}
-                  className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                  className="menu-item"
                 >
                   Rename
                 </button>
@@ -363,14 +387,14 @@ export function Sidebar({
                     closeMenu();
                     onTogglePin(node.id);
                   }}
-                  className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                  className="menu-item"
                 >
                   {isPinned ? "Unpin" : "Pin"}
                 </button>
                 <button
                   type="button"
                   onClick={() => requestArchive(node)}
-                  className="block w-full px-3 py-2 text-left text-xs text-[#c98b8b] hover:bg-[#2b2e35]"
+                  className="menu-item menu-item-danger"
                 >
                   Archive{node.childCount > 0 && ` (+${node.childCount})`}
                 </button>
@@ -383,15 +407,21 @@ export function Sidebar({
     );
   }
 
-  const roots = byParent.get(null) ?? [];
+  // Tags auto-create as top-level pages (see the server's tag indexer); listing
+  // each one beside the world's real root pages buried the tree under a pile
+  // of #labels, so top-level tags get their own collapsible group instead.
+  const allRoots = byParent.get(null) ?? [];
+  const roots = allRoots.filter((n) => n.kind !== "tag");
+  const rootTags = allRoots.filter((n) => n.kind === "tag").sort((a, b) => a.title.localeCompare(b.title));
+  const showTags = tagsOpen || (visible !== null && rootTags.some((t) => visible.has(t.id)));
 
-  if (panel.collapsed) {
+  if (panel.collapsed && !mobileOpen) {
     return (
-      <aside className="flex h-full w-8 shrink-0 flex-col items-center border-r border-[#26282d] bg-[#1a1c20] py-3">
+      <aside className="hidden h-full w-9 shrink-0 flex-col items-center border-r border-divider bg-panel py-3 md:flex">
         <button
           type="button"
           onClick={panel.toggleCollapsed}
-          className="rounded p-1 text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+          className="rounded p-1 text-fg-muted hover:bg-hover hover:text-fg"
           title="Show sidebar"
           aria-label="Show sidebar"
         >
@@ -401,139 +431,206 @@ export function Sidebar({
     );
   }
 
+  const footerButton =
+    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-fg-subtle hover:bg-hover hover:text-fg";
+
   return (
-    <aside
-      style={{ width: panel.width }}
-      className="relative flex h-full shrink-0 flex-col border-r border-[#26282d] bg-[#1a1c20]"
-    >
-      <div className="flex items-center gap-2 px-3 py-3">
-        <span className="truncate text-sm font-semibold text-[#f0f1f4]">{worldName}</span>
+    <>
+      {mobileOpen && (
+        <div className="fixed inset-0 z-[2044] bg-black/50 md:hidden" onClick={onCloseMobile} aria-hidden="true" />
+      )}
+      <aside
+        style={{ width: panel.width }}
+        className={[
+          "flex h-full shrink-0 flex-col border-r border-divider bg-panel",
+          "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-[2045] max-md:w-[85vw]! max-md:max-w-xs max-md:shadow-pop max-md:transition-transform",
+          mobileOpen ? "" : "max-md:-translate-x-full",
+          "md:relative",
+        ].join(" ")}
+      >
+        <div className="flex items-center gap-2 px-3 pb-2 pt-3">
+          <span className="truncate font-display text-[15px] font-semibold tracking-tight text-fg-strong">
+            {worldName}
+          </span>
+          <button
+            type="button"
+            onClick={panel.toggleCollapsed}
+            className="ml-auto hidden rounded p-1 text-fg-muted hover:bg-hover hover:text-fg md:block"
+            title="Hide sidebar"
+            aria-label="Hide sidebar"
+          >
+            «
+          </button>
+          <button
+            type="button"
+            onClick={onCloseMobile}
+            className="ml-auto rounded p-1 text-fg-muted hover:bg-hover hover:text-fg md:hidden"
+            aria-label="Close menu"
+          >
+            ✕
+          </button>
+        </div>
+
         <button
           type="button"
           onClick={onOpenSwitcher}
-          className="ml-auto rounded border border-[#33363d] px-1.5 py-0.5 text-[10px] text-[#8d9099] hover:text-[#d7d8dc]"
-          title="Search (Ctrl+K)"
+          className="mx-3 mb-2 flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1.5 text-left text-xs text-fg-muted hover:border-line-strong hover:text-fg-soft"
+          title="Search every page (Ctrl+K)"
         >
-          Ctrl K
+          <span aria-hidden="true">⌕</span>
+          <span>Search pages…</span>
+          <kbd className="ml-auto rounded border border-line px-1 font-sans text-[10px] text-fg-faint">Ctrl K</kbd>
         </button>
-        <button
-          type="button"
-          onClick={panel.toggleCollapsed}
-          className="rounded p-1 text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
-          title="Hide sidebar"
-          aria-label="Hide sidebar"
-        >
-          «
-        </button>
-      </div>
 
-      <input
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        placeholder="Find by name"
-        className="mx-3 mb-2 rounded-md border border-[#2c2f36] bg-[#1d1f23] px-2 py-1.5 text-xs outline-none focus:border-[#4a4d55]"
-      />
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter the tree"
+          aria-label="Filter the tree by name"
+          className="mx-3 mb-2 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-fg placeholder:text-fg-faint outline-none hover:border-line focus:border-line-strong focus:bg-surface"
+        />
 
-      <div className="flex-1 overflow-y-auto px-2 pb-2">
-        {roots.map((node) => renderRow(node, 0))}
-        {roots.length === 0 && (
-          <p className="px-2 py-4 text-xs text-[#7a7d86]">Nothing here yet.</p>
-        )}
-      </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-2">
+          {roots.map((node) => renderRow(node, 0))}
+          {roots.length === 0 && (
+            <p className="px-2 py-4 text-xs text-fg-muted">Nothing here yet.</p>
+          )}
 
-      <div className="border-t border-[#26282d] p-2">
-        <button
-          type="button"
-          onClick={() => onOpenCreateChooser(null)}
-          className="w-full rounded px-2 py-1.5 text-left text-xs text-[#8d9099] hover:bg-[#232529] hover:text-[#d7d8dc]"
-        >
-          + New
-        </button>
-        <div className="relative">
-          {viewAsPlayer && (
-            <div className="mb-1 rounded bg-[#3a2f16] px-2 py-1 text-[10px] text-[#e8cf8a]">
-              Viewing as a player
+          {rootTags.length > 0 && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setTagsOpen(!tagsOpen)}
+                className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] font-medium uppercase tracking-wide text-fg-muted hover:text-fg"
+                aria-expanded={showTags}
+              >
+                <span className="w-4 text-[9px]">{showTags ? "▾" : "▸"}</span>
+                Tags
+                <span className="ml-auto font-normal normal-case text-fg-faint">{rootTags.length}</span>
+              </button>
+              {showTags && rootTags.map((node) => renderRow(node, 0))}
             </div>
           )}
+        </div>
+
+        <div className="space-y-0.5 border-t border-divider p-2">
           <button
             type="button"
-            onClick={() => setDmMenuOpen(!dmMenuOpen)}
-            className="w-full rounded px-2 py-1.5 text-left text-xs text-[#7a7d86] hover:bg-[#232529] hover:text-[#d7d8dc]"
+            onClick={() => onOpenCreateChooser(null)}
+            className="mb-1 flex w-full items-center justify-center gap-1.5 rounded-md bg-accent px-2 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover"
           >
-            DM Menu
+            + New page
           </button>
-          {dmMenuOpen && (
-            <>
-              <div className="fixed inset-0 z-[2010]" onClick={() => setDmMenuOpen(false)} />
-              <div className="absolute bottom-full left-0 z-[2020] mb-1 w-full overflow-hidden rounded-md border border-[#33363d] bg-[#22242a] shadow-lg">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDmMenuOpen(false);
-                    onOpenMembers();
-                  }}
-                  className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
-                >
-                  Members
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDmMenuOpen(false);
-                    onOpenTokens();
-                  }}
-                  className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
-                >
-                  API tokens
-                </button>
-                {isGameMaster && (
+          <div className="relative">
+            {viewAsPlayer && (
+              <button
+                type="button"
+                onClick={onToggleViewAsPlayer}
+                className="mb-1 w-full rounded-md bg-secret-bg-strong px-2 py-1 text-left text-[11px] text-secret-fg"
+                title="Click to stop previewing"
+              >
+                👁 Viewing as a player — stop
+              </button>
+            )}
+            <button type="button" onClick={() => setDmMenuOpen(!dmMenuOpen)} className={footerButton}>
+              <span aria-hidden="true">☰</span>
+              {isGameMaster ? "DM Menu" : "Menu"}
+            </button>
+            {dmMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-[2010]" onClick={() => setDmMenuOpen(false)} />
+                <div className="absolute bottom-full left-0 z-[2050] mb-1 w-full overflow-hidden rounded-lg border border-line bg-raised py-1 shadow-pop">
                   <button
                     type="button"
                     onClick={() => {
                       setDmMenuOpen(false);
-                      onOpenTemplates();
+                      onOpenMembers();
                     }}
-                    className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                    className="menu-item"
                   >
-                    Templates
+                    Members
                   </button>
-                )}
-                {isGameMaster && (
                   <button
                     type="button"
                     onClick={() => {
                       setDmMenuOpen(false);
-                      onToggleViewAsPlayer();
+                      onOpenTokens();
                     }}
-                    className="block w-full px-3 py-2 text-left text-xs text-[#b6b8bf] hover:bg-[#2b2e35]"
+                    className="menu-item"
                   >
-                    {viewAsPlayer ? "✓ Viewing as a player" : "View as a player"}
+                    API tokens
                   </button>
-                )}
-              </div>
-            </>
-          )}
+                  {isGameMaster && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDmMenuOpen(false);
+                        onOpenTemplates();
+                      }}
+                      className="menu-item"
+                    >
+                      Templates
+                    </button>
+                  )}
+                  {isGameMaster && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDmMenuOpen(false);
+                        onToggleViewAsPlayer();
+                      }}
+                      className="menu-item"
+                    >
+                      {viewAsPlayer ? "✓ Viewing as a player" : "View as a player"}
+                    </button>
+                  )}
+                  <div className="menu-separator" />
+                  <div className="px-3 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-fg-faint">
+                    Theme
+                  </div>
+                  <div className="flex gap-1 px-2 pb-1.5">
+                    {THEMES.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => onChangeTheme(t.id)}
+                        aria-pressed={theme === t.id}
+                        className={`flex flex-1 flex-col items-center gap-1 rounded-md border px-1 py-1.5 text-[10px] ${
+                          theme === t.id
+                            ? "border-accent text-fg-strong"
+                            : "border-line text-fg-subtle hover:border-line-strong hover:text-fg"
+                        }`}
+                      >
+                        <span
+                          className="h-3 w-3 rounded-full border border-black/20"
+                          style={{ background: t.swatch }}
+                        />
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <button type="button" onClick={onSignOut} className={footerButton}>
+            <span aria-hidden="true">⎋</span>
+            Sign out
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onSignOut}
-          className="w-full rounded px-2 py-1.5 text-left text-xs text-[#7a7d86] hover:bg-[#232529]"
-        >
-          Sign out
-        </button>
-      </div>
 
-      {/* Drag to resize; the sidebar is docked to the left, so dragging right grows it. */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize sidebar"
-        tabIndex={0}
-        onPointerDown={(e) => panel.startResize(e, "left")}
-        onDoubleClick={panel.resetWidth}
-        onKeyDown={(e) => panel.handleKeyDown(e, "left")}
-        className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-[#4a4d55] focus:bg-[#4a4d55] focus:outline-none"
-      />
-    </aside>
+        {/* Drag to resize; the sidebar is docked to the left, so dragging right grows it. */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          tabIndex={0}
+          onPointerDown={(e) => panel.startResize(e, "left")}
+          onDoubleClick={panel.resetWidth}
+          onKeyDown={(e) => panel.handleKeyDown(e, "left")}
+          className="absolute right-0 top-0 hidden h-full w-1 cursor-col-resize hover:bg-line-strong focus:bg-line-strong focus:outline-none md:block"
+        />
+      </aside>
+    </>
   );
 }
