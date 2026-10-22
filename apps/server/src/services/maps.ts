@@ -45,13 +45,13 @@ const selectNodeForLabel = db.prepare("SELECT id, title, icon FROM nodes WHERE i
 const insertMarker = db.prepare(`
   INSERT INTO map_markers (
     id, map_node_id, target_node_id, parent_marker_id, group_id, shape, x, y, points,
-    label, icon, color, radius, members, visibility, created_by, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    label, icon, color, radius, members, visibility, min_zoom, max_zoom, created_by, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 const updateMarkerStmt = db.prepare(`
   UPDATE map_markers SET
     x = ?, y = ?, points = ?, target_node_id = ?, parent_marker_id = ?, group_id = ?, label = ?, icon = ?,
-    color = ?, radius = ?, members = ?, revealed = ?, visibility = ?, updated_at = ?
+    color = ?, radius = ?, members = ?, revealed = ?, visibility = ?, min_zoom = ?, max_zoom = ?, updated_at = ?
   WHERE id = ?
 `);
 const deleteMarkerStmt = db.prepare("DELETE FROM map_markers WHERE id = ?");
@@ -238,7 +238,16 @@ function toMarkerDto(row: MapMarkerRow, viewer: Viewer): MapMarkerDto {
     targetNode,
     parentMarkerId: row.parent_marker_id,
     groupId: row.group_id,
+    minZoom: row.min_zoom,
+    maxZoom: row.max_zoom,
   };
+}
+
+/** Both ends set and crossed would hide a marker at every zoom — almost certainly a mistake. */
+function assertZoomRange(minZoom: number | null, maxZoom: number | null): void {
+  if (minZoom !== null && maxZoom !== null && minZoom > maxZoom) {
+    throw badRequest("A marker's minimum zoom can't be greater than its maximum zoom.");
+  }
 }
 
 const RANK: Record<FieldVisibility, number> = { public: 0, members: 1, dm: 2 };
@@ -380,6 +389,7 @@ export function createMarker(mapNodeId: string, viewer: Viewer, input: CreateMar
     }
   }
   const points = validateAndNormalizePoints(input.shape, input.points);
+  assertZoomRange(input.minZoom ?? null, input.maxZoom ?? null);
 
   const id = shortId(12);
   const now = Date.now();
@@ -399,6 +409,8 @@ export function createMarker(mapNodeId: string, viewer: Viewer, input: CreateMar
     input.radius ?? null,
     input.members ?? null,
     input.visibility,
+    input.minZoom ?? null,
+    input.maxZoom ?? null,
     viewer.userId,
     now,
     now,
@@ -469,6 +481,10 @@ export function updateMarker(
     }
   }
 
+  const minZoom = input.minZoom !== undefined ? input.minZoom : existing.min_zoom;
+  const maxZoom = input.maxZoom !== undefined ? input.maxZoom : existing.max_zoom;
+  assertZoomRange(minZoom, maxZoom);
+
   updateMarkerStmt.run(
     input.x ?? existing.x,
     input.y ?? existing.y,
@@ -483,6 +499,8 @@ export function updateMarker(
     input.members !== undefined ? input.members : existing.members,
     input.revealed !== undefined ? (input.revealed ? 1 : 0) : existing.revealed,
     input.visibility ?? existing.visibility,
+    minZoom,
+    maxZoom,
     Date.now(),
     markerId,
   );

@@ -575,7 +575,11 @@ export function registerTools(server: McpServer, client: WorldClient): void {
               const party = m.parentMarkerId !== null ? ` (party group: [${m.parentMarkerId}])` : "";
               const displayGroup = m.groupId !== null ? ` (display group: [${m.groupId}])` : "";
               const icon = m.icon !== null ? ` ${m.icon}` : "";
-              return `- [${m.id}] ${m.shape}${icon} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${vertices}${target}${vis}${party}${displayGroup}`;
+              const zoom =
+                m.minZoom !== null || m.maxZoom !== null
+                  ? ` (zoom ${m.minZoom ?? "any"}..${m.maxZoom ?? "any"})`
+                  : "";
+              return `- [${m.id}] ${m.shape}${icon} "${m.label ?? "(untitled)"}" at (${m.x}, ${m.y})${vertices}${target}${vis}${party}${displayGroup}${zoom}`;
             }),
           );
         }
@@ -685,9 +689,11 @@ export function registerTools(server: McpServer, client: WorldClient): void {
             "Puts this marker in a display category from list_map_groups/create_map_group — any shape can join one. This is NOT the same as parent_marker_id (a token's own party/squad hierarchy): a display group is purely organizational (name, color, draw order) and has no effect on visibility.",
           ),
         visibility: fieldVisibilitySchema.optional().describe("public | members | dm. Default members."),
+        min_zoom: z.number().min(-8).max(8).nullable().optional().describe("Only show this marker when zoomed in at least this far: log2 of magnification vs. the map image's own pixels (0 = 100%, -1 = 50%, -2 = 25%, 1 = 200%). Omit or null for no limit."),
+        max_zoom: z.number().min(-8).max(8).nullable().optional().describe("Only show this marker when zoomed in no further than this, same units as min_zoom. Omit or null for no limit."),
       },
     },
-    async ({ node_id, preset_id, shape, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, group_id, visibility }) => {
+    async ({ node_id, preset_id, shape, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, group_id, visibility, min_zoom, max_zoom }) => {
       try {
         // A preset is copied, not linked (see migration 0011), so resolving it
         // here — explicit arguments win — needs no server-side support at all.
@@ -713,6 +719,8 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           parentMarkerId: parent_marker_id,
           groupId: group_id,
           visibility: visibility ?? "members",
+          minZoom: min_zoom,
+          maxZoom: max_zoom,
         });
         const vertexCount = parseMarkerPoints(marker.points)?.length ?? 0;
         return text(
@@ -756,6 +764,8 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           .optional()
           .describe("Puts this marker in a display category, or pass null to ungroup it. Not the same as parent_marker_id — see place_marker's description."),
         visibility: fieldVisibilitySchema.optional(),
+        min_zoom: z.number().min(-8).max(8).nullable().optional().describe("See place_marker. Null removes the limit."),
+        max_zoom: z.number().min(-8).max(8).nullable().optional().describe("See place_marker. Null removes the limit."),
       },
     },
     // Deliberately NOT `async ({ marker_id, ...input }) => client.updateMarker(marker_id, input)`
@@ -767,7 +777,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
     // target_node_id update sent via MCP has never actually taken effect.
     // Mapped explicitly here, matching place_marker's own pattern, so
     // parent_marker_id/group_id (the same shape) don't repeat the same bug.
-    async ({ marker_id, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, group_id, visibility }) => {
+    async ({ marker_id, x, y, target_node_id, label, icon, color, radius, points, members, parent_marker_id, group_id, visibility, min_zoom, max_zoom }) => {
       try {
         const { marker } = await client.updateMarker(marker_id, {
           x,
@@ -782,6 +792,8 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           parentMarkerId: parent_marker_id,
           groupId: group_id,
           visibility,
+          minZoom: min_zoom,
+          maxZoom: max_zoom,
         });
         return text(`Updated marker [${marker.id}].`);
       } catch (error) {

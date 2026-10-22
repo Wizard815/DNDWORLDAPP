@@ -480,6 +480,9 @@ export function mapTileUrlTemplate(nodeId: string): string {
   return `/tiles/${nodeId}/{z}/{y}/{x}.webp`;
 }
 
+/** log2 magnification, so -8..8 is 0.4% to 25600% — far past anything a map can actually zoom to. */
+const markerZoomSchema = z.number().min(-8).max(8);
+
 /** A `points` field as it appears on marker *input*: a well-formed, non-empty vertex string (or absent). */
 const pointsSchema = z
   .string()
@@ -507,6 +510,9 @@ export const mapMarkerDtoSchema = z.object({
   parentMarkerId: z.string().nullable(),
   /** Display category (Kanka's MapGroup) — organizational only, no visibility effect. See migration 0010. */
   groupId: z.string().nullable(),
+  /** Zoom range the marker shows in, as log2 magnification vs. the image's own pixels (0 = 100%). Null = unbounded. See migration 0012. */
+  minZoom: z.number().nullable(),
+  maxZoom: z.number().nullable(),
 });
 export type MapMarkerDto = z.infer<typeof mapMarkerDtoSchema>;
 
@@ -524,6 +530,8 @@ export const createMarkerInputSchema = z.object({
   visibility: fieldVisibilitySchema.default("members"),
   parentMarkerId: z.string().nullable().optional(),
   groupId: z.string().nullable().optional(),
+  minZoom: markerZoomSchema.nullable().optional(),
+  maxZoom: markerZoomSchema.nullable().optional(),
 });
 export type CreateMarkerInput = z.infer<typeof createMarkerInputSchema>;
 
@@ -542,6 +550,8 @@ export const updateMarkerInputSchema = z
     visibility: fieldVisibilitySchema,
     parentMarkerId: z.string().nullable(),
     groupId: z.string().nullable(),
+    minZoom: markerZoomSchema.nullable(),
+    maxZoom: markerZoomSchema.nullable(),
   })
   .partial();
 export type UpdateMarkerInput = z.infer<typeof updateMarkerInputSchema>;

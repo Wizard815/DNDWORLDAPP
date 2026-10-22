@@ -7,6 +7,14 @@ is not kept here — `git log` and HANDOFF have it.
 
 ## Just done (2026-10-22)
 
+### Visibility by zoom
+
+Each marker can have a zoom range ("only from 50% in", "only up to 200%"), set with a
+two-handle "Visible at zoom" slider in the marker inspector or `min_zoom`/`max_zoom`
+over MCP. Stored as magnification relative to the image's own pixels so it means the
+same thing on every map. HANDOFF §7.8c. Also fixed on the way: small (untiled) maps
+could not be zoomed out far enough to see the whole image.
+
 ### Marker presets
 
 Named shape + icon + color combos per world ("Tavern", "Enemy camp"): "★ Save look as
@@ -58,8 +66,7 @@ Details in HANDOFF §7.8a.
    collapsible edit toolbar are already done):
    1. ~~Searchable icon library~~ — done, see above.
    2. ~~Reusable marker templates~~ — done as marker presets, see above.
-   3. Visibility-by-zoom — a marker fades in or out past a per-marker zoom range,
-      set with a two-handle slider in `MarkerInspector`.
+   3. ~~Visibility-by-zoom~~ — done, see above (markers pop in/out; a fade is not done).
    4. Distance measurement — calibrate a scale, then point-to-point or freehand.
 2. **P4.4 fog of war** — two techniques: upgrade `map_markers.revealed` to a three-state
    room reveal, plus a freehand pixel mask (`maps.fog_enabled`, `fog_mask_updated_at`,

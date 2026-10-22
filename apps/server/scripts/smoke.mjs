@@ -1610,6 +1610,31 @@ check(
 );
 await dm("DELETE", `/markers/${placedFromPreset.body.marker.id}`);
 
+console.log("\n== marker zoom range ==");
+const zoomRanged = await dm("POST", `/nodes/${mapNode.id}/map/markers`, { x: 7, y: 7, label: "Hamlet", minZoom: -1.5, maxZoom: 1 });
+check(
+  "a marker can carry a zoom range",
+  zoomRanged.status === 201 && zoomRanged.body.marker.minZoom === -1.5 && zoomRanged.body.marker.maxZoom === 1,
+  zoomRanged.body,
+);
+const crossedRange = await dm("POST", `/nodes/${mapNode.id}/map/markers`, { x: 7, y: 7, minZoom: 2, maxZoom: 1 });
+check("a crossed zoom range is rejected on create", crossedRange.status === 400, crossedRange.body);
+const crossedUpdate = await dm("PATCH", `/markers/${zoomRanged.body.marker.id}`, { maxZoom: -2 });
+check("an update that would cross the stored min is rejected", crossedUpdate.status === 400, crossedUpdate.body);
+const silly = await dm("POST", `/nodes/${mapNode.id}/map/markers`, { x: 7, y: 7, minZoom: 40 });
+check("an absurd zoom value is rejected", silly.status === 400, silly.body);
+const playerSeesRanged = (await player("GET", `/nodes/${mapNode.id}/map/markers`)).body.markers?.find(
+  (m) => m.id === zoomRanged.body.marker.id,
+);
+check(
+  "a zoom range is display-only: a player who can see the marker still gets it, range included",
+  playerSeesRanged !== undefined && playerSeesRanged.minZoom === -1.5,
+  playerSeesRanged,
+);
+const unbounded = await dm("PATCH", `/markers/${zoomRanged.body.marker.id}`, { minZoom: null, maxZoom: null });
+check("null clears both limits", unbounded.status === 200 && unbounded.body.marker.minZoom === null && unbounded.body.marker.maxZoom === null, unbounded.body);
+await dm("DELETE", `/markers/${zoomRanged.body.marker.id}`);
+
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);
 check("archive succeeds", archived.status === 200, archived.body);

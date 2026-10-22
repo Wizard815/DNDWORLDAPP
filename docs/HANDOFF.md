@@ -61,7 +61,7 @@ planned — see §9.4.
 Verified by:
 - `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 287 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 293 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
@@ -70,7 +70,7 @@ Verified by:
   markers, and a player-can-list-groups-without-edit-rights check — see the "Resolved"
   bullet under Known open items for why that last one is a real bug, not a formality).
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All
-  pass (86 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
+  pass (89 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
   `== map display groups ==` section for the 5 new group-CRUD tools).
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
@@ -442,7 +442,7 @@ When the editor is upgraded to TipTap, it must round-trip markdown on load/save.
 
 ### 6.4 Migrations are append-only SQL
 
-Add `migrations/00NN_whatever.sql` (next is `0012`). Never edit an applied migration.
+Add `migrations/00NN_whatever.sql` (next is `0013`). Never edit an applied migration.
 Update `src/db/types.ts` by hand in the same commit — nothing checks this for you.
 
 ### 6.5 A leak surface needs a test in the same commit that opens it
@@ -1385,6 +1385,28 @@ create-marker call, with explicit arguments winning. Editing or deleting a prese
 reaches a marker already on a map — the same non-retroactive rule as templates (§10),
 and smoke asserts it. A DM makes a preset from any styled marker with "★ Save look as
 preset" in the marker inspector. The server runs `assertKnownIcon` on presets too.
+
+### 7.8c Visibility by zoom
+
+`map_markers.min_zoom` / `max_zoom` (migration 0012): a marker is drawn only while the
+map's zoom is inside its range. **The unit is log2 magnification relative to the map
+image's own pixels** — 0 is 100%, −1 is 50%, 1 is 200% — not Leaflet's zoom number,
+which is offset by `log2(scale)` on a tiled map (see `scaleFor`) and so would mean
+different things on different maps. MapView converts with `nativeZoom = log2(scale)`.
+
+It is a display filter, never a permission: the server sends a marker to everyone who
+could see it anyway, range included (smoke asserts this). The client hides
+out-of-range markers except (a) while the ✏️ Edit toolbar is open, so a DM can reach
+everything, and (b) the selected marker. The inspector's "Visible at zoom" is two
+stacked native range inputs (`.dual-range` in styles.css); a thumb parked at its end of
+the track stores null ("no limit"), and the track is capped at 800%. Markers pop in and
+out — there is no fade animation yet.
+
+Found while building this, and fixed: an **untiled** map (under 2000px, a plain
+ImageOverlay) was floored at its stored `min_zoom` of 0, i.e. 100%, so any one wider or
+taller than its panel could never be zoomed out to show the whole image. The stored
+floor only matters for a tiled map's padded root tile; untiled maps now floor at the
+fit-to-panel zoom alone (`effectiveMinZoom` in MapView).
 
 ### 7.9 Sidebar right-click menu, the "+ New" chooser, and pinned pages
 

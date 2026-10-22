@@ -218,6 +218,21 @@ function DrawHandler({
  * instead, via Leaflet's own setters, so they take effect immediately no
  * matter when they change.
  */
+/** Tolerance for comparing fractional zooms (zoomSnap is 0), so a marker set to exactly the current zoom doesn't flicker. */
+const ZOOM_EPSILON = 0.01;
+
+/** Reports Leaflet's zoom and its current min/max up to MapView whenever any of them change. */
+function ZoomWatcher({ onChange }: { onChange: (state: { zoom: number; min: number; max: number }) => void }) {
+  const map = useMap();
+  const report = () => onChange({ zoom: map.getZoom(), min: map.getMinZoom(), max: map.getMaxZoom() });
+  // moveend and zoomlevelschange too, not just zoomend: MapOptionsSync's
+  // fit-to-container and min-zoom floor land after mount without a zoomend.
+  useMapEvents({ zoomend: report, moveend: report, zoomlevelschange: report, load: report });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(report, [map]);
+  return null;
+}
+
 function MapOptionsSync({
   minZoom,
   maxZoom,
@@ -616,6 +631,8 @@ export function MapView({
   // its own Done/Cancel buttons stay reachable even if this gets collapsed.
   const [editToolbarOpen, setEditToolbarOpen] = useState(false);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  /** Leaflet's current zoom and allowed range, mirrored into React by ZoomWatcher so markers can filter on it. */
+  const [zoomState, setZoomState] = useState<{ zoom: number; min: number; max: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ shape: DrawShape; points: MarkerPoint[]; anchor: { x: number; y: number } | null; replaceId: string | null } | null>(null);
@@ -806,6 +823,30 @@ export function MapView({
   };
 
   const scale = map !== null && map !== undefined ? scaleFor(map) : 1;
+  /**
+   * Zoom as magnification relative to the image's own pixels (0 = 100%) —
+   * the map-independent unit markers store their zoom range in (migration
+   * 0012). Leaflet's raw zoom is offset by log2(scale) on a tiled map.
+   */
+  const nativeZoom = Math.log2(scale);
+  const magnification =
+    zoomState !== null
+      ? { current: zoomState.zoom - nativeZoom, min: zoomState.min - nativeZoom, max: zoomState.max - nativeZoom }
+      : null;
+  /**
+   * Out-of-range markers drop out — except while the edit toolbar is open,
+   * where a DM needs to reach everything, and for the selected marker, so
+   * zooming out doesn't yank the inspector's subject off the map.
+   */
+  const drawnMarkers =
+    magnification === null || (node.canEdit && editToolbarOpen)
+      ? visibleMarkers
+      : visibleMarkers.filter(
+          (m) =>
+            m.id === selectedId ||
+            ((m.minZoom === null || magnification.current >= m.minZoom - ZOOM_EPSILON) &&
+              (m.maxZoom === null || magnification.current <= m.maxZoom + ZOOM_EPSILON)),
+        );
   const bounds = useMemo<L.LatLngBoundsLiteral | null>(
     () => (map !== null && map !== undefined ? [[0, 0], [map.height / scale, map.width / scale]] : null),
     [map, scale],
@@ -863,6 +904,16 @@ export function MapView({
   }
 
   const computedMaxZoom = map.tilingStatus === "ready" ? map.maxZoom : map.maxZoom + 6;
+  /**
+   * The stored min_zoom (0) only means something for a tiled map, where it's
+   * the padded root tile MapOptionsSync must keep the view away from. An
+   * untiled map is one ImageOverlay with no root tile, and at its reference
+   * zoom 0 is 100% — so flooring it at 0 meant any untiled map wider or taller
+   * than its panel could never be zoomed out to show the whole image. Let it
+   * go as low as needed; MapOptionsSync still floors it at the fit-to-panel
+   * zoom, so "all the way out" is exactly the whole image.
+   */
+  const effectiveMinZoom = map.tilingStatus === "ready" ? map.minZoom : -8;
 
   return (
     <div
@@ -1119,7 +1170,7 @@ export function MapView({
         zoomSnap={0}
         maxBounds={panBounds!}
         maxBoundsViscosity={0.8}
-        minZoom={map.minZoom}
+        minZoom={effectiveMinZoom}
         // Untiled maps (small enough to skip the tiling pipeline) get a much
         // bigger buffer above their nominal max zoom than tiled ones: there's
         // no real pyramid to run out of, just the browser scaling up one
@@ -1134,8 +1185,9 @@ export function MapView({
         // source (OSM etc.) that requires attribution — nothing to credit.
         attributionControl={false}
       >
+        <ZoomWatcher onChange={setZoomState} />
         <MapOptionsSync
-          minZoom={map.minZoom}
+          minZoom={effectiveMinZoom}
           maxZoom={computedMaxZoom}
           maxBounds={panBounds!}
           maxBoundsViscosity={0.8}
@@ -1209,7 +1261,7 @@ export function MapView({
             )}
           </div>
         )}
-        {visibleMarkers.map((marker) =>
+        {drawnMarkers.map((marker) =>
           draft !== null && draft.replaceId === marker.id ? null : marker.shape === "polygon" || marker.shape === "path" ? (
             <PolygonShapeMarker
               key={marker.id}
@@ -1261,6 +1313,9 @@ export function MapView({
 
       {selected !== null && (
         <MarkerInspector
+          // Keyed so switching markers resets its local form state (label,
+          // color, zoom range drafts) instead of carrying the last one's over.
+          key={selected.id}
           marker={selected}
           allNodes={allNodes}
           markers={markers}
@@ -1274,6 +1329,7 @@ export function MapView({
               ? () => startDraft(selected.shape as DrawShape, selected.id)
               : undefined
           }
+          magnification={magnification}
           onSavePreset={
             isGameMaster
               ? (name) =>
@@ -1653,6 +1709,7 @@ function MarkerInspector({
   onDelete,
   onRedraw,
   onSavePreset,
+  magnification,
 }: {
   marker: MapMarkerDto;
   allNodes: NodeSummary[];
@@ -1665,6 +1722,8 @@ function MarkerInspector({
   onRedraw?: () => void;
   /** Owner/DM only: store this marker's shape/icon/color as a world-wide preset. */
   onSavePreset?: (name: string) => void;
+  /** The map's current and allowed zoom, as magnification (0 = 100%) — bounds the zoom-range slider. */
+  magnification: { current: number; min: number; max: number } | null;
 }) {
   const [presetName, setPresetName] = useState<string | null>(null);
   const [label, setLabel] = useState(marker.label ?? "");
@@ -1703,7 +1762,9 @@ function MarkerInspector({
   const groupOptions = markers.filter((m) => m.shape === "token" && !invalidParentIds.has(m.id));
 
   return (
-    <div className="absolute bottom-3 right-3 z-[1000] w-72 rounded-md border border-line bg-surface p-4 shadow-2xl">
+    // Bottom-anchored and growing upward, so it's capped short of the toolbar
+    // (up to two rows tall now that it wraps) and scrolls past that instead.
+    <div className="absolute bottom-3 right-3 z-[1000] max-h-[calc(100%-6rem)] w-72 overflow-y-auto rounded-md border border-line bg-surface p-4 shadow-2xl">
       <div className="mb-2 flex items-center">
         <h3 className="text-sm font-semibold text-fg-strong">{SHAPE_LABEL[marker.shape] ?? marker.shape}</h3>
         <button type="button" onClick={onClose} className="ml-auto text-xs text-fg-muted hover:text-fg">
@@ -1941,6 +2002,15 @@ function MarkerInspector({
             </select>
           </label>
 
+          {magnification !== null && (
+            <ZoomRangeControl
+              minZoom={marker.minZoom}
+              maxZoom={marker.maxZoom}
+              magnification={magnification}
+              onChange={(range) => onSave(range)}
+            />
+          )}
+
           {onSavePreset !== undefined &&
             (presetName === null ? (
               <button
@@ -1989,6 +2059,123 @@ function MarkerInspector({
       ) : (
         <p className="text-xs text-fg-subtle">{marker.label ?? "(untitled)"}</p>
       )}
+    </div>
+  );
+}
+
+/** 2^z as a percentage, the way people think about zoom: -1 → "50%". */
+function zoomPercent(z: number): string {
+  const pct = Math.pow(2, z) * 100;
+  return `${pct >= 10 ? Math.round(pct) : pct.toFixed(1)}%`;
+}
+
+/**
+ * "Visible at zoom" — a two-thumb range over everything this map can zoom to.
+ * A thumb parked at its end of the track means "no limit that way" (null),
+ * so a marker can be "only when zoomed in past 50%" without also picking an
+ * arbitrary upper bound. The track is padded half a step past the map's own
+ * limits so those "no limit" positions are distinct from the real extremes.
+ */
+function ZoomRangeControl({
+  minZoom,
+  maxZoom,
+  magnification,
+  onChange,
+}: {
+  minZoom: number | null;
+  maxZoom: number | null;
+  magnification: { current: number; min: number; max: number };
+  onChange: (range: { minZoom: number | null; maxZoom: number | null }) => void;
+}) {
+  const STEP = 0.25;
+  // Capped at 800%: an untiled map lets you zoom far past its native pixels
+  // (it just gets blurry), and a track running to 25600% would squash every
+  // useful setting into its first few millimetres.
+  const lo = Math.floor(magnification.min / STEP) * STEP - STEP;
+  const hi = Math.ceil(Math.min(magnification.max, 3) / STEP) * STEP + STEP;
+  const [low, setLow] = useState(minZoom ?? lo);
+  const [high, setHigh] = useState(maxZoom ?? hi);
+
+  function commit(nextLow: number, nextHigh: number): void {
+    onChange({ minZoom: nextLow <= lo ? null : nextLow, maxZoom: nextHigh >= hi ? null : nextHigh });
+  }
+
+  const now = Math.round(magnification.current / STEP) * STEP;
+  const summary =
+    low <= lo && high >= hi
+      ? "Always visible"
+      : low <= lo
+        ? `Up to ${zoomPercent(high)}`
+        : high >= hi
+          ? `From ${zoomPercent(low)} in`
+          : `${zoomPercent(low)} – ${zoomPercent(high)}`;
+  const pct = (v: number) => `${((v - lo) / (hi - lo)) * 100}%`;
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between">
+        <span className="block text-[10px] uppercase tracking-wide text-fg-muted">Visible at zoom</span>
+        <span className="text-[10px] text-fg-soft">{summary}</span>
+      </div>
+      <div className="dual-range relative mt-1 h-5">
+        <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded bg-line" />
+        <div
+          className="absolute top-1/2 h-1 -translate-y-1/2 rounded bg-accent"
+          style={{ left: pct(low), right: `calc(100% - ${pct(high)})` }}
+        />
+        <div
+          className="absolute top-0 h-5 w-px bg-fg-faint"
+          style={{ left: pct(now) }}
+          title={`You're at ${zoomPercent(magnification.current)}`}
+        />
+        <input
+          type="range"
+          min={lo}
+          max={hi}
+          step={STEP}
+          value={low}
+          aria-label="Hide when zoomed out further than"
+          onChange={(e) => setLow(Math.min(Number(e.target.value), high))}
+          onPointerUp={() => commit(low, high)}
+          onKeyUp={() => commit(low, high)}
+        />
+        <input
+          type="range"
+          min={lo}
+          max={hi}
+          step={STEP}
+          value={high}
+          aria-label="Hide when zoomed in further than"
+          onChange={(e) => setHigh(Math.max(Number(e.target.value), low))}
+          onPointerUp={() => commit(low, high)}
+          onKeyUp={() => commit(low, high)}
+        />
+      </div>
+      <div className="mt-1 flex gap-1 text-[10px]">
+        <button
+          type="button"
+          onClick={() => {
+            const next = Math.min(now, high);
+            setLow(next);
+            commit(next, high);
+          }}
+          className="rounded border border-line px-1.5 py-0.5 text-fg-muted hover:text-fg"
+          title="Hide this marker whenever the map is zoomed out further than it is right now"
+        >
+          Hide when zoomed out from here
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setLow(lo);
+            setHigh(hi);
+            commit(lo, hi);
+          }}
+          className="ml-auto rounded border border-line px-1.5 py-0.5 text-fg-muted hover:text-fg"
+        >
+          Always
+        </button>
+      </div>
     </div>
   );
 }

@@ -6361,6 +6361,14 @@
           "groupId": {
             "type": "string",
             "nullable": true
+          },
+          "minZoom": {
+            "type": "number",
+            "nullable": true
+          },
+          "maxZoom": {
+            "type": "number",
+            "nullable": true
           }
         },
         "required": [
@@ -6379,7 +6387,9 @@
           "visibility",
           "targetNode",
           "parentMarkerId",
-          "groupId"
+          "groupId",
+          "minZoom",
+          "maxZoom"
         ],
         "additionalProperties": false
       },
@@ -7221,6 +7231,18 @@
           "groupId": {
             "type": "string",
             "nullable": true
+          },
+          "minZoom": {
+            "type": "number",
+            "minimum": -8,
+            "maximum": 8,
+            "nullable": true
+          },
+          "maxZoom": {
+            "type": "number",
+            "minimum": -8,
+            "maximum": 8,
+            "nullable": true
           }
         },
         "required": [
@@ -7289,6 +7311,18 @@
           },
           "groupId": {
             "type": "string",
+            "nullable": true
+          },
+          "minZoom": {
+            "type": "number",
+            "minimum": -8,
+            "maximum": 8,
+            "nullable": true
+          },
+          "maxZoom": {
+            "type": "number",
+            "minimum": -8,
+            "maximum": 8,
             "nullable": true
           }
         },

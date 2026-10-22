@@ -136,6 +136,8 @@ export type MapMarkerRow = {
   members: string | null;
   revealed: number;
   visibility: FieldVisibility;
+  min_zoom: number | null;
+  max_zoom: number | null;
   created_by: string | null;
   created_at: number;
   updated_at: number;

@@ -399,6 +399,18 @@ await callTool("delete_marker", { marker_id: fromPresetId });
 await callTool("delete_marker", { marker_id: overrideId });
 await api("DELETE", `/worlds/${world.id}/marker-presets/${shrine.body.preset.id}`);
 
+console.log("\n== marker zoom range ==");
+const zoomed = await callTool("place_marker", { node_id: mapNodeId, x: 6, y: 6, label: "Village", min_zoom: -1 });
+const zoomedId = zoomed.text.match(/\[([a-z0-9]{8,12})\]/)?.[1];
+const zoomedMap = await callTool("get_map", { node_id: mapNodeId });
+check("place_marker sets a zoom range and get_map shows it", zoomedMap.text.includes('"Village" at (6, 6) (zoom -1..any)'), zoomedMap.text);
+const crossed = await callTool("update_marker", { marker_id: zoomedId, max_zoom: -2 });
+check("update_marker rejects a max zoom below the min", crossed.isError === true, crossed.text);
+await callTool("update_marker", { marker_id: zoomedId, min_zoom: null });
+const clearedMap = await callTool("get_map", { node_id: mapNodeId });
+check("null clears a zoom limit", clearedMap.text.includes('"Village" at (6, 6)') && !clearedMap.text.includes('"Village" at (6, 6) (zoom'), clearedMap.text);
+await callTool("delete_marker", { marker_id: zoomedId });
+
 // Map display groups (Kanka's own MapGroup) — a separate, purely organizational
 // feature from the party-group hierarchy above. Any shape can join one.
 console.log("\n== map display groups ==");
