@@ -62,6 +62,7 @@ export function App() {
   const [viewAsPlayer, setViewAsPlayerState] = useState(false);
   const [createChooser, setCreateChooser] = useState<{ parentId: string | null } | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const { theme, setTheme } = useTheme();
 
   const session = useQuery({
@@ -100,7 +101,10 @@ export function App() {
   const activeId = nodeIdFromPath(path);
 
   // The off-canvas sidebar on a phone closes itself once a page is picked.
-  useEffect(() => setMobileNavOpen(false), [path]);
+  useEffect(() => {
+    setMobileNavOpen(false);
+    setMobileInfoOpen(false);
+  }, [path]);
 
   const node = useQuery({
     queryKey: ["node", activeId],
@@ -302,6 +306,7 @@ export function App() {
               onArchive={archiveNode}
               pinnedIds={pinnedIds}
               onTogglePin={togglePin}
+              onOpenInfo={() => setMobileInfoOpen(true)}
             />
             <Backlinks
               node={node.data.node}
@@ -309,6 +314,8 @@ export function App() {
               onCreateNamed={(title) =>
                 createNode.mutate({ parentId: node.data!.node.id, title })
               }
+              mobileOpen={mobileInfoOpen}
+              onCloseMobile={() => setMobileInfoOpen(false)}
             />
           </>
         ) : (

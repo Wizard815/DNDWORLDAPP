@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import type { FieldDto, FieldType, NodeDetail, NodeSummary, Visibility } from "@dndworldapp/schema";
 import { ApiError, api } from "../api.ts";
 import { Editor } from "../editor/Editor.tsx";
@@ -9,8 +9,10 @@ import { nodeGlyph } from "../lib/kinds.ts";
 import { useResizablePanel } from "../lib/useResizablePanel.ts";
 import { Access } from "./Access.tsx";
 import { IconPicker } from "./IconPicker.tsx";
-import { MapView } from "./MapView.tsx";
 import { Posts } from "./Posts.tsx";
+
+// Leaflet and the map editor are most of the bundle; only map pages need them.
+const MapView = lazy(() => import("./MapView.tsx").then((m) => ({ default: m.MapView })));
 
 const VISIBILITY_LABEL: Record<Visibility, string> = {
   public: "Public",
@@ -36,6 +38,8 @@ interface Props {
   onArchive: (node: NodeDetail) => void;
   pinnedIds: Set<string>;
   onTogglePin: (nodeId: string) => void;
+  /** Opens the tags/backlinks/fields panel, which is a drawer below the lg breakpoint. */
+  onOpenInfo: () => void;
 }
 
 export function NodeView({
@@ -48,6 +52,7 @@ export function NodeView({
   onArchive,
   pinnedIds,
   onTogglePin,
+  onOpenInfo,
 }: Props) {
   const [title, setTitle] = useState(node.title);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
@@ -98,6 +103,14 @@ export function NodeView({
         <span className="ml-auto shrink-0 pl-3 text-[10px] text-fg-faint" aria-live="polite">
           {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}
         </span>
+        <button
+          type="button"
+          onClick={onOpenInfo}
+          className="ml-2 shrink-0 rounded-md px-2 py-1 text-xs text-fg-subtle hover:bg-hover hover:text-fg lg:hidden"
+          aria-label="Links, tags and fields"
+        >
+          ⓘ Info
+        </button>
       </header>
 
       <div className="flex-1 overflow-y-auto">
@@ -285,7 +298,9 @@ export function NodeView({
 
           {node.kind === "map" ? (
             <div className="overflow-hidden rounded-md border border-divider">
-              <MapView node={node} allNodes={allNodes} />
+              <Suspense fallback={<div className="p-8 text-center text-sm text-fg-muted">Loading map…</div>}>
+                <MapView node={node} allNodes={allNodes} />
+              </Suspense>
             </div>
           ) : (
             <>
@@ -412,10 +427,15 @@ export function Backlinks({
   node,
   allNodes,
   onCreateNamed,
+  mobileOpen,
+  onCloseMobile,
 }: {
   node: NodeDetail;
   allNodes: NodeSummary[];
   onCreateNamed: (title: string) => void;
+  /** Below the lg breakpoint the panel is a right-hand drawer; this says whether it's open. */
+  mobileOpen: boolean;
+  onCloseMobile: () => void;
 }) {
   const wanted = useQuery({
     queryKey: ["unresolved", node.worldId],
@@ -424,7 +444,7 @@ export function Backlinks({
   const links = wanted.data?.links ?? [];
   const panel = useResizablePanel({ storageKey: "dwa:rightPanel", defaultWidth: 280, minWidth: 220, maxWidth: 480 });
 
-  if (panel.collapsed) {
+  if (panel.collapsed && !mobileOpen) {
     return (
       <aside className="hidden h-full w-8 shrink-0 flex-col items-center border-l border-divider bg-panel py-3 lg:flex">
         <button
@@ -441,9 +461,18 @@ export function Backlinks({
   }
 
   return (
+    <>
+    {mobileOpen && (
+      <div className="fixed inset-0 z-[2044] bg-black/50 lg:hidden" onClick={onCloseMobile} aria-hidden="true" />
+    )}
     <aside
       style={{ width: panel.width }}
-      className="relative hidden h-full shrink-0 overflow-y-auto border-l border-divider bg-panel px-4 py-4 lg:block"
+      className={[
+        "relative h-full shrink-0 overflow-y-auto border-l border-divider bg-panel px-4 py-4 lg:block",
+        mobileOpen
+          ? "max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-[2045] max-lg:w-[85vw]! max-lg:max-w-sm max-lg:shadow-pop"
+          : "hidden",
+      ].join(" ")}
     >
       <div
         role="separator"
@@ -458,11 +487,19 @@ export function Backlinks({
       <button
         type="button"
         onClick={panel.toggleCollapsed}
-        className="absolute right-2 top-2 rounded p-1 text-fg-muted hover:bg-hover hover:text-fg"
+        className="absolute right-2 top-2 hidden rounded p-1 text-fg-muted hover:bg-hover hover:text-fg lg:block"
         title="Hide panel"
         aria-label="Hide panel"
       >
         »
+      </button>
+      <button
+        type="button"
+        onClick={onCloseMobile}
+        className="absolute right-2 top-2 rounded p-1 text-fg-muted hover:bg-hover hover:text-fg lg:hidden"
+        aria-label="Close panel"
+      >
+        ✕
       </button>
       {node.tags.length > 0 && (
         <>
@@ -557,6 +594,7 @@ export function Backlinks({
       </dl>
       <p className="mt-4 break-all text-[10px] text-fg-faint">id {node.id}</p>
     </aside>
+    </>
   );
 }
 
