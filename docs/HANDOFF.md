@@ -61,7 +61,7 @@ planned — see §9.4.
 Verified by:
 - `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 293 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 301 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
@@ -70,7 +70,7 @@ Verified by:
   markers, and a player-can-list-groups-without-edit-rights check — see the "Resolved"
   bullet under Known open items for why that last one is a real bug, not a formality).
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All
-  pass (89 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
+  pass (94 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
   `== map display groups ==` section for the 5 new group-CRUD tools).
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
@@ -442,7 +442,7 @@ When the editor is upgraded to TipTap, it must round-trip markdown on load/save.
 
 ### 6.4 Migrations are append-only SQL
 
-Add `migrations/00NN_whatever.sql` (next is `0013`). Never edit an applied migration.
+Add `migrations/00NN_whatever.sql` (next is `0014`). Never edit an applied migration.
 Update `src/db/types.ts` by hand in the same commit — nothing checks this for you.
 
 ### 6.5 A leak surface needs a test in the same commit that opens it
@@ -1408,6 +1408,22 @@ taller than its panel could never be zoomed out to show the whole image. The sto
 floor only matters for a tiled map's padded root tile; untiled maps now floor at the
 fit-to-panel zoom alone (`effectiveMinZoom` in MapView).
 
+### 7.8d Distance measurement
+
+`components/MapMeasure.tsx`, opened from "📏 Measure" in the map toolbar — available to
+every viewer, like Groups and Markers, because measuring changes nothing. Point to point
+(each click adds a leg, Ctrl+Z drops one) or freehand (press and drag; map panning is
+switched off while freehand is selected, since a drag can't do both). The route is
+local to the viewer and never saved.
+
+The only stored part is the map's scale: `maps.scale_px_per_unit` + `scale_unit`
+(migration 0013), on `MapDto.scale`, set through `PATCH /nodes/{id}/map` by anyone who
+can edit the map. The UI calibrates by measuring something of known length and typing
+in its real length ("Set scale…"); MCP has `set_map_scale`. Uncalibrated, distances are
+in source-image pixels. Replacing a map's image keeps the scale — recalibrate if the new
+image is a different resolution. `lib/mapCoords.ts` now holds the pixel↔LatLng helpers
+both MapView and MapMeasure use.
+
 ### 7.9 Sidebar right-click menu, the "+ New" chooser, and pinned pages
 
 Three additions the owner asked for after comparing this app to a LegendKeeper trial:
@@ -1570,7 +1586,7 @@ Registered: `list_worlds`, `get_tree`, `get_subtree`, `find_nodes`, `get_node`,
 `list_templates`, `list_unresolved_links`, `create_node`, `update_node`, `move_node`,
 `archive_node`, `create_post`, `update_post`, `set_node_template`, `set_field`,
 `delete_field`, `apply_template` (see §7.7), `get_map`, `place_marker`, `update_marker`,
-`delete_marker`, `search_icons`, `list_marker_presets` (see §7.8). `get_subtree` renders just one page's descendant hierarchy as
+`delete_marker`, `search_icons`, `list_marker_presets`, `set_map_scale` (see §7.8). `get_subtree` renders just one page's descendant hierarchy as
 an indented outline (client-side filter over the same `GET .../tree` payload `get_tree`
 already uses — no new server route), for "find the family/faction/region node, then see
 what's nested under it" without pulling in the whole world. Plus `add_event` and

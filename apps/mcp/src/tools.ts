@@ -556,6 +556,9 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         const { markers } = await client.mapMarkers(node_id);
         const parts = [
           `Map on [${node_id}]: ${map.width}x${map.height}px, zoom ${map.minZoom}-${map.maxZoom}, tiling: ${map.tilingStatus}`,
+          map.scale !== null
+            ? `Scale: 1 ${map.scale.unit} = ${map.scale.pxPerUnit} px (distance between two points = pixel distance / ${map.scale.pxPerUnit})`
+            : "Scale: not calibrated (see set_map_scale)",
         ];
         if (markers.length === 0) {
           parts.push("No markers yet.");
@@ -584,6 +587,37 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           );
         }
         return text(parts.join("\n"));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "set_map_scale",
+    {
+      title: "Set a map's distance scale",
+      description:
+        "Calibrate a map for distance measurement: how many source-image pixels make one unit (e.g. 42 px per mile). Work it out from two points whose real distance you know: pixel distance between them / real distance. Pass px_per_unit null to clear it.",
+      inputSchema: {
+        node_id: z.string().describe("The map page's id."),
+        px_per_unit: z.number().positive().nullable().describe("Source-image pixels per one unit, or null to clear."),
+        unit: z.string().min(1).max(20).optional().describe("What the unit is called: mi, km, ft, leagues, days… Required unless clearing."),
+      },
+    },
+    async ({ node_id, px_per_unit, unit }) => {
+      try {
+        if (px_per_unit !== null && (unit === undefined || unit.trim() === "")) {
+          return { ...text("Give a unit (mi, km, ft…) along with px_per_unit."), isError: true };
+        }
+        const { map } = await client.updateMap(node_id, {
+          scale: px_per_unit === null ? null : { pxPerUnit: px_per_unit, unit: unit!.trim() },
+        });
+        return text(
+          map.scale === null
+            ? `Cleared the scale on [${node_id}].`
+            : `[${node_id}] now measures 1 ${map.scale.unit} = ${map.scale.pxPerUnit} px.`,
+        );
       } catch (error) {
         return fail(error);
       }

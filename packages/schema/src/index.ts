@@ -392,11 +392,23 @@ export const mapDtoSchema = z.object({
   maxZoom: z.number().int(),
   tilingStatus: z.enum(["none", "pending", "running", "ready", "error"]),
   fogEnabled: z.boolean(),
+  /** Distance scale for the measuring tool, or null when uncalibrated. See migration 0013. */
+  scale: z.object({ pxPerUnit: z.number(), unit: z.string() }).nullable(),
 });
 export type MapDto = z.infer<typeof mapDtoSchema>;
 
 export const setMapImageInputSchema = z.object({ assetId: z.string() });
 export type SetMapImageInput = z.infer<typeof setMapImageInputSchema>;
+
+export const mapScaleSchema = z.object({
+  /** Source-image pixels per one unit, in the same pixel space as marker x/y. */
+  pxPerUnit: z.number().positive().max(1_000_000),
+  unit: z.string().trim().min(1).max(20),
+});
+
+/** Map settings other than the image. `scale: null` clears a calibration. */
+export const updateMapInputSchema = z.object({ scale: mapScaleSchema.nullable() }).partial();
+export type UpdateMapInput = z.infer<typeof updateMapInputSchema>;
 
 // ---------------------------------------------------------------------------
 // Marker points (P4.3) — polygon/path vertices, stored as ONE string in the map's

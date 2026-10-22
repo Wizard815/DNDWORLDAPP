@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { CreateMarkerInput, FieldVisibility, MapDto, MapMarkerDto, UpdateMarkerInput } from "@dndworldapp/schema";
+import type { CreateMarkerInput, FieldVisibility, MapDto, MapMarkerDto, UpdateMapInput, UpdateMarkerInput } from "@dndworldapp/schema";
 import { formatMarkerPoints, parseMarkerPoints } from "@dndworldapp/schema";
 import sharp from "sharp";
 import { readableLevels } from "../auth/policy.ts";
@@ -163,7 +163,24 @@ function toMapDto(row: MapRow): MapDto {
     maxZoom: row.max_zoom,
     tilingStatus: row.tiling_status,
     fogEnabled: row.fog_enabled === 1,
+    scale:
+      row.scale_px_per_unit !== null && row.scale_unit !== null
+        ? { pxPerUnit: row.scale_px_per_unit, unit: row.scale_unit }
+        : null,
   };
+}
+
+const updateMapScale = db.prepare("UPDATE maps SET scale_px_per_unit = ?, scale_unit = ?, updated_at = ? WHERE node_id = ?");
+
+/** Map settings that aren't the image — today just the measuring scale. Edit rights on the map page required. */
+export function updateMap(nodeId: string, viewer: Viewer, input: UpdateMapInput): MapDto {
+  requireMapNode(nodeId, viewer);
+  const row = selectMap.get(nodeId) as MapRow | undefined;
+  if (row === undefined) throw notFound("This page has no map set.");
+  if (input.scale !== undefined) {
+    updateMapScale.run(input.scale?.pxPerUnit ?? null, input.scale?.unit ?? null, Date.now(), nodeId);
+  }
+  return toMapDto(selectMap.get(nodeId) as MapRow);
 }
 
 /**

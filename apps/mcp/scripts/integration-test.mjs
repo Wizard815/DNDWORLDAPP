@@ -162,6 +162,7 @@ for (const expected of [
   "delete_field",
   "apply_template",
   "get_map",
+  "set_map_scale",
   "search_icons",
   "list_marker_presets",
   "place_marker",
@@ -398,6 +399,18 @@ check("place_marker reports an unknown preset_id", badPreset.isError === true &&
 await callTool("delete_marker", { marker_id: fromPresetId });
 await callTool("delete_marker", { marker_id: overrideId });
 await api("DELETE", `/worlds/${world.id}/marker-presets/${shrine.body.preset.id}`);
+
+console.log("\n== map scale ==");
+const unscaled = await callTool("get_map", { node_id: mapNodeId });
+check("get_map says when a map isn't calibrated", unscaled.text.includes("Scale: not calibrated"), unscaled.text);
+const setScale = await callTool("set_map_scale", { node_id: mapNodeId, px_per_unit: 12.5, unit: "mi" });
+const scaledMap = await callTool("get_map", { node_id: mapNodeId });
+check("set_map_scale calibrates and get_map reports it", !setScale.isError && scaledMap.text.includes("Scale: 1 mi = 12.5 px"), scaledMap.text);
+const noUnit = await callTool("set_map_scale", { node_id: mapNodeId, px_per_unit: 3 });
+check("set_map_scale wants a unit", noUnit.isError === true, noUnit.text);
+await callTool("set_map_scale", { node_id: mapNodeId, px_per_unit: null });
+const clearedScale = await callTool("get_map", { node_id: mapNodeId });
+check("set_map_scale with null clears it", clearedScale.text.includes("Scale: not calibrated"), clearedScale.text);
 
 console.log("\n== marker zoom range ==");
 const zoomed = await callTool("place_marker", { node_id: mapNodeId, x: 6, y: 6, label: "Village", min_zoom: -1 });

@@ -543,3 +543,18 @@ textarea {
   border: 2px solid var(--color-accent);
   cursor: grab;
 }
+
+/* The measuring tool's running-total label (MapMeasure.tsx), restyled from Leaflet's white tooltip. */
+.leaflet-tooltip.measure-tooltip {
+  background: var(--color-raised);
+  color: var(--color-fg-strong);
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  box-shadow: var(--shadow-pop);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 2px 8px;
+}
+.leaflet-tooltip.measure-tooltip::before {
+  display: none;
+}

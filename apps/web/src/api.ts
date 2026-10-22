@@ -39,6 +39,7 @@ import type {
   TokenDto,
   UpdateFieldInput,
   UpdateMapGroupInput,
+  UpdateMapInput,
   UpdateMarkerInput,
   UpdateNodeInput,
   UpdateTemplateInput,
@@ -256,6 +257,9 @@ export const api = {
     request<{ fields: FieldDto[] }>(`/nodes/${nodeId}/apply-template`, { method: "POST" }),
 
   map: (nodeId: string) => request<{ map: MapDto }>(`/nodes/${nodeId}/map`),
+
+  updateMap: (nodeId: string, input: UpdateMapInput) =>
+    request<{ map: MapDto }>(`/nodes/${nodeId}/map`, { method: "PATCH", ...json(input) }),
 
   setMapImage: (nodeId: string, assetId: string) =>
     request<{ map: MapDto }>(`/nodes/${nodeId}/map`, { method: "PUT", ...json({ assetId }) }),

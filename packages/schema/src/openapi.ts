@@ -61,6 +61,7 @@ const CreateFieldInput = ref("CreateFieldInput", S.createFieldInputSchema);
 const UpdateFieldInput = ref("UpdateFieldInput", S.updateFieldInputSchema);
 const MoveFieldInput = ref("MoveFieldInput", S.moveFieldInputSchema);
 const SetMapImageInput = ref("SetMapImageInput", S.setMapImageInputSchema);
+const UpdateMapInput = ref("UpdateMapInput", S.updateMapInputSchema);
 const CreateMarkerInput = ref("CreateMarkerInput", S.createMarkerInputSchema);
 const UpdateMarkerInput = ref("UpdateMarkerInput", S.updateMarkerInputSchema);
 const CreateMarkerPresetInput = ref("CreateMarkerPresetInput", S.createMarkerPresetInputSchema);
@@ -536,6 +537,15 @@ const paths: Json = {
       tags: ["maps"],
       summary: "A page's map — source image, pixel bounds, and tiling status",
       parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(obj({ map: MapDto }, ["map"])), ...ERRORS },
+    },
+    patch: {
+      tags: ["maps"],
+      summary: "Update a map's settings (its distance scale)",
+      description:
+        "Needs edit rights on the map page. `scale` is source-image pixels per unit plus the unit's name, used by the measuring tool; null clears it. Replacing the image keeps the scale.",
+      parameters: [pathParam("nodeId", "Node id")],
+      requestBody: body(UpdateMapInput),
       responses: { 200: ok(obj({ map: MapDto }, ["map"])), ...ERRORS },
     },
     put: {

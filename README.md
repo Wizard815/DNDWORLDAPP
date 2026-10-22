@@ -119,7 +119,8 @@ uploaded images. Backup is a copy of that directory.
   (game-icons.net's fantasy art plus Font Awesome), served by the app itself, and a DM
   can save any marker's look as a world-wide preset ("Tavern", "Enemy camp") to stamp
   onto other maps. Any marker can be limited to a zoom range, so village pins don't
-  clutter the continent view.
+  clutter the continent view. A measuring tool (point to point or freehand) reports
+  real distances once someone calibrates the map against a known length.
 - **A sidebar row menu, reachable by right-click or its own "⋯" button** — add a page
   inside, rename in place, pin, or archive, without first opening the page.
 - **Manually pinned pages** — a strip of quick-access chips at the top of the app,
@@ -208,7 +209,7 @@ docs/            Plan, handoff, Kanka mapping, LegendKeeper findings, openapi.js
 
 ```bash
 npm test          # unit: fractional indexing, wiki-link parsing, secret blocks
-npm run smoke     # 293 end-to-end API checks (needs an EMPTY data/ dir + running server)
+npm run smoke     # 301 end-to-end API checks (needs an EMPTY data/ dir + running server)
 npm run test:mcp  # drives the MCP server over stdio (needs a running server)
 npm run typecheck
 ```

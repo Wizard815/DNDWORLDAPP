@@ -114,6 +114,8 @@ export type MapRow = {
   tiling_error: string | null;
   fog_enabled: number;
   fog_mask_updated_at: number | null;
+  scale_px_per_unit: number | null;
+  scale_unit: string | null;
   created_at: number;
   updated_at: number;
 }

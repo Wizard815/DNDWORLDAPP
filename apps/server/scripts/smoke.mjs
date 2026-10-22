@@ -1635,6 +1635,30 @@ const unbounded = await dm("PATCH", `/markers/${zoomRanged.body.marker.id}`, { m
 check("null clears both limits", unbounded.status === 200 && unbounded.body.marker.minZoom === null && unbounded.body.marker.maxZoom === null, unbounded.body);
 await dm("DELETE", `/markers/${zoomRanged.body.marker.id}`);
 
+console.log("\n== map scale ==");
+const mapBeforeScale = (await dm("GET", `/nodes/${mapNode.id}/map`)).body.map;
+check("a map starts uncalibrated", mapBeforeScale.scale === null, mapBeforeScale);
+const playerScale = await player("PATCH", `/nodes/${mapNode.id}/map`, { scale: { pxPerUnit: 10, unit: "mi" } });
+check("someone without edit rights cannot set a map's scale", playerScale.status === 403 || playerScale.status === 404, playerScale.body);
+const dmScale = await dm("PATCH", `/nodes/${mapNode.id}/map`, { scale: { pxPerUnit: 42.5, unit: " leagues " } });
+check(
+  "the DM can calibrate a map; the unit is trimmed",
+  dmScale.status === 200 && dmScale.body.map.scale?.pxPerUnit === 42.5 && dmScale.body.map.scale?.unit === "leagues",
+  dmScale.body,
+);
+const playerSeesScale = (await player("GET", `/nodes/${mapNode.id}/map`)).body.map;
+check("anyone who can see the map sees its scale", playerSeesScale?.scale?.unit === "leagues", playerSeesScale);
+const badScale = await dm("PATCH", `/nodes/${mapNode.id}/map`, { scale: { pxPerUnit: -3, unit: "mi" } });
+check("a non-positive scale is rejected", badScale.status === 400, badScale.body);
+const noScaleChange = await dm("PATCH", `/nodes/${mapNode.id}/map`, {});
+check("an empty update leaves the scale alone", noScaleChange.status === 200 && noScaleChange.body.map.scale?.pxPerUnit === 42.5, noScaleChange.body);
+const clearScale = await dm("PATCH", `/nodes/${mapNode.id}/map`, { scale: null });
+check("null clears the scale", clearScale.status === 200 && clearScale.body.map.scale === null, clearScale.body);
+const noImageNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Scale: no image yet", parentId: rootId, kind: "map" })).body.node;
+const noImageScale = await dm("PATCH", `/nodes/${noImageNode.id}/map`, { scale: { pxPerUnit: 1, unit: "ft" } });
+check("a map page with no image yet can't be calibrated (404)", noImageScale.status === 404, noImageScale.body);
+await dm("DELETE", `/nodes/${noImageNode.id}`);
+
 console.log("\n== archive ==");
 const archived = await dm("DELETE", `/nodes/${orgella.id}`);
 check("archive succeeds", archived.status === 200, archived.body);

@@ -5,6 +5,7 @@ import {
   moveMapGroupInputSchema,
   setMapImageInputSchema,
   updateMapGroupInputSchema,
+  updateMapInputSchema,
   updateMarkerInputSchema,
 } from "@dndworldapp/schema";
 import type { Viewer } from "../auth/viewer.ts";
@@ -20,7 +21,7 @@ import {
   selectGroupMapNode,
   updateMapGroup,
 } from "../services/mapGroups.ts";
-import { createMarker, deleteMarker, getMap, listMarkers, setMapImage, updateMarker } from "../services/maps.ts";
+import { createMarker, deleteMarker, getMap, listMarkers, setMapImage, updateMap, updateMarker } from "../services/maps.ts";
 
 interface NodeParams {
   nodeId: string;
@@ -63,6 +64,12 @@ export async function mapRoutes(app: FastifyInstance): Promise<void> {
     const input = setMapImageInputSchema.parse(request.body);
     const map = await setMapImage(request.params.nodeId, viewer, input.assetId);
     return { map };
+  });
+
+  app.patch<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/map", async (request) => {
+    const { viewer } = viewerForNode(request, request.params.nodeId);
+    const input = updateMapInputSchema.parse(request.body);
+    return { map: updateMap(request.params.nodeId, viewer, input) };
   });
 
   app.get<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/map/markers", async (request) => {

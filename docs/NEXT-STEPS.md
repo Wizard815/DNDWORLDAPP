@@ -7,6 +7,14 @@ is not kept here — `git log` and HANDOFF have it.
 
 ## Just done (2026-10-22)
 
+### Distance measurement
+
+"📏 Measure" on every map: point-to-point legs or a freehand route, with a running
+total. Someone who can edit the map calibrates it once ("Set scale…" — measure a known
+distance, type its real length), after which everyone sees miles/km/whatever unit was
+given; `set_map_scale` does it over MCP. HANDOFF §7.8d. **That finishes the map-editor
+polish list.**
+
 ### Visibility by zoom
 
 Each marker can have a zoom range ("only from 50% in", "only up to 200%"), set with a
@@ -62,12 +70,11 @@ Details in HANDOFF §7.8a.
 
 ## Next, in order
 
-1. **Map-editor polish** (confirmed with the owner 2026-09-23; the browse panel and the
-   collapsible edit toolbar are already done):
+1. ~~**Map-editor polish**~~ — all done as of 2026-10-22 (the list, for the record):
    1. ~~Searchable icon library~~ — done, see above.
    2. ~~Reusable marker templates~~ — done as marker presets, see above.
    3. ~~Visibility-by-zoom~~ — done, see above (markers pop in/out; a fade is not done).
-   4. Distance measurement — calibrate a scale, then point-to-point or freehand.
+   4. ~~Distance measurement~~ — done, see above.
 2. **P4.4 fog of war** — two techniques: upgrade `map_markers.revealed` to a three-state
    room reveal, plus a freehand pixel mask (`maps.fog_enabled`, `fog_mask_updated_at`,
    both already in the schema). Ship flat feathered fog first, defer animated cloud

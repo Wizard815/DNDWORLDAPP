@@ -20,6 +20,7 @@ import type {
   UnresolvedLink,
   UpdateFieldInput,
   UpdateMapGroupInput,
+  UpdateMapInput,
   UpdateMarkerInput,
   UpdateNodeInput,
   UpdatePostInput,
@@ -199,6 +200,10 @@ export class WorldClient {
 
   map(nodeId: string) {
     return this.request<{ map: MapDto }>("GET", `/nodes/${nodeId}/map`);
+  }
+
+  updateMap(nodeId: string, input: UpdateMapInput) {
+    return this.request<{ map: MapDto }>("PATCH", `/nodes/${nodeId}/map`, input);
   }
 
   mapMarkers(nodeId: string) {

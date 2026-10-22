@@ -3,12 +3,14 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, CircleMarker, ImageOverlay, MapContainer, Marker, Polygon, Polyline, TileLayer, useMap, useMapEvents } from "react-leaflet";
-import type { FieldVisibility, MapGroupDto, MapMarkerDto, MarkerPoint, MarkerPresetDto, NodeDetail, NodeSummary } from "@dndworldapp/schema";
+import type { FieldVisibility, MapDto, MapGroupDto, MapMarkerDto, MarkerPoint, MarkerPresetDto, NodeDetail, NodeSummary } from "@dndworldapp/schema";
 import { formatMarkerPoints, mapTileUrlTemplate, parseMarkerPoints } from "@dndworldapp/schema";
 import { ApiError, api } from "../api.ts";
+import { latLngToPixel, pixelToLatLng } from "../lib/mapCoords.ts";
 import { navigate } from "../lib/nav.ts";
 import { Glyph, glyphHtml } from "./Glyph.tsx";
 import { IconPicker } from "./IconPicker.tsx";
+import { MeasureLayer, MeasurePanel, type MeasureMode } from "./MapMeasure.tsx";
 
 /**
  * `L.CRS.Simple`'s default transformation is `(1, 0, -1, 0)` — it negates y, because it
@@ -36,12 +38,6 @@ const PIXEL_CRS = L.extend({}, L.CRS.Simple, { transformation: new L.Transformat
  */
 function scaleFor(map: { tilingStatus: string; maxZoom: number }): number {
   return map.tilingStatus === "ready" ? Math.pow(2, map.maxZoom) : 1;
-}
-function pixelToLatLng(x: number, y: number, scale: number): [number, number] {
-  return [y / scale, x / scale];
-}
-function latLngToPixel(lat: number, lng: number, scale: number): { x: number; y: number } {
-  return { x: lng * scale, y: lat * scale };
 }
 
 /**
@@ -619,6 +615,9 @@ export function MapView({
    */
   const [activePreset, setActivePreset] = useState<MarkerPresetDto | null>(null);
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
+  /** The measuring tool's route, in map pixel space. null = tool closed. Local only; see MapMeasure.tsx. */
+  const [measurePoints, setMeasurePoints] = useState<MarkerPoint[] | null>(null);
+  const [measureMode, setMeasureMode] = useState<MeasureMode>("points");
   // "Groups" (visibility filter) and "Markers" (browse/jump-to) share one
   // bottom-left slot — they're both read-oriented side panels, not edit
   // tools, so showing both at once would just be two lists competing for
@@ -688,6 +687,11 @@ export function MapView({
     },
   });
 
+  const saveScale = useMutation({
+    mutationFn: (scale: MapDto["scale"]) => api.updateMap(node.id, { scale }),
+    onSuccess: invalidateMap,
+  });
+
   const invalidatePresets = () => queryClient.invalidateQueries({ queryKey: ["marker-presets", node.worldId] });
   const savePreset = useMutation({
     mutationFn: (input: Parameters<typeof api.createMarkerPreset>[1]) => api.createMarkerPreset(node.worldId, input),
@@ -700,6 +704,7 @@ export function MapView({
 
   function placeFromPreset(preset: MarkerPresetDto): void {
     setPresetMenuOpen(false);
+    setMeasurePoints(null);
     if ((DRAW_SHAPES as readonly string[]).includes(preset.shape)) {
       startDraft(preset.shape as DrawShape);
     } else {
@@ -793,6 +798,7 @@ export function MapView({
   }, [markers, groupsById, hiddenGroups.hiddenIds]);
 
   const startDraft = (shape: DrawShape, replaceId: string | null = null) => {
+    setMeasurePoints(null);
     setDropShape(null);
     setDraftError(null);
     setDraft({ shape, points: [], anchor: null, replaceId });
@@ -987,6 +993,25 @@ export function MapView({
         >
           📋 Markers
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (measurePoints !== null) {
+              setMeasurePoints(null);
+              return;
+            }
+            setDropShape(null);
+            setActivePreset(null);
+            setDraft(null);
+            setMeasurePoints([]);
+          }}
+          title="Measure distances on this map"
+          className={`rounded px-2 py-1 text-xs ${
+            measurePoints !== null ? "bg-accent text-on-accent" : "text-fg-soft hover:bg-press"
+          }`}
+        >
+          📏 Measure
+        </button>
         {node.canEdit && (
           <>
             <div className="mx-0.5 w-px self-stretch bg-line" />
@@ -1039,6 +1064,7 @@ export function MapView({
                   type="button"
                   onClick={() => {
                     setActivePreset(null);
+                    setMeasurePoints(null);
                     setDropShape(dropShape === shape && activePreset === null ? null : shape);
                   }}
                   className={`rounded px-2 py-1 text-xs ${
@@ -1226,6 +1252,15 @@ export function MapView({
             Tiling this map for smoother zoom…
           </div>
         )}
+        {measurePoints !== null && (
+          <MeasureLayer
+            points={measurePoints}
+            mode={measureMode}
+            mapScale={map.scale}
+            pixelScale={scale}
+            onChange={setMeasurePoints}
+          />
+        )}
         {dropShape !== null && (
           <DropHandler
             scale={scale}
@@ -1310,6 +1345,19 @@ export function MapView({
           ),
         )}
       </MapContainer>
+
+      {measurePoints !== null && (
+        <MeasurePanel
+          points={measurePoints}
+          mode={measureMode}
+          mapScale={map.scale}
+          canCalibrate={node.canEdit}
+          onModeChange={setMeasureMode}
+          onChange={setMeasurePoints}
+          onSaveScale={(next) => saveScale.mutate(next)}
+          onClose={() => setMeasurePoints(null)}
+        />
+      )}
 
       {selected !== null && (
         <MarkerInspector
