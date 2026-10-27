@@ -1602,8 +1602,8 @@ both over the subtree; a page restored while its parent is still removed is re-p
 to the top level rather than stranded invisible. `DELETE /nodes/:id/forever` is the only
 hard delete (owner/DM, trash only) — FK cascades (`foreign_keys` is ON) take children,
 links, tags, markers, posts, fields, ACL and share links. `purgeTrash()` runs at boot
-and daily (`TRASH_RETENTION_MS` = 30 days). Fog masks/tiles on disk are not cleaned up
-by a hard delete yet. `isNodeVisible()` now also requires `is_archived = 0`, so removed
+and daily (`TRASH_RETENTION_MS` = 30 days). A hard delete of a map page also removes
+its tiles, temp tile dirs, fog mask and cached fog renders (`services/mapFiles.ts`). `isNodeVisible()` now also requires `is_archived = 0`, so removed
 pages 404 by id; `PATCH … { isArchived: false }` still restores for old clients.
 
 ### 7.13 Inherited visibility
@@ -1697,12 +1697,14 @@ on every autosave — it flipped `editing` back to false about a second after th
 paused typing, and could clobber keystrokes made while the save was in flight. This was a
 real bug; the comment in the file exists to stop it coming back.
 
-### 8.4b Known gap: archiving and inbound links
+### 8.4b Archiving and inbound links — resolved 2026-10-27
 
-Archiving a page does not unresolve links that point at it, so those links still render
-as normal links rather than reappearing under "Wanted pages". Harmless today (there is no
-unarchive UI, and the target 404s cleanly), but worth handling when archive/restore gets
-built out properly.
+Archiving or trashing a page now detaches every wikilink pointing into its subtree
+(`links.dst_node_id` → NULL), so those mentions show under "Wanted pages" instead of
+rendering as working links to a 404; restoring re-resolves them by title/slug exactly
+as a rename does (`resettleLinksFor` over the subtree). A hard delete detaches them
+first too, rather than letting the FK cascade erase the link rows — the mention stays
+on the source page as a wanted link. Covered in `smoke.mjs` "removal and links".
 
 ### 8.5 Browser-pane automation quirk
 

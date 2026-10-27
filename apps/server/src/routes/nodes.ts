@@ -15,6 +15,7 @@ import { db } from "../db/index.ts";
 import { viewerForNode, viewerForWorld } from "../http/context.ts";
 import { badRequest, forbidden, notFound } from "../lib/errors.ts";
 import { grantAcl, listAcl, revokeAcl } from "../services/acl.ts";
+import { assertKnownIcon } from "../services/icons.ts";
 import { createField, deleteField, listFields, moveField, updateField } from "../services/fields.ts";
 import {
   archiveNode,
@@ -61,6 +62,7 @@ export async function nodeRoutes(app: FastifyInstance): Promise<void> {
   app.patch<{ Params: NodeParams }>("/api/v1/nodes/:nodeId", async (request) => {
     const { viewer } = viewerForNode(request, request.params.nodeId);
     const input = updateNodeInputSchema.parse(request.body);
+    assertKnownIcon(input.icon);
     // A removed page isn't visible, so it can't be PATCHed — `isArchived:
     // false` is the one exception, kept so older API clients can still
     // restore the way they used to; it's the same thing as POST …/restore.

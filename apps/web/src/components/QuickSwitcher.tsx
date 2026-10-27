@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { NodeSummary, SearchHit } from "@dndworldapp/schema";
 import { api } from "../api.ts";
+import { Glyph } from "./Glyph.tsx";
 import { sanitizeSnippet } from "../lib/markdown.ts";
 import { navigate } from "../lib/nav.ts";
 
@@ -103,7 +104,7 @@ export function QuickSwitcher({
                   i === index ? "bg-hover-strong text-fg-strong" : "text-fg-soft"
                 }`}
               >
-                <span>{node.icon ?? "📄"}</span>
+                <Glyph icon={node.icon ?? "📄"} />
                 <span className="truncate">{node.title}</span>
                 {node.effectiveVisibility === "dm" && (
                   <span className="ml-auto text-[10px] text-secret">DM</span>
@@ -130,7 +131,7 @@ export function QuickSwitcher({
                   }`}
                 >
                   <span className="block truncate text-sm text-fg-soft">
-                    {hit.icon ?? "📄"} {hit.title}
+                    <Glyph icon={hit.icon ?? "📄"} /> {hit.title}
                   </span>
                   <span
                     className="block truncate text-xs text-fg-muted [&_mark]:bg-mark [&_mark]:text-mark-fg"

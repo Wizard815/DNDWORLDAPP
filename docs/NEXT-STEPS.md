@@ -5,7 +5,7 @@ ordering lives in [ROADMAP-2026-09-23.md](ROADMAP-2026-09-23.md); what is alread
 lives in [HANDOFF.md](HANDOFF.md) §3 and [PLAN.md](PLAN.md)'s status table. Finished work
 is not kept here — `git log` and HANDOFF have it.
 
-## Open, in order (2026-10-22)
+## Open, in order (2026-10-27)
 
 1. **Tags → relations → graph.** Tags stay pages for now (filterable via `#tag` in the
    sidebar filter and Ctrl+K). The owner wants tags to be part of the relations/graph
@@ -14,6 +14,17 @@ is not kept here — `git log` and HANDOFF have it.
    in the marker's color — if the owner still wants the bundled set after trying image
    icons. Not started; ask first.
 3. P3 query views, P5 calendars/timelines, P6 play mode, P7 hardening — unchanged.
+
+## Just done (2026-10-27) — the gap list from the audit
+
+- Links into an archived/trashed/deleted page become "wanted" links again; restore
+  re-resolves them (HANDOFF §8.4b, now resolved).
+- Hard-deleting a map removes its tiles and fog files from disk.
+- MCP: `trash_node`, `restore_node`, `list_removed`, `set_fog`, `create_marker_preset`,
+  `update_marker_preset`, `delete_marker_preset` (integration test covers them).
+- Page icons can be library icons or uploaded images, same picker as markers; every
+  place a page icon shows (tree, breadcrumbs, pinned strip, Ctrl+K, mentions, share
+  view, backlinks) renders through `Glyph`.
 
 ## Just done (2026-10-22, third pass)
 

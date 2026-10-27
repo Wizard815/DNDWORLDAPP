@@ -87,6 +87,7 @@ export async function worldRoutes(app: FastifyInstance): Promise<void> {
     const viewer = viewerForWorld(request, request.params.worldId);
     if (!canCreate(viewer.role)) throw forbidden("Guests cannot create pages.");
     const input = createNodeInputSchema.parse(request.body ?? {});
+    assertKnownIcon(input.icon);
     const node = createNode(request.params.worldId, viewer, input);
     reply.code(201);
     return { node: { id: node.id, title: node.title, parentId: node.parent_id } };

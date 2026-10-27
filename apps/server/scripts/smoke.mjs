@@ -1968,6 +1968,25 @@ await guestAgain("POST", "/auth/guest");
 const guestAfterPromote = (await guestAgain("GET", `/worlds/${worldId}/tree`)).body.nodes.map((n) => n.id);
 check("promoting the guest account in the member panel does not unlock DM pages", !guestAfterPromote.includes(guestDmOnly.id));
 
+console.log("\n== removal and links ==");
+const linkTarget = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Linked Shrine", parentId: rootId })).body.node;
+const linkSource = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Pilgrim notes", parentId: rootId, bodyMd: "Visit the [[Linked Shrine]]." })).body.node;
+const wantedBefore = (await dm("GET", `/worlds/${worldId}/unresolved-links`)).body.links.map((l) => l.targetText);
+check("a link to an existing page is resolved (not wanted)", !wantedBefore.includes("Linked Shrine"), wantedBefore);
+await dm("DELETE", `/nodes/${linkTarget.id}`);
+const wantedAfter = (await dm("GET", `/worlds/${worldId}/unresolved-links`)).body.links.map((l) => l.targetText);
+check("archiving the target turns the link back into a wanted page", wantedAfter.includes("Linked Shrine"), wantedAfter);
+await dm("POST", `/nodes/${linkTarget.id}/restore`);
+const wantedRestored = (await dm("GET", `/worlds/${worldId}/unresolved-links`)).body.links.map((l) => l.targetText);
+check("restoring the target resolves the link again", !wantedRestored.includes("Linked Shrine"), wantedRestored);
+check("…and it is listed among the target's backlinks", (await dm("GET", `/nodes/${linkTarget.id}`)).body.node.backlinks.some((b) => b.nodeId === linkSource.id));
+await dm("POST", `/nodes/${linkTarget.id}/trash`);
+await dm("DELETE", `/nodes/${linkTarget.id}/forever`);
+const wantedGone = (await dm("GET", `/worlds/${worldId}/unresolved-links`)).body.links.map((l) => l.targetText);
+check("deleting the target for good keeps the mention as a wanted page, not a dropped link", wantedGone.includes("Linked Shrine"), wantedGone);
+check("a page can use an uploaded image as its icon", (await dm("PATCH", `/nodes/${linkSource.id}`, { icon: `img:${mapAsset.body.asset.url}` })).status === 200);
+check("a page icon cannot be an external URL", (await dm("PATCH", `/nodes/${linkSource.id}`, { icon: "img:https://example.com/x.png" })).status === 400);
+
 console.log("\n== image marker icons ==");
 const iconMapNode = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Icon map", parentId: rootId, kind: "map" })).body.node;
 await dm("PUT", `/nodes/${iconMapNode.id}/map`, { assetId: mapAsset.body.asset.id });

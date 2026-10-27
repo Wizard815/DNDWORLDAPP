@@ -12,7 +12,7 @@ packaging step.
 > blocks with an audience, a real map edit mode, live WebSocket updates, design tokens +
 > three themes + a phone layout. No importer is planned.**
 >
-> **Recently done (2026-10-22)** — details in `docs/NEXT-STEPS.md` "Just done" and HANDOFF §7.8–7.14:
+> **Recently done (2026-10-22 → 10-27)** — details in `docs/NEXT-STEPS.md` "Just done" and HANDOFF §7.8–7.14:
 > - Maps: fog of war (paint/dim/move, undo/redo, square brush), distance measurement with
 >   per-map scale, marker presets (incl. visibility + zoom range), visibility by zoom,
 >   icon library + uploaded-image icons, clustering, an Edit mode with pin summary cards.
@@ -21,17 +21,17 @@ packaging step.
 > - Removal: Archive (kept) vs Delete (trash, purged after 30 days), DM panel to restore.
 > - Editor: one Secret block with DM / Players / Everyone audience; one "Link a page"
 >   (`@`, can create); `#tag` filtering in the sidebar and Ctrl+K.
+> - Audit gap list (10-27): archived pages' links go back to "wanted", map files cleaned
+>   on hard delete, MCP tools for trash/restore/fog/presets, page icons can be images.
 >
 > **Doing next, in order:**
 > 1. **Relations + tags redo + graph view** (P3). Tags stop being standalone pages and
 >    become part of one model with typed relations ("Mira → reports to → Queen"); a graph
 >    view draws links, relations and tag colors (ROADMAP §3). Design with the owner first.
-> 2. **Library icon rendering** (bigger, no disc, in the marker's color) — only if still
->    wanted after trying image icons.
-> 3. **P3 query views** (table/board/gallery), then **P5** calendars/timelines, **P6** play
+> 2. **P3 query views** (table/board/gallery), then **P5** calendars/timelines, **P6** play
 >    mode, **P7** hardening (realtime groundwork is already in; Obsidian import/export,
 >    webhooks, backup/restore UI remain).
-> 4. **DM desktop companion app** and the player app mode (ROADMAP §6–7) after the above.
+> 3. **DM desktop companion app** and the player app mode (ROADMAP §6–7) after the above.
 >
 > | | |
 > |---|---|

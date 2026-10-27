@@ -8,6 +8,7 @@ import { useEscapeKey } from "../lib/useEscapeKey.ts";
 import { nodeGlyph } from "../lib/kinds.ts";
 import { useResizablePanel } from "../lib/useResizablePanel.ts";
 import { Access } from "./Access.tsx";
+import { Glyph } from "./Glyph.tsx";
 import { IconPicker } from "./IconPicker.tsx";
 import { Posts } from "./Posts.tsx";
 
@@ -98,7 +99,7 @@ export function NodeView({
                 onClick={() => navigate(`/n/${crumb.id}`)}
                 className="truncate rounded px-1 py-0.5 hover:bg-hover hover:text-fg"
               >
-                {crumb.icon ?? "📄"} {crumb.title}
+                <Glyph icon={crumb.icon ?? "📄"} /> {crumb.title}
               </button>
               <span className="text-line-strong">/</span>
             </span>
@@ -135,6 +136,9 @@ export function NodeView({
               value={node.icon}
               disabled={!node.canEdit}
               onChange={(icon) => void patch({ icon })}
+              allowLibrary
+              worldId={node.worldId}
+              fallback={nodeGlyph({ icon: null, kind: node.kind })}
             />
             <input
               value={title}
@@ -366,7 +370,7 @@ export function NodeView({
                       onClick={() => navigate(`/n/${child.id}`)}
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-fg-soft hover:bg-hover"
                     >
-                      <span>{nodeGlyph(child)}</span>
+                      <Glyph icon={nodeGlyph(child)} />
                       <span className="truncate">{child.title}</span>
                       {child.childCount > 0 && (
                         <span className="ml-auto text-[10px] text-fg-faint">
@@ -574,7 +578,7 @@ export function Backlinks({
                 onClick={() => navigate(`/n/${link.nodeId}`)}
                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-fg-soft hover:bg-hover"
               >
-                <span>{link.icon ?? "📄"}</span>
+                <Glyph icon={link.icon ?? "📄"} />
                 <span className="truncate">{link.title}</span>
               </button>
             </li>
@@ -786,7 +790,7 @@ function FieldRow({
                 onClick={() => navigate(`/n/${field.refNode!.id}`)}
                 className="truncate rounded bg-hover px-1.5 py-0.5 text-fg-soft hover:bg-hover-strong"
               >
-                {field.refNode.icon ?? "📄"} {field.refNode.title}
+                <Glyph icon={field.refNode.icon ?? "📄"} /> {field.refNode.title}
               </button>
             )}
             {canEdit && (

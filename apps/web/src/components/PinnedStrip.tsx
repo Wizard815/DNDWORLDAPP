@@ -1,5 +1,6 @@
 import type { NodeSummary } from "@dndworldapp/schema";
 import { nodeGlyph } from "../lib/kinds.ts";
+import { Glyph } from "./Glyph.tsx";
 import { navigate } from "../lib/nav.ts";
 
 /**
@@ -34,7 +35,7 @@ export function PinnedStrip({
           }`}
         >
           <button type="button" onClick={() => navigate(`/n/${node.id}`)} className="flex items-center gap-1">
-            <span>{nodeGlyph(node)}</span>
+            <Glyph icon={nodeGlyph(node)} />
             <span className="max-w-[140px] truncate">{node.title}</span>
           </button>
           <button

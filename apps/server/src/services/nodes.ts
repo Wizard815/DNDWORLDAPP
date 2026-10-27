@@ -23,6 +23,7 @@ import { slugify, uniqueSlug } from "../lib/slug.ts";
 import { parseTags } from "../lib/tags.ts";
 import { linkKey, parseWikilinks } from "../lib/wikilinks.ts";
 import { canEditNode } from "./acl.ts";
+import { removeMapFiles } from "./mapFiles.ts";
 import { assertTemplateInWorld, assignTemplateFields } from "./templates.ts";
 
 /**
@@ -612,6 +613,15 @@ const SUBTREE_CTE = `WITH RECURSIVE subtree(id) AS (
   SELECT ? UNION ALL SELECT n.id FROM nodes n JOIN subtree s ON n.parent_id = s.id
 )`;
 
+/**
+ * A removed page is not a link target any more: every wikilink pointing into
+ * the subtree goes back to "wanted" (dst NULL), so it shows under Wanted
+ * pages instead of rendering as a working link to a 404. Restore re-resolves
+ * them by title/slug the same way a rename does (resettleLinksFor).
+ */
+const unlinkSubtree = db.prepare(`${SUBTREE_CTE} UPDATE links SET dst_node_id = NULL WHERE dst_node_id IN (SELECT id FROM subtree)`);
+const selectSubtreeRows = db.prepare(`${SUBTREE_CTE} SELECT * FROM nodes WHERE id IN (SELECT id FROM subtree)`);
+
 /** A page that was archived or trashed, as the DM's "Archived & Trash" panel lists it. */
 export interface RemovedNode {
   id: string;
@@ -638,10 +648,13 @@ function requireRemovable(nodeId: string, viewer: Viewer, action: string): NodeR
 /** Archive rather than delete; children go with it. */
 export function archiveNode(nodeId: string, viewer: Viewer): void {
   requireRemovable(nodeId, viewer, "archive");
-  db.prepare(`${SUBTREE_CTE} UPDATE nodes SET is_archived = 1, updated_at = ? WHERE id IN (SELECT id FROM subtree)`).run(
-    nodeId,
-    Date.now(),
-  );
+  transaction(() => {
+    db.prepare(`${SUBTREE_CTE} UPDATE nodes SET is_archived = 1, updated_at = ? WHERE id IN (SELECT id FROM subtree)`).run(
+      nodeId,
+      Date.now(),
+    );
+    unlinkSubtree.run(nodeId);
+  });
 }
 
 /** Move to the trash, from live or from the archive. Purged after TRASH_RETENTION_MS. */
@@ -651,9 +664,12 @@ export function trashNode(nodeId: string, viewer: Viewer): void {
   if (node.is_archived === 0) requireRemovable(nodeId, viewer, "delete");
   else if (!isGameMaster(viewer.role)) throw forbidden("Only the owner or a DM can delete archived pages.");
   const now = Date.now();
-  db.prepare(
-    `${SUBTREE_CTE} UPDATE nodes SET is_archived = 1, deleted_at = ?, updated_at = ? WHERE id IN (SELECT id FROM subtree)`,
-  ).run(nodeId, now, now);
+  transaction(() => {
+    db.prepare(
+      `${SUBTREE_CTE} UPDATE nodes SET is_archived = 1, deleted_at = ?, updated_at = ? WHERE id IN (SELECT id FROM subtree)`,
+    ).run(nodeId, now, now);
+    unlinkSubtree.run(nodeId);
+  });
 }
 
 /**
@@ -675,6 +691,7 @@ export function restoreNode(nodeId: string, viewer: Viewer): void {
       db.prepare("UPDATE nodes SET parent_id = NULL, sort_key = ? WHERE id = ?").run(keyAfterLastRoot(node.world_id), nodeId);
     }
     recomputeEffective(nodeId);
+    for (const row of selectSubtreeRows.all(nodeId) as NodeRow[]) resettleLinksFor(row);
   });
 }
 
@@ -693,9 +710,21 @@ export function deleteNodeForever(nodeId: string, viewer: Viewer): void {
   hardDelete(nodeId);
 }
 
-/** Children, links, tags, markers, posts, fields, ACL and share links all go by FK cascade (foreign_keys is ON). */
+/**
+ * Children, tags, markers, posts, fields, ACL and share links all go by FK
+ * cascade (foreign_keys is ON). Inbound links are detached first rather than
+ * cascaded away, so the pages that mention this one keep their link as a
+ * "wanted" one. Map files on disk are not in the database, so they're
+ * removed by hand — after the rows, so a crash in between leaves orphan
+ * files rather than a map row with no tiles.
+ */
 function hardDelete(nodeId: string): void {
-  db.prepare("DELETE FROM nodes WHERE id = ?").run(nodeId);
+  const mapIds = (selectSubtreeRows.all(nodeId) as NodeRow[]).filter((r) => r.kind === "map").map((r) => r.id);
+  transaction(() => {
+    unlinkSubtree.run(nodeId);
+    db.prepare("DELETE FROM nodes WHERE id = ?").run(nodeId);
+  });
+  for (const id of mapIds) removeMapFiles(id);
 }
 
 /** Empties everything that has sat in the trash longer than the retention window. Returns how many rows went. */

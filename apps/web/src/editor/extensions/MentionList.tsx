@@ -1,3 +1,4 @@
+import { Glyph } from "../../components/Glyph.tsx";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 export interface MentionItem {
@@ -70,7 +71,7 @@ export const MentionList = forwardRef<MentionListHandle, Props>(function Mention
                 i === index ? "bg-highlight" : ""
               }`}
             >
-              <span className="text-base">{item.isCreate ? "➕" : (item.icon ?? "📄")}</span>
+              <span className="text-base">{item.isCreate ? "➕" : <Glyph icon={item.icon ?? "📄"} />}</span>
               <span className="min-w-0 flex-1 truncate text-sm text-fg-strong">
                 {item.isCreate ? `Create "${item.target}"` : item.target}
               </span>

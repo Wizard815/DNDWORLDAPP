@@ -398,6 +398,177 @@ export function registerTools(server: McpServer, client: WorldClient): void {
   );
 
   server.registerTool(
+    "trash_node",
+    {
+      title: "Move a page to the trash",
+      description:
+        "Move a page and everything inside it to the trash. Unlike archive_node (kept until restored), the trash is emptied for good 30 days later. Either can be undone with restore_node until then.",
+      inputSchema: { node_id: z.string() },
+    },
+    async ({ node_id }) => {
+      try {
+        await client.trashNode(node_id);
+        return text(`Moved [${node_id}] and everything inside it to the trash. It is deleted for good in 30 days unless restored.`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "restore_node",
+    {
+      title: "Restore an archived or trashed page",
+      description:
+        "Bring an archived or trashed page (and everything inside it) back. If the page it was inside is still removed, it comes back as a top-level page.",
+      inputSchema: { node_id: z.string() },
+    },
+    async ({ node_id }) => {
+      try {
+        await client.restoreNode(node_id);
+        return text(`Restored [${node_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_removed",
+    {
+      title: "List archived and trashed pages",
+      description: "Owner/DM only. The top of each removed subtree, with when it was removed and, for the trash, when it purges.",
+      inputSchema: { world_id: worldIdArg },
+    },
+    async ({ world_id }) => {
+      try {
+        const worldId = await client.resolveWorldId(world_id);
+        const { archived, trashed } = await client.removedNodes(worldId);
+        const row = (r: { id: string; title: string; childCount: number; parentTitle: string | null; removedAt: number; deletedAt: number | null }) =>
+          `- ${r.title} [${r.id}]${r.childCount > 0 ? ` (+${r.childCount} inside)` : ""}${r.parentTitle !== null ? ` — was in ${r.parentTitle}` : ""} — ${
+            r.deletedAt !== null ? `trashed ${new Date(r.deletedAt).toISOString().slice(0, 10)}` : `archived ${new Date(r.removedAt).toISOString().slice(0, 10)}`
+          }`;
+        return text(
+          [`## Archived (${archived.length})`, ...archived.map(row), "", `## Trash (${trashed.length}, purged 30 days after trashing)`, ...trashed.map(row)].join("\n"),
+        );
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "set_fog",
+    {
+      title: "Turn a map's fog of war on or off",
+      description:
+        "Fog hides the whole map from players until the DM paints reveals (in the web app) or marks a region as revealing it. Painting itself is not available over MCP.",
+      inputSchema: { node_id: z.string().describe("The map page's id."), enabled: z.boolean() },
+    },
+    async ({ node_id, enabled }) => {
+      try {
+        const { map } = await client.updateMap(node_id, { fogEnabled: enabled });
+        return text(`Fog of war is now ${map.fogEnabled ? "on" : "off"} for [${node_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "create_marker_preset",
+    {
+      title: "Create a marker preset",
+      description: "A reusable marker look for this world (name + shape + icon + color + radius + visibility + zoom range). Placing from it copies the values; editing the preset later never changes markers already placed.",
+      inputSchema: {
+        world_id: worldIdArg,
+        name: z.string().min(1).max(120),
+        shape: markerShapeSchema.optional().describe("Default pin."),
+        icon: z.string().max(200).nullable().optional().describe("An emoji, a search_icons ref, or 'img:' + an uploaded asset's /media URL."),
+        color: z.string().max(60).nullable().optional(),
+        radius: z.number().positive().nullable().optional().describe("Circle presets only, in source-image pixels."),
+        visibility: fieldVisibilitySchema.optional().describe("public | members | dm. Default members."),
+        min_zoom: z.number().min(-8).max(8).nullable().optional(),
+        max_zoom: z.number().min(-8).max(8).nullable().optional(),
+      },
+    },
+    async ({ world_id, name, shape, icon, color, radius, visibility, min_zoom, max_zoom }) => {
+      try {
+        const worldId = await client.resolveWorldId(world_id);
+        const { preset } = await client.createMarkerPreset(worldId, {
+          name,
+          shape: shape ?? "pin",
+          icon,
+          color,
+          radius,
+          visibility: visibility ?? "members",
+          minZoom: min_zoom,
+          maxZoom: max_zoom,
+        });
+        return text(`Created preset "${preset.name}" [${preset.id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_marker_preset",
+    {
+      title: "Update a marker preset",
+      description: "Change a preset's name or look. Markers already placed from it are not touched.",
+      inputSchema: {
+        world_id: worldIdArg,
+        preset_id: z.string(),
+        name: z.string().min(1).max(120).optional(),
+        shape: markerShapeSchema.optional(),
+        icon: z.string().max(200).nullable().optional(),
+        color: z.string().max(60).nullable().optional(),
+        radius: z.number().positive().nullable().optional(),
+        visibility: fieldVisibilitySchema.optional(),
+        min_zoom: z.number().min(-8).max(8).nullable().optional(),
+        max_zoom: z.number().min(-8).max(8).nullable().optional(),
+      },
+    },
+    async ({ world_id, preset_id, name, shape, icon, color, radius, visibility, min_zoom, max_zoom }) => {
+      try {
+        const worldId = await client.resolveWorldId(world_id);
+        const { preset } = await client.updateMarkerPreset(worldId, preset_id, {
+          name,
+          shape,
+          icon,
+          color,
+          radius,
+          visibility,
+          minZoom: min_zoom,
+          maxZoom: max_zoom,
+        });
+        return text(`Updated preset "${preset.name}" [${preset.id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_marker_preset",
+    {
+      title: "Delete a marker preset",
+      description: "Removes the preset. Markers already placed from it stay exactly as they are.",
+      inputSchema: { world_id: worldIdArg, preset_id: z.string() },
+    },
+    async ({ world_id, preset_id }) => {
+      try {
+        const worldId = await client.resolveWorldId(world_id);
+        await client.deleteMarkerPreset(worldId, preset_id);
+        return text(`Deleted preset [${preset_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "create_post",
     {
       title: "Add a section to a page",

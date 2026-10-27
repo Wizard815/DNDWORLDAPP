@@ -6,6 +6,7 @@ import { navigate } from "../lib/nav.ts";
 import { THEMES, type ThemeId } from "../lib/theme.ts";
 import { useResizablePanel } from "../lib/useResizablePanel.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
+import { Glyph } from "./Glyph.tsx";
 
 type DropMode = "before" | "after" | "into";
 
@@ -324,7 +325,7 @@ export function Sidebar({
           >
             {isOpen ? "▾" : "▸"}
           </button>
-          <span className="shrink-0 text-[13px] leading-none">{nodeGlyph(node)}</span>
+          <Glyph icon={nodeGlyph(node)} className="shrink-0 text-[13px] leading-none" />
           {isRenaming ? (
             <input
               autoFocus

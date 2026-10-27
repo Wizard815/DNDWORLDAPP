@@ -29,10 +29,9 @@ export function IconPicker({
   disabled: boolean;
   onChange: (icon: string | null) => void;
   /**
-   * Offer the bundled icon library (game-icons.net + Font Awesome) as well as
-   * emoji. Only map markers render library icons today — a page icon is shown
-   * as plain text in a dozen places (tree, breadcrumbs, mentions, MCP output)
-   * that would all need `Glyph` first.
+   * Offer the bundled icon library (game-icons.net + Font Awesome) and, with a
+   * `worldId`, uploaded images, as well as emoji. Pages and markers both
+   * render all three through `Glyph`; MCP output shows the raw ref.
    */
   allowLibrary?: boolean;
   /** Shown on the button when nothing is picked. */

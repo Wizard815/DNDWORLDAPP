@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { NodeSummary } from "@dndworldapp/schema";
 import { api } from "../api.ts";
+import { Glyph } from "./Glyph.tsx";
 import { renderMarkdown } from "../lib/markdown.ts";
 
 /**
@@ -102,7 +103,7 @@ function ShareTreeItem({
           node.id === activeId ? "bg-press text-fg-strong" : "text-fg-soft hover:bg-hover"
         }`}
       >
-        <span>{node.icon ?? "📄"}</span>
+        <Glyph icon={node.icon ?? "📄"} />
         <span className="truncate">{node.title}</span>
       </button>
       {children.length > 0 && (
@@ -166,7 +167,7 @@ function ShareNode({
             {node.breadcrumb.map((crumb) => (
               <span key={crumb.id} className="flex items-center gap-1">
                 <button type="button" onClick={() => onNavigate(crumb.id)} className="hover:text-fg">
-                  {crumb.icon ?? "📄"} {crumb.title}
+                  <Glyph icon={crumb.icon ?? "📄"} /> {crumb.title}
                 </button>
                 <span className="text-line-strong">/</span>
               </span>
@@ -175,7 +176,7 @@ function ShareNode({
         )}
 
         <h1 className="mb-4 text-2xl font-semibold text-fg-strong">
-          {node.icon ?? "📄"} {node.title}
+          <Glyph icon={node.icon ?? "📄"} /> {node.title}
         </h1>
 
         <div className="prose-body text-[15px]" onClick={onBodyClick} dangerouslySetInnerHTML={{ __html: html }} />
@@ -191,7 +192,7 @@ function ShareNode({
                     onClick={() => onNavigate(child.id)}
                     className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-fg-soft hover:bg-hover"
                   >
-                    <span>{child.icon ?? "📄"}</span>
+                    <Glyph icon={child.icon ?? "📄"} />
                     <span className="truncate">{child.title}</span>
                   </button>
                 </li>

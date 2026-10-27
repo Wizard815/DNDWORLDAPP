@@ -163,8 +163,8 @@ export const createNodeInputSchema = z.object({
   parentId: z.string().nullable().optional(),
   kind: nodeKindSchema.optional(),
   templateId: z.string().nullable().optional(),
-  /** A single emoji. Rendered verbatim by the client. */
-  icon: z.string().max(60).nullable().optional(),
+  /** An emoji, a library ref (game-icons:castle), or `img:` + an uploaded asset's /media URL. */
+  icon: z.string().max(200).nullable().optional(),
   /** Default 'inherit' — the parent's level, or 'members' at the top. */
   visibility: nodeVisibilitySchema.optional(),
   bodyMd: z.string().max(2_000_000).optional(),
@@ -175,7 +175,7 @@ export const updateNodeInputSchema = z
   .object({
     title: z.string().trim().min(1).max(300),
     bodyMd: z.string().max(2_000_000),
-    icon: z.string().max(60).nullable(),
+    icon: z.string().max(200).nullable(),
     visibility: nodeVisibilitySchema,
     templateId: z.string().nullable(),
     isArchived: z.boolean(),

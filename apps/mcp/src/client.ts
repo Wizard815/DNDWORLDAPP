@@ -2,6 +2,7 @@ import type {
   CreateFieldInput,
   CreateMapGroupInput,
   CreateMarkerInput,
+  CreateMarkerPresetInput,
   CreateNodeInput,
   CreatePostInput,
   FieldDto,
@@ -15,6 +16,7 @@ import type {
   NodeDetail,
   NodeSummary,
   PostDto,
+  RemovedNode,
   SearchHit,
   TemplateDto,
   UnresolvedLink,
@@ -22,6 +24,7 @@ import type {
   UpdateMapGroupInput,
   UpdateMapInput,
   UpdateMarkerInput,
+  UpdateMarkerPresetInput,
   UpdateNodeInput,
   UpdatePostInput,
   WorldDto,
@@ -160,6 +163,30 @@ export class WorldClient {
 
   archiveNode(nodeId: string) {
     return this.request<{ ok: true }>("DELETE", `/nodes/${nodeId}`);
+  }
+
+  trashNode(nodeId: string) {
+    return this.request<{ ok: true }>("POST", `/nodes/${nodeId}/trash`);
+  }
+
+  restoreNode(nodeId: string) {
+    return this.request<{ ok: true }>("POST", `/nodes/${nodeId}/restore`);
+  }
+
+  removedNodes(worldId: string) {
+    return this.request<{ archived: RemovedNode[]; trashed: RemovedNode[] }>("GET", `/worlds/${worldId}/removed`);
+  }
+
+  createMarkerPreset(worldId: string, input: CreateMarkerPresetInput) {
+    return this.request<{ preset: MarkerPresetDto }>("POST", `/worlds/${worldId}/marker-presets`, input);
+  }
+
+  updateMarkerPreset(worldId: string, presetId: string, input: UpdateMarkerPresetInput) {
+    return this.request<{ preset: MarkerPresetDto }>("PATCH", `/worlds/${worldId}/marker-presets/${presetId}`, input);
+  }
+
+  deleteMarkerPreset(worldId: string, presetId: string) {
+    return this.request<{ ok: true }>("DELETE", `/worlds/${worldId}/marker-presets/${presetId}`);
   }
 
   posts(nodeId: string) {

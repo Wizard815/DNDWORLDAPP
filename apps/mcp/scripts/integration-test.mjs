@@ -468,6 +468,28 @@ const groupDeleted = await callTool("delete_map_group", { group_id: capitalGroup
 check("delete_map_group removes a group", !groupDeleted.isError, groupDeleted.text);
 await callTool("delete_map_group", { group_id: regionsGroupId });
 
+console.log("\n== trash, restore, presets ==");
+const trashMe = await callTool("create_node", { title: "MCP trash me", world_id: world.id, parent_id: null });
+const trashMeId = /\[([a-z0-9]+)\]/.exec(trashMe.text)?.[1];
+check("create_node for the trash test", typeof trashMeId === "string", trashMe.text);
+const trashed = await callTool("trash_node", { node_id: trashMeId });
+check("trash_node moves a page to the trash", !trashed.isError && trashed.text.includes("30 days"), trashed.text);
+const removedList = await callTool("list_removed", { world_id: world.id });
+check("list_removed shows it under Trash", !removedList.isError && removedList.text.includes("MCP trash me"), removedList.text);
+const restored = await callTool("restore_node", { node_id: trashMeId });
+check("restore_node brings it back", !restored.isError, restored.text);
+const afterRestore = await callTool("get_node", { node_id: trashMeId });
+check("…and it is readable again", !afterRestore.isError && afterRestore.text.includes("MCP trash me"), afterRestore.text);
+const presetMade = await callTool("create_marker_preset", { world_id: world.id, name: "MCP tavern", icon: "🍺", color: "#b9803f", visibility: "members" });
+const presetId = /\[([a-z0-9]+)\]/.exec(presetMade.text)?.[1];
+check("create_marker_preset creates one", !presetMade.isError && typeof presetId === "string", presetMade.text);
+const presetRenamed = await callTool("update_marker_preset", { world_id: world.id, preset_id: presetId, name: "MCP inn" });
+check("update_marker_preset renames it", !presetRenamed.isError && presetRenamed.text.includes("MCP inn"), presetRenamed.text);
+const presetGone = await callTool("delete_marker_preset", { world_id: world.id, preset_id: presetId });
+check("delete_marker_preset removes it", !presetGone.isError, presetGone.text);
+const presetsNow = await callTool("list_marker_presets", { world_id: world.id });
+check("…and it no longer lists", !presetsNow.text.includes("MCP inn"), presetsNow.text);
+
 console.log("\n== guard rails ==");
 const notYet = await callTool("add_event");
 check("unbuilt tools say so rather than failing oddly", notYet.text.includes("not implemented yet"), notYet.text);

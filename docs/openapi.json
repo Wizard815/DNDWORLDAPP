@@ -7596,7 +7596,7 @@
           },
           "icon": {
             "type": "string",
-            "maxLength": 60,
+            "maxLength": 200,
             "nullable": true
           },
           "visibility": {
@@ -7630,7 +7630,7 @@
           },
           "icon": {
             "type": "string",
-            "maxLength": 60,
+            "maxLength": 200,
             "nullable": true
           },
           "visibility": {
