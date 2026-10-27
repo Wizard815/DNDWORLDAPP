@@ -2037,5 +2037,132 @@ await dm("POST", `/nodes/${strandChild.id}/restore`);
 const strandRow = (await dm("GET", `/worlds/${worldId}/tree`)).body.nodes.find((n) => n.id === strandChild.id);
 check("a page restored out of a still-archived parent becomes a top-level page", strandRow !== undefined && strandRow.parentId === null, strandRow);
 
+console.log("\n== relations and connections ==");
+const r_relPage = async (title, extra = {}) =>
+  (await dm("POST", `/worlds/${worldId}/nodes`, { title, parentId: rootId, ...extra })).body.node;
+const r_mira = await r_relPage("Rel: Captain Mira Voss");
+const r_queen = await r_relPage("Rel: Queen Isolde Marr");
+const r_silverHand = await r_relPage("Rel: The Silver Hand");
+const r_cabal = await r_relPage("Rel: The Cabal", { visibility: "dm" });
+
+const r_reportsTo = await dm("POST", `/nodes/${r_mira.id}/relations`, { targetNodeId: r_queen.id, label: "reports to", inverseLabel: "commands" });
+check(
+  "the DM adds a relation with an inverse reading",
+  r_reportsTo.status === 201 && r_reportsTo.body.relation.direction === "out" && r_reportsTo.body.relation.reading === "reports to",
+  r_reportsTo.body,
+);
+const r_queenSide = (await player("GET", `/nodes/${r_queen.id}/relations`)).body.relations;
+const r_fromQueen = r_queenSide.find((r) => r.id === r_reportsTo.body.relation.id);
+check(
+  "the target's page reads the inverse label, pointing back",
+  r_fromQueen?.direction === "in" && r_fromQueen.reading === "commands" && r_fromQueen.other.id === r_mira.id,
+  r_queenSide,
+);
+const r_allies = await dm("POST", `/nodes/${r_mira.id}/relations`, { targetNodeId: r_silverHand.id, label: "r_allies", inverseLabel: "ignored", twoWay: true });
+check("two-way stores one symmetric label and drops any inverse", r_allies.status === 201 && r_allies.body.relation.twoWay && r_allies.body.relation.inverseLabel === null, r_allies.body);
+const r_handSide = (await player("GET", `/nodes/${r_silverHand.id}/relations`)).body.relations[0];
+check("a two-way relation reads the same from the other end", r_handSide?.reading === "r_allies" && r_handSide.other.id === r_mira.id, r_handSide);
+
+const r_secretRel = await dm("POST", `/nodes/${r_mira.id}/relations`, {
+  targetNodeId: r_queen.id, label: "secretly spies on", visibility: "dm", note: "since the coup",
+});
+const r_toCabal = await dm("POST", `/nodes/${r_mira.id}/relations`, { targetNodeId: r_cabal.id, label: "member of" });
+const r_playerMira = (await player("GET", `/nodes/${r_mira.id}/relations`)).body.relations.map((r) => r.label);
+const r_dmMira = (await dm("GET", `/nodes/${r_mira.id}/relations`)).body.relations.map((r) => r.label);
+check("LEAK: a DM-only relation isn't sent to a player", !r_playerMira.includes("secretly spies on"), r_playerMira);
+check("LEAK: a relation to a page the player can't see isn't sent to them", !r_playerMira.includes("member of"), r_playerMira);
+check("the DM sees all four", ["reports to", "r_allies", "secretly spies on", "member of"].every((l) => r_dmMira.includes(l)), r_dmMira);
+const r_playerPatchSecret = await player("PATCH", `/relations/${r_secretRel.body.relation.id}`, { label: "x" });
+check("LEAK: a player can't even find a DM-only relation by id (404)", r_playerPatchSecret.status === 404, r_playerPatchSecret.status);
+
+const r_playerAdds = await player("POST", `/nodes/${r_mira.id}/relations`, { targetNodeId: r_queen.id, label: "admires" });
+check("a player can't add a relation to a page they can't edit", r_playerAdds.status === 403, r_playerAdds.body);
+const r_playerEditsDms = await player("PATCH", `/relations/${r_reportsTo.body.relation.id}`, { label: "obeys" });
+check("…or edit one between pages they can't edit", r_playerEditsDms.status === 403, r_playerEditsDms.body);
+const r_diary = (await player("POST", `/worlds/${worldId}/nodes`, { title: "Rel: Pip's r_diary", parentId: rootId })).body.node;
+const r_playerOwn = await player("POST", `/nodes/${r_diary.id}/relations`, { targetNodeId: r_mira.id, label: "mentions" });
+check("a player can relate their own page to a page they can see", r_playerOwn.status === 201 && r_playerOwn.body.relation.canEdit, r_playerOwn.body);
+const r_playerDmOnly = await player("POST", `/nodes/${r_diary.id}/relations`, { targetNodeId: r_mira.id, label: "fears", visibility: "dm" });
+check("only a DM can make a relation DM-only", r_playerDmOnly.status === 403, r_playerDmOnly.body);
+const r_playerToHidden = await player("POST", `/nodes/${r_diary.id}/relations`, { targetNodeId: r_cabal.id, label: "hunts" });
+const r_playerToNowhere = await player("POST", `/nodes/${r_diary.id}/relations`, { targetNodeId: "nonexistent", label: "hunts" });
+check(
+  "LEAK: relating to a hidden page fails exactly like relating to a missing one",
+  r_playerToHidden.status === 400 && r_playerToNowhere.status === 400 && r_playerToHidden.body.error.message === r_playerToNowhere.body.error.message,
+  [r_playerToHidden.body, r_playerToNowhere.body],
+);
+const r_selfRel = await dm("POST", `/nodes/${r_mira.id}/relations`, { targetNodeId: r_mira.id, label: "is" });
+check("a page can't relate to itself", r_selfRel.status === 400, r_selfRel.body);
+const r_otherWorldPage = (await dm("POST", `/worlds/${secondWorldForExisting.id}/nodes`, { title: "Rel: elsewhere" })).body.node;
+const r_crossWorld = await dm("POST", `/nodes/${r_mira.id}/relations`, { targetNodeId: r_otherWorldPage.id, label: "visits" });
+check("a relation can't cross worlds", r_crossWorld.status === 400, r_crossWorld.body);
+
+const r_playerLabels = (await player("GET", `/worlds/${worldId}/relation-labels`)).body.labels;
+const r_dmLabels = (await dm("GET", `/worlds/${worldId}/relation-labels`)).body.labels;
+check(
+  "label suggestions carry the usual inverse",
+  r_playerLabels.find((l) => l.label === "reports to")?.inverseLabel === "commands",
+  r_playerLabels,
+);
+check(
+  "LEAK: a DM-only relation's label is never suggested to a player",
+  !r_playerLabels.some((l) => l.label === "secretly spies on") && r_dmLabels.some((l) => l.label === "secretly spies on"),
+  r_playerLabels,
+);
+
+const r_updated = await dm("PATCH", `/relations/${r_reportsTo.body.relation.id}`, { note: "since the coronation" });
+check("the DM can update a relation", r_updated.status === 200 && r_updated.body.relation.note === "since the coronation", r_updated.body);
+
+// The Connections panel: links both ways, wanted, link fields, maps.
+await dm("PATCH", `/nodes/${r_mira.id}`, { bodyMd: "Sworn to [[Rel: Queen Isolde Marr]]. Owes [[Rel: Old Hobb]] a favour." });
+await dm("POST", `/nodes/${r_mira.id}/fields`, { key: "Liege", type: "link", value: r_queen.id });
+await dm("POST", `/nodes/${r_mira.id}/fields`, { key: "Handler", type: "link", value: r_cabal.id });
+const r_queenPin = (await dm("POST", `/nodes/${mapNode.id}/map/markers`, { x: 3, y: 3, targetNodeId: r_queen.id })).body.marker;
+const r_queenSecretPin = (await dm("POST", `/nodes/${mapNode.id}/map/markers`, { x: 4, y: 4, targetNodeId: r_queen.id, visibility: "dm" })).body.marker;
+const r_miraConn = (await player("GET", `/nodes/${r_mira.id}/connections`)).body.connections;
+const r_queenConn = (await player("GET", `/nodes/${r_queen.id}/connections`)).body.connections;
+check("Connections: links to", r_miraConn.linksTo.some((p) => p.id === r_queen.id), r_miraConn.linksTo);
+check("Connections: mentioned in", r_queenConn.mentionedIn.some((p) => p.id === r_mira.id), r_queenConn.mentionedIn);
+check("Connections: this page's own wanted links", r_miraConn.wanted.some((w) => w.targetText === "Rel: Old Hobb"), r_miraConn.wanted);
+check(
+  "Connections: link fields both ways, labelled by field name",
+  r_miraConn.fieldLinks.some((f) => f.direction === "out" && f.label === "Liege" && f.other.id === r_queen.id) &&
+    r_queenConn.fieldLinks.some((f) => f.direction === "in" && f.label === "Liege" && f.other.id === r_mira.id),
+  [r_miraConn.fieldLinks, r_queenConn.fieldLinks],
+);
+check("LEAK: a link field to a hidden page isn't listed", !r_miraConn.fieldLinks.some((f) => f.label === "Handler"), r_miraConn.fieldLinks);
+check(
+  "Connections: on maps, only maps and pins the player is actually sent",
+  r_queenConn.onMaps.some((m) => m.id === mapNode.id && m.markerCount === 1) && r_queenConn.onMaps.every((m) => m.markerCount >= 1),
+  r_queenConn.onMaps,
+);
+const r_dmQueenConn = (await dm("GET", `/nodes/${r_queen.id}/connections`)).body.connections;
+check("the DM's Connections include their DM-only pin", r_dmQueenConn.onMaps.reduce((n, m) => n + m.markerCount, 0) === 2, r_dmQueenConn.onMaps);
+
+// Archiving one end hides the relation from both sides; restoring brings it back.
+const r_events = openEvents(player);
+await r_events.ready;
+r_events.messages.length = 0;
+const r_liveRel = await dm("POST", `/nodes/${r_silverHand.id}/relations`, { targetNodeId: r_queen.id, label: "guards" });
+await sleep(300);
+check(
+  "adding a relation pushes node.changed for both pages",
+  r_events.messages.some((m) => m.type === "node.changed" && m.nodeId === r_silverHand.id) &&
+    r_events.messages.some((m) => m.type === "node.changed" && m.nodeId === r_queen.id),
+  r_events.messages,
+);
+r_events.socket.close();
+await dm("DELETE", `/nodes/${r_queen.id}`);
+const r_afterArchive = (await dm("GET", `/nodes/${r_mira.id}/relations`)).body.relations.map((r) => r.label);
+check("archiving a page hides its relations from the other end", !r_afterArchive.includes("reports to"), r_afterArchive);
+await dm("POST", `/nodes/${r_queen.id}/restore`);
+const r_afterRestore = (await dm("GET", `/nodes/${r_mira.id}/relations`)).body.relations.map((r) => r.label);
+check("restoring it brings them back", r_afterRestore.includes("reports to"), r_afterRestore);
+
+const r_delRel = await dm("DELETE", `/relations/${r_liveRel.body.relation.id}`);
+check("the DM can delete a relation", r_delRel.status === 200, r_delRel.body);
+await dm("DELETE", `/markers/${r_queenPin.id}`);
+await dm("DELETE", `/markers/${r_queenSecretPin.id}`);
+
 console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}\n`);
 process.exit(failures === 0 ? 0 : 1);

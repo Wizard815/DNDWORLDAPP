@@ -175,3 +175,19 @@ export type MarkerPresetRow = {
   created_at: number;
   updated_at: number;
 }
+
+export type RelationRow = {
+  id: string;
+  world_id: string;
+  source_node_id: string;
+  target_node_id: string;
+  label: string;
+  inverse_label: string | null;
+  two_way: number;
+  note: string;
+  visibility: FieldVisibility;
+  sort_key: string;
+  created_by: string | null;
+  created_at: number;
+  updated_at: number;
+}

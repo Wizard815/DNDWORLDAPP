@@ -1,4 +1,9 @@
 import type {
+  ConnectionsDto,
+  CreateRelationInput,
+  RelationDto,
+  RelationLabelDto,
+  UpdateRelationInput,
   AclEntryDto,
   AddMemberInput,
   AssetDto,
@@ -153,6 +158,19 @@ export const api = {
 
   search: (worldId: string, q: string) =>
     request<{ hits: SearchHit[] }>(`/worlds/${worldId}/search?q=${encodeURIComponent(q)}`),
+
+  connections: (nodeId: string) => request<{ connections: ConnectionsDto }>(`/nodes/${nodeId}/connections`),
+
+  createRelation: (nodeId: string, input: CreateRelationInput) =>
+    request<{ relation: RelationDto }>(`/nodes/${nodeId}/relations`, { method: "POST", ...json(input) }),
+
+  updateRelation: (relationId: string, input: UpdateRelationInput) =>
+    request<{ relation: RelationDto }>(`/relations/${relationId}`, { method: "PATCH", ...json(input) }),
+
+  deleteRelation: (relationId: string) => request<{ ok: true }>(`/relations/${relationId}`, { method: "DELETE" }),
+
+  relationLabels: (worldId: string) =>
+    request<{ labels: RelationLabelDto[] }>(`/worlds/${worldId}/relation-labels`),
 
   unresolvedLinks: (worldId: string) =>
     request<{ links: Array<{ targetText: string; count: number }> }>(

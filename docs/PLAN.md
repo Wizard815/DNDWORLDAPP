@@ -29,13 +29,9 @@ packaging step.
 >
 > **Doing next, in order** (all per `docs/DESIGN-connections-2026-10-27.md`; the four
 > design decisions were answered yes on 2026-10-27):
-> 1. **Relations** (design §2) — `relations` table (source, target, free-text label with
->    autocomplete, optional inverse reading, two-way, note, per-relation visibility),
->    API + MCP tools, link-type fields counted as relations.
-> 2. **Connections panel** (design §3) — replaces "Mentioned in" on every page: tags,
->    relations both ways, mentioned in, links to, on maps, wanted pages, inline
->    "Add relation".
-> 3. **Graph** (design §4–5) — one visibility-filtered endpoint (links, relations, fields,
+> 1. ~~**Relations** (design §2)~~ — ✅ built 2026-10-27 (HANDOFF §7.16).
+> 2. ~~**Connections panel** (design §3)~~ — ✅ built 2026-10-27.
+> 3. **Graph** (design §4–5) — **next** — one visibility-filtered endpoint (links, relations, fields,
 >    map, parent edges), a local graph in the Info panel, then the global Graph screen
 >    (cytoscape.js; relations bold, links thin, tags as node color; folder and map layers
 >    off by default).
@@ -46,7 +42,7 @@ packaging step.
 >
 > | | |
 > |---|---|
-> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands with submenus, page linking, inline DM-notes sections, multi-layout columns, hover-to-link, inline `#tag`s with a reverse-lookup Tags panel) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, typed/inheriting markers, drawable region/zone polygons (labeled, colored, with per-vertex dragging and click-to-split editing), party/army tokens (grouping, group-dominant visibility), Kanka-style map display groups (nested, orderable, per-viewer toggleable, with an MCP-exposed CRUD surface), a searchable marker browse/jump-to panel, and a collapsible edit toolbar · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Document/Map/saved templates) · manually pinned pages · resizable/collapsible sidebar and right-hand panel · design-token theming (Midnight/Ember/Parchment) and a phone-width layout · a real map edit mode with pin summary cards · guest login · archive + 30-day trash with a DM panel · inherited page visibility with per-page override and a 🔐 Access button · secret blocks with an audience (DM / Players / Everyone) · `#tag` filtering in the sidebar and Ctrl+K · marker clustering · uploaded-image marker icons · tags as labels (nesting, colors, Tags screen, chip editor) |
+> | **Done** | The spine (tree, pages, wiki links, DM notes, search, Docker) · scoped API tokens · OpenAPI generated from Zod · the MCP server · inline `:::secret` blocks · username/password accounts with a DM member panel, no email anywhere · per-node ACL overrides · anonymous share links · "view as player" · a single DM Menu in the sidebar · a live TipTap document editor (slash commands with submenus, page linking, inline DM-notes sections, multi-layout columns, hover-to-link, inline `#tag`s with a reverse-lookup Tags panel) · field-definition templates and typed per-node fields · map nodes with a source image, background tiling for large images, typed/inheriting markers, drawable region/zone polygons (labeled, colored, with per-vertex dragging and click-to-split editing), party/army tokens (grouping, group-dominant visibility), Kanka-style map display groups (nested, orderable, per-viewer toggleable, with an MCP-exposed CRUD surface), a searchable marker browse/jump-to panel, and a collapsible edit toolbar · a sidebar right-click/⋯ row menu (rename, pin, archive) · a "+ New" tile chooser (Document/Map/saved templates) · manually pinned pages · resizable/collapsible sidebar and right-hand panel · design-token theming (Midnight/Ember/Parchment) and a phone-width layout · a real map edit mode with pin summary cards · guest login · archive + 30-day trash with a DM panel · inherited page visibility with per-page override and a 🔐 Access button · secret blocks with an audience (DM / Players / Everyone) · `#tag` filtering in the sidebar and Ctrl+K · marker clustering · uploaded-image marker icons · tags as labels (nesting, colors, Tags screen, chip editor) · relations between pages (labels with inverse/two-way readings, per-relation visibility) and a Connections panel on every page |
 > | **Next** | See "Doing next" above; the full ordered list is `docs/NEXT-STEPS.md`, the reasoning is `docs/ROADMAP-2026-09-23.md` |
 >
 > **No Kanka or LegendKeeper importer will be built.** The owner still runs the campaign in

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { db } from "../db/index.ts";
 import { publish, publishForNode } from "../services/events.ts";
+import { relationEnds } from "../services/relations.ts";
 
 /**
  * Turns every successful write under /api/v1 into a live event
@@ -15,6 +16,8 @@ declare module "fastify" {
     liveEventNodeId?: string | null;
     /** For DELETE …/forever: the world, looked up before the row is gone. */
     liveEventWorldId?: string | null;
+    /** A relation's two pages — both of their Connections change with it. */
+    liveEventRelationEnds?: string[] | null;
   }
 }
 
@@ -58,6 +61,13 @@ export function registerLiveEvents(app: FastifyInstance): void {
     if (!WRITE_METHODS.has(request.method)) return;
     const path = pathOf(request);
     request.liveEventNodeId = ownerOf(path);
+    const relationId = /^\/api\/v1\/relations\/([^/]+)/.exec(path)?.[1];
+    if (relationId !== undefined) request.liveEventRelationEnds = relationEnds(relationId);
+    const newRelation = /^\/api\/v1\/nodes\/([^/]+)\/relations$/.exec(path);
+    if (newRelation !== null) {
+      const target = (request.body as { targetNodeId?: unknown } | null | undefined)?.targetNodeId;
+      request.liveEventRelationEnds = typeof target === "string" ? [newRelation[1]!, target] : [newRelation[1]!];
+    }
     const forever = /^\/api\/v1\/nodes\/([^/]+)\/forever$/.exec(path);
     if (forever !== null) {
       request.liveEventWorldId = (nodeWorld.get(forever[1]!) as { worldId: string } | undefined)?.worldId ?? null;
@@ -71,6 +81,11 @@ export function registerLiveEvents(app: FastifyInstance): void {
   app.addHook("onResponse", async (request, reply) => {
     if (!WRITE_METHODS.has(request.method) || reply.statusCode >= 300) return;
     const path = pathOf(request);
+
+    if (request.liveEventRelationEnds) {
+      for (const nodeId of request.liveEventRelationEnds) publishForNode(nodeId, { type: "node.changed", nodeId });
+      return;
+    }
 
     if (request.liveEventNodeId) {
       const nodeId = request.liveEventNodeId;

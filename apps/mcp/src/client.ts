@@ -1,4 +1,8 @@
 import type {
+  CreateRelationInput,
+  RelationDto,
+  RelationLabelDto,
+  UpdateRelationInput,
   CreateFieldInput,
   CreateMapGroupInput,
   CreateMarkerInput,
@@ -141,6 +145,26 @@ export class WorldClient {
 
   node(nodeId: string) {
     return this.request<{ node: NodeDetail }>("GET", `/nodes/${nodeId}`);
+  }
+
+  relations(nodeId: string) {
+    return this.request<{ relations: RelationDto[] }>("GET", `/nodes/${nodeId}/relations`);
+  }
+
+  createRelation(nodeId: string, input: CreateRelationInput) {
+    return this.request<{ relation: RelationDto }>("POST", `/nodes/${nodeId}/relations`, input);
+  }
+
+  updateRelation(relationId: string, input: UpdateRelationInput) {
+    return this.request<{ relation: RelationDto }>("PATCH", `/relations/${relationId}`, input);
+  }
+
+  deleteRelation(relationId: string) {
+    return this.request<{ ok: true }>("DELETE", `/relations/${relationId}`);
+  }
+
+  relationLabels(worldId: string) {
+    return this.request<{ labels: RelationLabelDto[] }>("GET", `/worlds/${worldId}/relation-labels`);
   }
 
   createNode(worldId: string, input: CreateNodeInput) {

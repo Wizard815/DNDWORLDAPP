@@ -164,6 +164,11 @@ for (const expected of [
   "get_map",
   "set_map_scale",
   "search_icons",
+  "list_relations",
+  "add_relation",
+  "update_relation",
+  "delete_relation",
+  "list_relation_labels",
   "list_marker_presets",
   "place_marker",
   "update_marker",
@@ -365,6 +370,27 @@ check("get_map no longer shows a party group for the ungrouped token", !mapUngro
 
 await callTool("delete_marker", { marker_id: squadId });
 await callTool("delete_marker", { marker_id: partyId });
+
+console.log("\n== relations ==");
+const relOther = await callTool("create_node", { title: "MCP relation target" });
+const relOtherId = relOther.text.match(/\[([a-z0-9]{8})\]/)?.[1];
+const added = await callTool("add_relation", { source_node_id: newId, target_node_id: relOtherId, label: "serves", inverse_label: "is served by", note: "for now" });
+const relationId = added.text.match(/relation \[([a-z0-9]{12})\]/)?.[1];
+check("add_relation creates a relation", !added.isError && typeof relationId === "string", added.text);
+const fromTarget = await callTool("list_relations", { node_id: relOtherId });
+check("list_relations reads it from the target's side with the inverse", fromTarget.text.includes("← is served by"), fromTarget.text);
+const nodeWithRel = await callTool("get_node", { node_id: newId, include_posts: false });
+check("get_node lists relations", nodeWithRel.text.includes("## Relations") && nodeWithRel.text.includes("→ serves"), nodeWithRel.text);
+const relLabels = await callTool("list_relation_labels", {});
+check("list_relation_labels shows the label and its inverse", relLabels.text.includes("serves / is served by"), relLabels.text);
+const relUpdated = await callTool("update_relation", { relation_id: relationId, two_way: true, label: "allied with" });
+const afterTwoWay = await callTool("list_relations", { node_id: relOtherId });
+check("update_relation can make it two-way", !relUpdated.isError && afterTwoWay.text.includes("↔ allied with"), afterTwoWay.text);
+const relSelf = await callTool("add_relation", { source_node_id: newId, target_node_id: newId, label: "is" });
+check("add_relation refuses a self-relation", relSelf.isError === true, relSelf.text);
+const relDeleted = await callTool("delete_relation", { relation_id: relationId });
+const afterDelete = await callTool("list_relations", { node_id: newId });
+check("delete_relation removes it", !relDeleted.isError && afterDelete.text.includes("No relations"), afterDelete.text);
 
 console.log("\n== icon library ==");
 const iconHits = await callTool("search_icons", { query: "castle", limit: 5 });

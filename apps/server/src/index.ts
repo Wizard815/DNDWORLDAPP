@@ -21,6 +21,7 @@ import { iconRoutes } from "./routes/icons.ts";
 import { mapRoutes } from "./routes/maps.ts";
 import { nodeRoutes } from "./routes/nodes.ts";
 import { openApiRoutes } from "./routes/openapi.ts";
+import { relationRoutes } from "./routes/relations.ts";
 import { shareRoutes } from "./routes/share.ts";
 import { tagRoutes } from "./routes/tags.ts";
 import { tokenRoutes } from "./routes/tokens.ts";
@@ -235,6 +236,7 @@ await app.register(shareRoutes);
 await app.register(tokenRoutes);
 await app.register(tagRoutes);
 await app.register(openApiRoutes);
+await app.register(relationRoutes);
 await app.register(iconRoutes);
 
 // Uploaded images, under /media so they cannot collide with the client bundle

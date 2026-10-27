@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { fieldVisibilitySchema, markerShapeSchema, nodeVisibilitySchema, parseMarkerPoints, visibilitySchema } from "@dndworldapp/schema";
-import type { MarkerPresetDto, NodeSummary } from "@dndworldapp/schema";
+import type { MarkerPresetDto, NodeSummary, RelationDto } from "@dndworldapp/schema";
 import { ApiError, type WorldClient } from "./client.ts";
 
 /**
@@ -30,6 +30,15 @@ function fail(error: unknown) {
         ? error.message
         : String(error);
   return { content: [{ type: "text" as const, text: `Failed: ${message}` }], isError: true };
+}
+
+/** One relation as the page it was listed for reads it: "→ reports to Queen Isolde [id] (dm) — note [relation id]". */
+function relationLine(r: RelationDto): string {
+  const arrow = r.twoWay ? "↔" : r.direction === "in" ? "←" : "→";
+  const other = r.other ?? (r.direction === "in" ? r.source : r.target);
+  const vis = r.visibility !== "members" ? ` (${r.visibility})` : "";
+  const note = r.note.length > 0 ? ` — ${r.note}` : "";
+  return `- ${arrow} ${r.reading ?? r.label} ${other.title} [${other.id}]${vis}${note} · relation [${r.id}]`;
 }
 
 function nodeLine(node: NodeSummary, depth: number): string {
@@ -169,6 +178,129 @@ export function registerTools(server: McpServer, client: WorldClient): void {
   );
 
   server.registerTool(
+    "list_relations",
+    {
+      title: "List a page's relations",
+      description:
+        "Every relation touching a page, both directions, as that page reads them (→ outgoing, ← incoming with its inverse label, ↔ two-way). Includes relation ids for update_relation/delete_relation.",
+      inputSchema: { node_id: z.string().describe("The page id.") },
+    },
+    async ({ node_id }) => {
+      try {
+        const { relations } = await client.relations(node_id);
+        if (relations.length === 0) return text("No relations on this page yet.");
+        return text(relations.map(relationLine).join("\n"));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_relation",
+    {
+      title: "Add a relation between two pages",
+      description:
+        "A typed, directional connection, e.g. Mira \"reports to\" Queen Isolde. Read it from the target's side with inverse_label (\"commands\"), or make it symmetric with two_way (\"allies\", \"siblings\"). " +
+        "Reuse labels the world already has — see list_relation_labels — so the graph colors them consistently. Prefer a relation over prose when the connection is a fact you'd want to query or draw.",
+      inputSchema: {
+        source_node_id: z.string().describe("The page the relation reads from (\"Mira\")."),
+        target_node_id: z.string().describe("The page it points at (\"Queen Isolde\")."),
+        label: z.string().min(1).max(80).describe("How the source reads it, e.g. \"reports to\"."),
+        inverse_label: z.string().min(1).max(80).optional().describe("How the target reads it, e.g. \"commands\". Ignored when two_way."),
+        two_way: z.boolean().optional().describe("One symmetric label, the same from both ends. Default false."),
+        note: z.string().max(500).optional().describe("Short context, e.g. \"since the coup\"."),
+        visibility: fieldVisibilitySchema.optional().describe("public | members | dm. Default members. Only a DM's token can set dm."),
+      },
+    },
+    async ({ source_node_id, target_node_id, label, inverse_label, two_way, note, visibility }) => {
+      try {
+        const { relation } = await client.createRelation(source_node_id, {
+          targetNodeId: target_node_id,
+          label,
+          inverseLabel: inverse_label ?? null,
+          twoWay: two_way ?? false,
+          note: note ?? "",
+          visibility: visibility ?? "members",
+        });
+        return text(`Added relation [${relation.id}]: ${relation.source.title} ${relation.twoWay ? "↔" : "→"} ${relation.label} ${relation.target.title}.`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_relation",
+    {
+      title: "Update a relation",
+      description: "Change a relation's label, inverse label, two-way flag, note, or visibility. The two pages it joins can't change — delete it and add a new one.",
+      inputSchema: {
+        relation_id: z.string(),
+        label: z.string().min(1).max(80).optional(),
+        inverse_label: z.string().min(1).max(80).nullable().optional(),
+        two_way: z.boolean().optional(),
+        note: z.string().max(500).optional(),
+        visibility: fieldVisibilitySchema.optional(),
+      },
+    },
+    async ({ relation_id, label, inverse_label, two_way, note, visibility }) => {
+      try {
+        const { relation } = await client.updateRelation(relation_id, {
+          label,
+          inverseLabel: inverse_label,
+          twoWay: two_way,
+          note,
+          visibility,
+        });
+        return text(`Updated relation [${relation.id}]: ${relation.source.title} ${relation.twoWay ? "↔" : "→"} ${relation.label} ${relation.target.title}.`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_relation",
+    {
+      title: "Delete a relation",
+      description: "Removes one relation (both pages stop showing it). Use the id from list_relations or get_node.",
+      inputSchema: { relation_id: z.string() },
+    },
+    async ({ relation_id }) => {
+      try {
+        await client.deleteRelation(relation_id);
+        return text(`Deleted relation [${relation_id}].`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_relation_labels",
+    {
+      title: "List relation labels in use",
+      description: "Relation labels this world already uses, most common first, with their usual inverse — reuse these instead of inventing near-duplicates.",
+      inputSchema: { world_id: worldIdArg },
+    },
+    async ({ world_id }) => {
+      try {
+        const worldId = await client.resolveWorldId(world_id);
+        const { labels } = await client.relationLabels(worldId);
+        if (labels.length === 0) return text("No relations in this world yet.");
+        return text(
+          labels
+            .map((l) => `- ${l.label}${l.twoWay ? " (two-way)" : l.inverseLabel !== null ? ` / ${l.inverseLabel}` : ""} ×${l.count}`)
+            .join("\n"),
+        );
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "get_node",
     {
       title: "Get a page",
@@ -228,6 +360,10 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         }
         if (node.tags.length > 0) {
           parts.push("", `## Tags`, node.tags.map((t) => `#${t.name}${t.source === "manual" ? " (explicit)" : ""}`).join(", "));
+        }
+        const { relations } = await client.relations(node_id);
+        if (relations.length > 0) {
+          parts.push("", "## Relations", ...relations.map(relationLine));
         }
         if (node.backlinks.length > 0) {
           parts.push("", `## Linked from`, ...node.backlinks.map((b) => `- ${b.title} [${b.nodeId}]`));

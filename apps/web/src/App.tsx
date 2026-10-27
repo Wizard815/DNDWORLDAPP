@@ -330,6 +330,7 @@ export function App() {
                 createNode.mutate({ parentId: node.data!.node.id, title })
               }
               canCreate={canCreate}
+              isGameMaster={isGameMaster && !viewAsPlayer}
               mobileOpen={mobileInfoOpen}
               onCloseMobile={() => setMobileInfoOpen(false)}
             />

@@ -1,20 +1,30 @@
 # NEXT-STEPS — pick up here
 
-Last updated 2026-10-22. This is the single ordered to-do list. The *why* behind the
+Last updated 2026-10-27. This is the single ordered to-do list. The *why* behind the
 ordering lives in [ROADMAP-2026-09-23.md](ROADMAP-2026-09-23.md); what is already built
 lives in [HANDOFF.md](HANDOFF.md) §3 and [PLAN.md](PLAN.md)'s status table. Finished work
 is not kept here — `git log` and HANDOFF have it.
 
 ## Open, in order (2026-10-27)
 
-1. **Relations** — `docs/DESIGN-connections-2026-10-27.md` §2–3: the `relations` table,
-   API + MCP, the Connections panel (relations both ways, mentioned in, links to, on
-   maps, wanted). Then **the graph** (§4–5): endpoint, local graph in the Info panel,
-   global Graph screen. All four design decisions were answered yes on 2026-10-27.
+1. **The graph** — `docs/DESIGN-connections-2026-10-27.md` §4–5: one visibility-filtered
+   graph endpoint (links, relations, link fields, map and parent edges), a local graph
+   in the Info panel, then the global Graph screen (cytoscape.js). Relations and the
+   Connections panel (§2–3) are done.
 2. **Library icons could render better** — bigger, optionally without the colored disc,
    in the marker's color — if the owner still wants the bundled set after trying image
    icons. Not started; ask first.
 3. P3 query views, P5 calendars/timelines, P6 play mode, P7 hardening — unchanged.
+
+## Just done (2026-10-27, evening) — relations and the Connections panel (design §2–3)
+
+Pages can be related to each other with a free-text label ("reports to"), an optional
+inverse reading ("commands") or a two-way label ("allies"), a note, and per-relation
+visibility. Every page's Info panel now has a Connections section: relations both ways
+with an inline add/edit form, link fields, mentioned in, links to, on maps, and that
+page's own wanted links — all filtered to what the viewer may see. MCP has
+`add_relation`/`update_relation`/`delete_relation`/`list_relations`/
+`list_relation_labels`. HANDOFF §7.16. 29 smoke checks (11 of them leak checks) + 8 MCP.
 
 ## Just done (2026-10-27, later) — tags as labels (design §1)
 

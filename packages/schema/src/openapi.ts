@@ -40,6 +40,11 @@ const MapDto = ref("MapDto", S.mapDtoSchema);
 const MapMarkerDto = ref("MapMarkerDto", S.mapMarkerDtoSchema);
 const ApiError = ref("ApiError", S.apiErrorSchema);
 const IconHit = ref("IconHit", S.iconHitSchema);
+const RelationDto = ref("RelationDto", S.relationDtoSchema);
+const RelationLabelDto = ref("RelationLabelDto", S.relationLabelDtoSchema);
+const ConnectionsDto = ref("ConnectionsDto", S.connectionsDtoSchema);
+const CreateRelationInput = ref("CreateRelationInput", S.createRelationInputSchema);
+const UpdateRelationInput = ref("UpdateRelationInput", S.updateRelationInputSchema);
 const MarkerPresetDto = ref("MarkerPresetDto", S.markerPresetDtoSchema);
 const RemovedNode = ref("RemovedNode", S.removedNodeSchema);
 const TagDto = ref("TagDto", S.tagDtoSchema);
@@ -754,6 +759,60 @@ const paths: Json = {
     },
   },
 
+  "/nodes/{nodeId}/relations": {
+    get: {
+      tags: ["relations"],
+      summary: "Every relation touching a page, both directions, as that page reads them",
+      description:
+        "Each carries direction (out/in), reading (the label as this page shows it — the inverse label on the target's side) and other (the far page). A viewer only sees relations whose own visibility they can read and whose two pages they can both see.",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(obj({ relations: arr(RelationDto) }, ["relations"])), ...ERRORS },
+    },
+    post: {
+      tags: ["relations"],
+      summary: "Add a relation from this page to another",
+      description:
+        "Needs edit rights on this page and visibility of the target (a hidden target answers like a missing one). Only an owner/DM can create a dm-visibility relation. twoWay drops any inverse label.",
+      parameters: [pathParam("nodeId", "Source node id")],
+      requestBody: body(CreateRelationInput),
+      responses: { 201: ok(obj({ relation: RelationDto }, ["relation"])), ...ERRORS },
+    },
+  },
+  "/relations/{relationId}": {
+    patch: {
+      tags: ["relations"],
+      summary: "Update a relation's label, inverse, two-way flag, note or visibility",
+      description: "Needs edit rights on either of its pages. The two pages can't change.",
+      parameters: [pathParam("relationId", "Relation id")],
+      requestBody: body(UpdateRelationInput),
+      responses: { 200: ok(obj({ relation: RelationDto }, ["relation"])), ...ERRORS },
+    },
+    delete: {
+      tags: ["relations"],
+      summary: "Delete a relation",
+      parameters: [pathParam("relationId", "Relation id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+  "/worlds/{worldId}/relation-labels": {
+    get: {
+      tags: ["relations"],
+      summary: "Relation labels this world uses, most common first, for autocomplete",
+      description: "Counted over relations the viewer can see, so a DM-only relation's label is never suggested to a player.",
+      parameters: [pathParam("worldId", "World id")],
+      responses: { 200: ok(obj({ labels: arr(RelationLabelDto) }, ["labels"])), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/connections": {
+    get: {
+      tags: ["relations"],
+      summary: "Everything a page's Connections panel shows",
+      description:
+        "Relations both ways, link-type fields both ways, mentioned in, links to, maps with a pin on this page the viewer is actually sent (marker visibility and fog applied), and this page's own wanted links — all viewer-filtered.",
+      parameters: [pathParam("nodeId", "Node id")],
+      responses: { 200: ok(obj({ connections: ConnectionsDto }, ["connections"])), ...ERRORS },
+    },
+  },
   "/icons": {
     get: {
       tags: ["icons"],
@@ -853,6 +912,7 @@ export function buildOpenApiDocument(version = "0.1.0"): Json {
       },
       { name: "tokens", description: "API tokens for scripts and MCP" },
       { name: "icons", description: "The bundled icon library for map markers" },
+      { name: "relations", description: "Typed connections between pages, and the Connections panel" },
       { name: "assets", description: "Uploads" },
     ],
     paths,

@@ -71,6 +71,8 @@ export function useLiveEvents(worldId: string | null): void {
           case "node.changed":
             void queryClient.invalidateQueries({ queryKey: ["node", event.nodeId] });
             void queryClient.invalidateQueries({ queryKey: ["posts", event.nodeId] });
+            void queryClient.invalidateQueries({ queryKey: ["connections", event.nodeId] });
+            void queryClient.invalidateQueries({ queryKey: ["fields", event.nodeId] });
             break;
           case "map.changed":
             void queryClient.invalidateQueries({ queryKey: ["map", event.nodeId] });

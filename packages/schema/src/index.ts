@@ -990,6 +990,89 @@ export const iconSearchQuerySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Relations (migration 0018) and the Connections panel — design doc §2–3.
+// ---------------------------------------------------------------------------
+
+const pageRefSchema = z.object({ id: z.string(), title: z.string(), icon: z.string().nullable() });
+export type PageRef = z.infer<typeof pageRefSchema>;
+
+export const relationDtoSchema = z.object({
+  id: z.string(),
+  source: pageRefSchema,
+  target: pageRefSchema,
+  label: z.string(),
+  inverseLabel: z.string().nullable(),
+  twoWay: z.boolean(),
+  note: z.string(),
+  visibility: fieldVisibilitySchema,
+  /**
+   * Only in a page-relative list (GET /nodes/{id}/connections and
+   * /relations): "out" if that page is the source, "in" if it's the target.
+   * `reading` is the label as that page should show it — the inverse label
+   * on the target's side when there is one.
+   */
+  direction: z.enum(["out", "in"]).optional(),
+  reading: z.string().optional(),
+  /** The other end, from that page's point of view. */
+  other: pageRefSchema.optional(),
+  canEdit: z.boolean(),
+});
+export type RelationDto = z.infer<typeof relationDtoSchema>;
+
+const relationLabelSchema = z.string().trim().min(1).max(80);
+
+export const createRelationInputSchema = z.object({
+  targetNodeId: z.string(),
+  label: relationLabelSchema,
+  inverseLabel: relationLabelSchema.nullable().optional(),
+  twoWay: z.boolean().default(false),
+  note: z.string().trim().max(500).default(""),
+  visibility: fieldVisibilitySchema.default("members"),
+});
+export type CreateRelationInput = z.infer<typeof createRelationInputSchema>;
+
+export const updateRelationInputSchema = z
+  .object({
+    label: relationLabelSchema,
+    inverseLabel: relationLabelSchema.nullable(),
+    twoWay: z.boolean(),
+    note: z.string().trim().max(500),
+    visibility: fieldVisibilitySchema,
+  })
+  .partial();
+export type UpdateRelationInput = z.infer<typeof updateRelationInputSchema>;
+
+export const relationLabelDtoSchema = z.object({
+  label: z.string(),
+  /** The inverse most often paired with this label, to prefill. */
+  inverseLabel: z.string().nullable(),
+  twoWay: z.boolean(),
+  count: z.number().int(),
+});
+export type RelationLabelDto = z.infer<typeof relationLabelDtoSchema>;
+
+/** A link-type field seen as a relation (design §2): label = the field's name. Read-only here — edit it as a field. */
+export const fieldConnectionSchema = z.object({
+  fieldId: z.string(),
+  label: z.string(),
+  direction: z.enum(["out", "in"]),
+  other: pageRefSchema,
+});
+export type FieldConnection = z.infer<typeof fieldConnectionSchema>;
+
+/** Everything the Info panel's Connections section shows for one page, viewer-filtered. */
+export const connectionsDtoSchema = z.object({
+  relations: z.array(relationDtoSchema),
+  fieldLinks: z.array(fieldConnectionSchema),
+  mentionedIn: z.array(pageRefSchema),
+  linksTo: z.array(pageRefSchema),
+  onMaps: z.array(pageRefSchema.extend({ markerCount: z.number().int() })),
+  /** This page's own links to pages that don't exist yet. */
+  wanted: z.array(z.object({ targetText: z.string(), count: z.number().int() })),
+});
+export type ConnectionsDto = z.infer<typeof connectionsDtoSchema>;
+
+// ---------------------------------------------------------------------------
 // Assets
 // ---------------------------------------------------------------------------
 

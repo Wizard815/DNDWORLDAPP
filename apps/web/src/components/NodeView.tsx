@@ -9,6 +9,7 @@ import { nodeGlyph } from "../lib/kinds.ts";
 import { useResizablePanel } from "../lib/useResizablePanel.ts";
 import { useWorldTags } from "../lib/useWorldTags.ts";
 import { Access } from "./Access.tsx";
+import { Connections } from "./Connections.tsx";
 import { Glyph } from "./Glyph.tsx";
 import { IconPicker } from "./IconPicker.tsx";
 import { Posts } from "./Posts.tsx";
@@ -472,6 +473,7 @@ export function Backlinks({
   allNodes,
   onCreateNamed,
   canCreate,
+  isGameMaster,
   mobileOpen,
   onCloseMobile,
 }: {
@@ -479,15 +481,12 @@ export function Backlinks({
   allNodes: NodeSummary[];
   onCreateNamed: (title: string) => void;
   canCreate: boolean;
+  /** Owner/DM, not previewing as a player — only they can make a relation DM-only. */
+  isGameMaster: boolean;
   /** Below the lg breakpoint the panel is a right-hand drawer; this says whether it's open. */
   mobileOpen: boolean;
   onCloseMobile: () => void;
 }) {
-  const wanted = useQuery({
-    queryKey: ["unresolved", node.worldId],
-    queryFn: () => api.unresolvedLinks(node.worldId),
-  });
-  const links = wanted.data?.links ?? [];
   const panel = useResizablePanel({ storageKey: "dwa:rightPanel", defaultWidth: 280, minWidth: 220, maxWidth: 480 });
 
   if (panel.collapsed && !mobileOpen) {
@@ -549,54 +548,14 @@ export function Backlinks({
       </button>
       <TagChips nodeId={node.id} worldId={node.worldId} tags={node.tags} canEdit={node.canEdit} />
 
-      <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
-        Mentioned in
-      </h2>
-      {node.backlinks.length === 0 ? (
-        <p className="text-xs text-fg-faint">Nothing links here yet.</p>
-      ) : (
-        <ul className="space-y-1">
-          {node.backlinks.map((link) => (
-            <li key={`${link.nodeId}-${link.label ?? ""}`}>
-              <button
-                type="button"
-                onClick={() => navigate(`/n/${link.nodeId}`)}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-fg-soft hover:bg-hover"
-              >
-                <Glyph icon={link.icon ?? "📄"} />
-                <span className="truncate">{link.title}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {canCreate && links.length > 0 && (
-        <>
-          <h2 className="mb-1 mt-6 text-xs font-medium uppercase tracking-wide text-fg-muted">
-            Wanted pages
-          </h2>
-          <p className="mb-2 text-[10px] text-fg-faint">
-            Linked to, but not written yet. Click to create.
-          </p>
-          <ul className="space-y-1">
-            {links.map((link) => (
-              <li key={link.targetText}>
-                <button
-                  type="button"
-                  onClick={() => onCreateNamed(link.targetText)}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-danger-soft hover:bg-hover"
-                >
-                  <span className="truncate">{link.targetText}</span>
-                  {link.count > 1 && (
-                    <span className="ml-auto text-[10px] text-fg-faint">{link.count}</span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      <h2 className="mb-2 mt-6 text-xs font-medium uppercase tracking-wide text-fg-muted">Connections</h2>
+      <Connections
+        node={node}
+        allNodes={allNodes}
+        isGameMaster={isGameMaster}
+        canCreate={canCreate}
+        onCreateNamed={onCreateNamed}
+      />
 
       <FieldsPanel node={node} allNodes={allNodes} />
 

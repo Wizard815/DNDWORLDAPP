@@ -47,6 +47,9 @@ function readableSql(alias: string, viewer: Viewer): { sql: string; params: Arra
   return { sql: `(${vis.sql} OR ${acl.sql})`, params: [...vis.params, ...acl.params] };
 }
 
+/** readableSql for other services that join `nodes` (relations, connections). Same rules, one implementation. */
+export const readableNodeSql = readableSql;
+
 // ---------------------------------------------------------------------------
 // Statements
 // ---------------------------------------------------------------------------

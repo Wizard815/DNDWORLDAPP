@@ -51,7 +51,7 @@ nonsense, and can't be colored or nested.
   tag's list (same filtering as search). A `#tag` written only inside a secret block does
   not tag the page for anyone who can't read the block — already true, stays true.
 
-## 2. Relations — typed, directional, readable both ways
+## 2. Relations — typed, directional, readable both ways — ✅ built 2026-10-27 (HANDOFF §7.16)
 
 A `relations` table, modelled on Kanka's (confirmed shape) but with one addition:
 
@@ -81,7 +81,7 @@ relation: id, world_id,
   section in `get_node` output and `add_relation` / `update_relation` / `delete_relation`
   over MCP. Events: `node.changed` for both ends.
 
-## 3. The Connections panel (replaces "Mentioned in")
+## 3. The Connections panel (replaces "Mentioned in") — ✅ built 2026-10-27 (HANDOFF §7.16)
 
 Every page's Info panel gets one **Connections** section instead of today's separate
 Tags / Mentioned in / Wanted pages blocks:

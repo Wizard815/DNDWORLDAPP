@@ -61,7 +61,7 @@ planned — see §9.4.
 Verified by:
 - `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 352 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 445 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
@@ -70,7 +70,7 @@ Verified by:
   markers, and a player-can-list-groups-without-edit-rights check — see the "Resolved"
   bullet under Known open items for why that last one is a real bug, not a formality).
 - `npm run test:mcp` — drives the MCP server over stdio, as a real client would. All
-  pass (95 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
+  pass (119 checks, incl. the P4.3 place→read→redraw→reject→delete polygon flow and a
   `== map display groups ==` section for the 5 new group-CRUD tools).
 - `npm run typecheck` — clean on server, web and mcp.
 - `npm run build` — client builds.
@@ -442,7 +442,7 @@ When the editor is upgraded to TipTap, it must round-trip markdown on load/save.
 
 ### 6.4 Migrations are append-only SQL
 
-Add `migrations/00NN_whatever.sql` (next is `0014`). Never edit an applied migration.
+Add `migrations/00NN_whatever.sql` (next is `0019`). Never edit an applied migration.
 Update `src/db/types.ts` by hand in the same commit — nothing checks this for you.
 
 ### 6.5 A leak surface needs a test in the same commit that opens it
@@ -1643,6 +1643,41 @@ Client: `/tags` and `/tags/<id>` (`TagsView`, Ctrl-click to intersect tags), `Ta
 in the Info panel, `#` autocomplete and chip rendering from `useWorldTags`, a colored dot
 on tree rows and Ctrl+K results, `#tag` in the sidebar filter and Ctrl+K. MCP:
 `list_tags`, `tag_pages`, `tags` on `create_node`/`update_node`.
+
+### 7.16 Relations and the Connections panel (migration 0018)
+
+Design doc §2–3. A `relations` row joins a source and a target page with a free-text
+`label` ("reports to"), an optional `inverse_label` — how the *target* reads the same
+row ("commands"), a reading, not a second row — or `two_way` for one symmetric label
+("allies"; an inverse is dropped). Plus a short `note` and its own `visibility`
+(public/members/dm). Rows cascade-delete with either page; archiving or trashing a page
+just hides its relations.
+
+**Who sees what** (`services/relations.ts`, `visibleRelationsSql`): a relation is
+there for a viewer only if they can read its visibility AND both pages, and both pages
+are live. A hidden relation is a 404 by id, never a 403; relating to a page you can't
+see fails with the same message as relating to one that doesn't exist; label
+suggestions (`GET /worlds/{id}/relation-labels`) are counted over visible relations
+only, so a DM-only label is never suggested to a player. **Who edits:** edit rights on
+either page; only an owner/DM can make a relation DM-only.
+
+A page-relative list (`GET /nodes/{id}/relations`, and the Connections endpoint) adds
+`direction` (out/in), `reading` (the label as that page shows it) and `other` (the far
+page). `GET /nodes/{id}/connections` is everything the Info panel shows, viewer-filtered:
+relations, link-type fields both ways (labelled by field name, read-only here),
+mentioned in, links to (outbound — from the already secret-stripped link index), on
+maps (only maps and pins `listMarkers` would actually send the viewer, so fog and marker
+visibility apply), and this page's own wanted links. Relation writes publish
+`node.changed` for **both** pages (`http/liveEvents.ts`).
+
+Client: `components/Connections.tsx` replaces the old "Mentioned in" block and the
+world-wide "Wanted pages" list in the Info panel (tag chips stay above it). "+ Add
+relation" opens an inline form — page picker over the tree, label with autocomplete
+(picking a known label prefills its usual inverse/two-way), inverse, note, two-way,
+visibility (DM only offered to owner/DM). Editing from the target's side shows and
+saves the labels flipped, the way that page reads them. MCP: `list_relations`,
+`add_relation`, `update_relation`, `delete_relation`, `list_relation_labels`, and a
+Relations section in `get_node`.
 
 ### 7.14 Secret block audiences
 
