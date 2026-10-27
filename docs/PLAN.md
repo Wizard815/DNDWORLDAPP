@@ -4,8 +4,8 @@ Working name: **DNDWORLDAPP** (rename later).
 Deploy target: **a Docker container on the homelab.** That is the product, not a later
 packaging step.
 
-> **Status, 2026-10-22 (evening) — P0–P2 built and running, plus the P2.4 editor, P3's
-> templates/typed fields and `#tag`s, and all of P4 maps (P4.1–P4.5 and the whole
+> **Status, 2026-10-27 — P0–P2 built and running, plus the P2.4 editor, P3's
+> templates/typed fields and tags-as-labels (nesting, colors, a Tags screen), and all of P4 maps (P4.1–P4.5 and the whole
 > map-editor polish list: icon library, image icons, presets, zoom visibility, measurement,
 > clustering) including P4.4 fog of war. Also, from this week's testing rounds: guest
 > login, archive + 30-day trash, inherited page visibility with per-page override, secret
@@ -23,14 +23,26 @@ packaging step.
 >   (`@`, can create); `#tag` filtering in the sidebar and Ctrl+K.
 > - Audit gap list (10-27): archived pages' links go back to "wanted", map files cleaned
 >   on hard delete, MCP tools for trash/restore/fog/presets, page icons can be images.
+> - Tags redo (10-27, design §1): tags are labels, not pages — `/` nesting, 12-color
+>   palette, a Tags screen (`/tags`) with counts/intersect/rename/merge/delete, a chip
+>   editor in the Info panel, colored dots in the tree and Ctrl+K, `tags` over MCP.
 >
-> **Doing next, in order:**
-> 1. **Relations, then the graph view** (P3) — per `docs/DESIGN-connections-2026-10-27.md`
->    (all four decisions answered yes). Tags-as-labels (design §1) shipped 2026-10-27.
-> 2. **P3 query views** (table/board/gallery), then **P5** calendars/timelines, **P6** play
->    mode, **P7** hardening (realtime groundwork is already in; Obsidian import/export,
->    webhooks, backup/restore UI remain).
-> 3. **DM desktop companion app** and the player app mode (ROADMAP §6–7) after the above.
+> **Doing next, in order** (all per `docs/DESIGN-connections-2026-10-27.md`; the four
+> design decisions were answered yes on 2026-10-27):
+> 1. **Relations** (design §2) — `relations` table (source, target, free-text label with
+>    autocomplete, optional inverse reading, two-way, note, per-relation visibility),
+>    API + MCP tools, link-type fields counted as relations.
+> 2. **Connections panel** (design §3) — replaces "Mentioned in" on every page: tags,
+>    relations both ways, mentioned in, links to, on maps, wanted pages, inline
+>    "Add relation".
+> 3. **Graph** (design §4–5) — one visibility-filtered endpoint (links, relations, fields,
+>    map, parent edges), a local graph in the Info panel, then the global Graph screen
+>    (cytoscape.js; relations bold, links thin, tags as node color; folder and map layers
+>    off by default).
+> 4. **P3 query views** (table/board/gallery), then **P5** calendars/timelines, **P6** play
+>    mode, **P7** hardening (realtime groundwork is already in; webhooks, backup/restore
+>    UI remain — Obsidian sync is not wanted).
+> 5. **DM desktop companion app** and the player app mode (ROADMAP §6–7) after the above.
 >
 > | | |
 > |---|---|
