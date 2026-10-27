@@ -2,13 +2,13 @@ import { Extension } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
 import { PluginKey } from "@tiptap/pm/state";
 import Suggestion from "@tiptap/suggestion";
-import type { NodeSummary } from "@dndworldapp/schema";
+import type { TagRef } from "@dndworldapp/schema";
 import { MentionList } from "./MentionList.tsx";
 import type { MentionItem } from "./MentionList.tsx";
 import { createSuggestionRenderer } from "./suggestionPopup.tsx";
 
 export interface TagSuggestionBridge {
-  getAllNodes: () => NodeSummary[];
+  getTags: () => TagRef[];
 }
 
 const pluginKey = new PluginKey("tagSuggestion");
@@ -31,14 +31,14 @@ export function createTagSuggestionExtension(bridge: TagSuggestionBridge) {
           char: "#",
           pluginKey,
           allowSpaces: false,
+          allowedPrefixes: null,
           items: ({ query }: { query: string }) => {
             const q = query.trim().toLowerCase();
             const matches: MentionItem[] = bridge
-              .getAllNodes()
-              .filter((n) => n.kind === "tag")
-              .filter((n) => q.length === 0 || n.title.toLowerCase().includes(q))
+              .getTags()
+              .filter((t) => q.length === 0 || t.name.includes(q))
               .slice(0, 8)
-              .map((n) => ({ target: n.title, icon: n.icon, isCreate: false }));
+              .map((t) => ({ target: t.name, icon: null, isCreate: false }));
 
             const exact = matches.some((m) => m.target.toLowerCase() === q);
             if (q.length > 0 && !exact) {

@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { NodeSummary } from "@dndworldapp/schema";
+import type { NodeSummary, TagRef } from "@dndworldapp/schema";
 
 /**
  * What the editor's TipTap node views (WikiLink, Mention, Section, ...) need
@@ -14,6 +14,8 @@ export interface EditorPageContext {
   worldId: string;
   /** Every page the viewer can see, for `[[`/`@` autocomplete and title matching. */
   allNodes: NodeSummary[];
+  /** The world's tags, for `#` autocomplete and chip rendering. */
+  tags: TagRef[];
   /** Whether the viewer may edit this page — embedded sections (Section.ts) need it too. */
   canEdit: boolean;
   /** Creates a new page named `title`, nested under the current one. */

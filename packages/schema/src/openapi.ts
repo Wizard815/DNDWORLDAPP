@@ -42,6 +42,12 @@ const ApiError = ref("ApiError", S.apiErrorSchema);
 const IconHit = ref("IconHit", S.iconHitSchema);
 const MarkerPresetDto = ref("MarkerPresetDto", S.markerPresetDtoSchema);
 const RemovedNode = ref("RemovedNode", S.removedNodeSchema);
+const TagDto = ref("TagDto", S.tagDtoSchema);
+const NodeTag = ref("NodeTag", S.nodeTagSchema);
+const CreateTagInput = ref("CreateTagInput", S.createTagInputSchema);
+const UpdateTagInput = ref("UpdateTagInput", S.updateTagInputSchema);
+const MergeTagInput = ref("MergeTagInput", S.mergeTagInputSchema);
+const SetNodeTagsInput = ref("SetNodeTagsInput", S.setNodeTagsInputSchema);
 
 const SetupInput = ref("SetupInput", S.setupInputSchema);
 const LoginInput = ref("LoginInput", S.loginInputSchema);
@@ -182,6 +188,62 @@ const paths: Json = {
       summary: "Create a world, with a root page",
       requestBody: body(CreateWorldInput),
       responses: { 200: ok(obj({ world: WorldDto }, ["world"])), ...ERRORS },
+    },
+  },
+  "/worlds/{worldId}/tags": {
+    get: {
+      tags: ["tags"],
+      summary: "Every tag in the world, with how many visible pages carry each",
+      parameters: [pathParam("worldId", "World id")],
+      responses: { 200: ok(obj({ tags: arr(TagDto) }, ["tags"])), ...ERRORS },
+    },
+    post: {
+      tags: ["tags"],
+      summary: "Create a tag (owner/DM). Tags are also created on first use by #tag or set_node_tags.",
+      parameters: [pathParam("worldId", "World id")],
+      requestBody: body(CreateTagInput),
+      responses: { 201: ok(obj({ tag: TagDto }, ["tag"])), ...ERRORS },
+    },
+  },
+  "/tags/{tagId}": {
+    patch: {
+      tags: ["tags"],
+      summary: "Rename (moves nested tags with it), recolor or redescribe a tag (owner/DM)",
+      parameters: [pathParam("tagId", "Tag id")],
+      requestBody: body(UpdateTagInput),
+      responses: { 200: ok(obj({ tag: TagDto }, ["tag"])), ...ERRORS },
+    },
+    delete: {
+      tags: ["tags"],
+      summary: "Delete a tag and everything nested under it; pages just lose the label (owner/DM)",
+      parameters: [pathParam("tagId", "Tag id")],
+      responses: { 200: ok(ref("Ok", S.okSchema)), ...ERRORS },
+    },
+  },
+  "/tags/{tagId}/merge": {
+    post: {
+      tags: ["tags"],
+      summary: "Merge this tag into another: its pages and nested tags move over, then it is deleted (owner/DM)",
+      parameters: [pathParam("tagId", "Tag id")],
+      requestBody: body(MergeTagInput),
+      responses: { 200: ok(obj({ tag: TagDto }, ["tag"])), ...ERRORS },
+    },
+  },
+  "/tags/{tagId}/pages": {
+    get: {
+      tags: ["tags"],
+      summary: "Pages carrying this tag (and nested tags unless ?children=0), filtered by what the viewer can see",
+      parameters: [pathParam("tagId", "Tag id")],
+      responses: { 200: ok(obj({ nodes: arr(NodeSummary) }, ["nodes"])), ...ERRORS },
+    },
+  },
+  "/nodes/{nodeId}/tags": {
+    put: {
+      tags: ["tags"],
+      summary: "Replace a page's explicit tags (the ones not written as #tag in its body)",
+      parameters: [pathParam("nodeId", "Node id")],
+      requestBody: body(SetNodeTagsInput),
+      responses: { 200: ok(obj({ tags: arr(NodeTag) }, ["tags"])), ...ERRORS },
     },
   },
   "/worlds/{worldId}/removed": {

@@ -244,7 +244,7 @@ check("player cannot edit a DM-authored page", playerEdit.status === 403, player
 const playerSearch = (await player("GET", `/worlds/${worldId}/search?q=Crimson`)).body.hits;
 check("DM-only content does not leak through search", playerSearch.length === 0, playerSearch);
 
-console.log("\n== tags (#hashtag) ==");
+console.log("\n== tags (labels, migration 0017) ==");
 const tagPage = (await dm("POST", `/worlds/${worldId}/nodes`, {
   title: "Bandit Camp",
   parentId: rootId,
@@ -252,80 +252,57 @@ const tagPage = (await dm("POST", `/worlds/${worldId}/nodes`, {
 })).body.node;
 const tagPageDetail = (await dm("GET", `/nodes/${tagPage.id}`)).body.node;
 check(
-  "both distinct #tags in the body show up on the page",
-  tagPageDetail.tags.length === 2 &&
-    tagPageDetail.tags.some((t) => t.title === "goblin") &&
-    tagPageDetail.tags.some((t) => t.title === "goblin-chief"),
+  "both distinct #tags in the body show up on the page, as text-sourced tags",
+  tagPageDetail.tags.length === 2 && tagPageDetail.tags.every((t) => t.source === "text") &&
+    tagPageDetail.tags.some((t) => t.name === "goblin") && tagPageDetail.tags.some((t) => t.name === "goblin-chief"),
   tagPageDetail.tags,
 );
+const goblinTagId = tagPageDetail.tags.find((t) => t.name === "goblin").id;
+check("a tag is not a page", (await dm("GET", `/nodes/${goblinTagId}`)).status === 404);
+const worldTags = (await dm("GET", `/worlds/${worldId}/tags`)).body.tags;
+check("the world's tag list has it with a page count", worldTags.find((t) => t.id === goblinTagId)?.pageCount === 1, worldTags);
 
-const goblinTagId = tagPageDetail.tags.find((t) => t.title === "goblin").id;
-const goblinTagNode = (await dm("GET", `/nodes/${goblinTagId}`)).body.node;
-check("the tag itself is a real node, kind 'tag'", goblinTagNode.kind === "tag", goblinTagNode);
-check(
-  "the tag's own page lists every page that used it, via the same backlinks panel",
-  goblinTagNode.backlinks.some((b) => b.nodeId === tagPage.id),
-  goblinTagNode.backlinks,
-);
-
-const secondTagPage = (await dm("POST", `/worlds/${worldId}/nodes`, {
-  title: "Another Goblin Page",
-  parentId: rootId,
-  bodyMd: "Also about #Goblin (different case).",
-})).body.node;
+const secondTagPage = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Another Goblin Page", parentId: rootId, bodyMd: "Also about #Goblin (different case)." })).body.node;
 const secondTagDetail = (await dm("GET", `/nodes/${secondTagPage.id}`)).body.node;
-check(
-  "a different-cased mention of the same tag reuses the existing tag node, not a duplicate",
-  secondTagDetail.tags.length === 1 && secondTagDetail.tags[0].id === goblinTagId,
-  secondTagDetail.tags,
-);
+check("a different-cased mention reuses the same tag", secondTagDetail.tags.length === 1 && secondTagDetail.tags[0].id === goblinTagId, secondTagDetail.tags);
 
 await dm("PATCH", `/nodes/${tagPage.id}`, { bodyMd: "No more tags mentioned here." });
-const afterRemoval = (await dm("GET", `/nodes/${tagPage.id}`)).body.node;
-check("editing a #tag out of the body removes the association", afterRemoval.tags.length === 0, afterRemoval.tags);
-const tagNodeStillExists = await dm("GET", `/nodes/${goblinTagId}`);
-check("the tag node itself still exists — unlinked, not deleted", tagNodeStillExists.status === 200, tagNodeStillExists.body);
+check("editing a #tag out of the body removes the association", (await dm("GET", `/nodes/${tagPage.id}`)).body.node.tags.length === 0);
+check("the tag itself survives with a lower count", (await dm("GET", `/worlds/${worldId}/tags`)).body.tags.find((t) => t.id === goblinTagId)?.pageCount === 1);
 
-// New leak surface: a #tag written only inside a :::secret block must not
-// become a real node_tags association, or its mere existence (via the tag's
-// own "mentioned in" list) would reveal something about DM-only content —
-// same reasoning as reindexLinks's secret-stripping, see nodes.ts.
+const manual = await dm("PUT", `/nodes/${tagPage.id}/tags`, { tags: ["goblin", "npc/villain"] });
+check("explicit tags can be set without writing #tag in the body", manual.status === 200 && manual.body.tags.length === 2 && manual.body.tags.every((t) => t.source === "manual"), manual.body);
+const nested = (await dm("GET", `/worlds/${worldId}/tags`)).body.tags;
+const npcTag = nested.find((t) => t.name === "npc");
+const villainTag = nested.find((t) => t.name === "npc/villain");
+check("a nested tag creates its parent, linked by parentTagId", npcTag !== undefined && villainTag?.parentTagId === npcTag.id, { npcTag, villainTag });
+check("the parent tag's pages include pages tagged with its children", (await dm("GET", `/tags/${npcTag.id}/pages`)).body.nodes.some((n) => n.id === tagPage.id));
+check("…but not when children are excluded", !(await dm("GET", `/tags/${npcTag.id}/pages?children=0`)).body.nodes.some((n) => n.id === tagPage.id));
+check("tree rows carry tag name + color", (await dm("GET", `/worlds/${worldId}/tree`)).body.nodes.find((n) => n.id === tagPage.id)?.tags.some((t) => t.name === "goblin"));
+await dm("PATCH", `/nodes/${tagPage.id}`, { bodyMd: "Back with #goblin in the text." });
+check("a tag that is both in the text and explicit stays once the explicit set is cleared… as text", (await dm("PATCH", `/nodes/${tagPage.id}`, { tags: [] })).body.node.tags.map((t) => `${t.name}:${t.source}`).join() === "goblin:text");
+check("a bad tag name is rejected", (await dm("PUT", `/nodes/${tagPage.id}/tags`, { tags: ["no spaces here"] })).status === 400);
+
+check("a player cannot rename a tag", (await player("PATCH", `/tags/${goblinTagId}`, { name: "goblins" })).status === 403);
+check("a player can list tags", (await player("GET", `/worlds/${worldId}/tags`)).status === 200);
+const tagRenamed = await dm("PATCH", `/tags/${npcTag.id}`, { name: "people", color: "teal" });
+check("renaming a tag renames nested tags with it and takes a color", tagRenamed.status === 200 && tagRenamed.body.tag.color === "teal" && (await dm("GET", `/worlds/${worldId}/tags`)).body.tags.some((t) => t.name === "people/villain"), tagRenamed.body);
+check("renaming onto an existing name is a conflict", (await dm("PATCH", `/tags/${goblinTagId}`, { name: "people" })).status === 409);
+const chiefTag = nested.find((t) => t.name === "goblin-chief");
+const tagMerged = await dm("POST", `/tags/${chiefTag.id}/merge`, { intoTagId: goblinTagId });
+check("merging moves pages over and deletes the tagMerged tag", tagMerged.status === 200 && !(await dm("GET", `/worlds/${worldId}/tags`)).body.tags.some((t) => t.id === chiefTag.id), tagMerged.body);
+check("deleting a tag removes it and its children", (await dm("DELETE", `/tags/${npcTag.id}`)).status === 200 && !(await dm("GET", `/worlds/${worldId}/tags`)).body.tags.some((t) => t.name.startsWith("people")));
+
+// Leak surfaces, unchanged in spirit from the old tag-page design.
 const secretTagPage = (await dm("POST", `/worlds/${worldId}/nodes`, {
-  title: "Hidden Plot Page",
-  parentId: rootId,
-  visibility: "members",
+  title: "Hidden Plot Page", parentId: rootId, visibility: "members",
   bodyMd: "Public text.\n\n:::secret\n\nThe true culprit is tagged #hiddenvillain.\n\n:::",
 })).body.node;
-const secretTagDetail = (await dm("GET", `/nodes/${secretTagPage.id}`)).body.node;
-check(
-  "a #tag written only inside a :::secret block does not become a real tag association",
-  secretTagDetail.tags.length === 0,
-  secretTagDetail.tags,
-);
-
-// New leak surface: a tag's own "mentioned in" list must respect the
-// visibility of whatever it's listing, exactly like wikilink backlinks do.
-const dmOnlyTaggedPage = (await dm("POST", `/worlds/${worldId}/nodes`, {
-  title: "Zathrax's Vault (DM only)",
-  parentId: rootId,
-  visibility: "dm",
-  bodyMd: "Contains the #maguffin.",
-})).body.node;
-const dmOnlyTagDetail = (await dm("GET", `/nodes/${dmOnlyTaggedPage.id}`)).body.node;
-const maguffinTagId = dmOnlyTagDetail.tags.find((t) => t.title === "maguffin").id;
-const maguffinAsPlayer = await player("GET", `/nodes/${maguffinTagId}`);
-check("a player can see the tag node itself — it isn't dm-only", maguffinAsPlayer.status === 200, maguffinAsPlayer.body);
-check(
-  "but a dm-only page that used the tag is NOT listed in the tag's backlinks for a player",
-  !maguffinAsPlayer.body.node.backlinks.some((b) => b.nodeId === dmOnlyTaggedPage.id),
-  maguffinAsPlayer.body.node.backlinks,
-);
-const maguffinAsDm = (await dm("GET", `/nodes/${maguffinTagId}`)).body.node;
-check(
-  "the DM does see the dm-only page in the tag's backlinks",
-  maguffinAsDm.backlinks.some((b) => b.nodeId === dmOnlyTaggedPage.id),
-  maguffinAsDm.backlinks,
-);
+check("a #tag written only inside a :::secret block does not become a tag association", (await dm("GET", `/nodes/${secretTagPage.id}`)).body.node.tags.length === 0);
+const dmOnlyTaggedPage = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Zathrax's Vault (DM only)", parentId: rootId, visibility: "dm", bodyMd: "Contains the #maguffin." })).body.node;
+const maguffinTagId = (await dm("GET", `/nodes/${dmOnlyTaggedPage.id}`)).body.node.tags.find((t) => t.name === "maguffin").id;
+check("LEAK: a dm-only page is not in the tag's page list for a player, and doesn't count", !(await player("GET", `/tags/${maguffinTagId}/pages`)).body.nodes.some((n) => n.id === dmOnlyTaggedPage.id) && (await player("GET", `/worlds/${worldId}/tags`)).body.tags.find((t) => t.id === maguffinTagId)?.pageCount === 0);
+check("the DM does see it", (await dm("GET", `/tags/${maguffinTagId}/pages`)).body.nodes.some((n) => n.id === dmOnlyTaggedPage.id));
 
 console.log("\n== leak-surface regressions (docs/AUDIT-2026-08-24.md) ==");
 
@@ -2011,7 +1988,7 @@ const opened = (await dm("PATCH", `/nodes/${inheritChild.id}`, { visibility: "me
 check("setting a page to Players inside a DM-only folder opens just that page", opened.effectiveVisibility === "members" && (await player("GET", `/nodes/${inheritChild.id}`)).status === 200);
 const inheritTree = (await player("GET", `/worlds/${worldId}/tree`)).body.nodes;
 check("the player sees the opened page but not the DM-only folder around it", inheritTree.some((n) => n.id === inheritChild.id) && !inheritTree.some((n) => n.id === dmFolder.id));
-check("the tree carries tag names for #tag filtering", inheritTree.find((n) => n.id === inheritChild.id)?.tagNames.includes("inherittag") === true, inheritTree.find((n) => n.id === inheritChild.id));
+check("the tree carries tag names for #tag filtering", inheritTree.find((n) => n.id === inheritChild.id)?.tags.some((t) => t.name === "inherittag") === true, inheritTree.find((n) => n.id === inheritChild.id));
 const grandchildCreated = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Grandchild", parentId: inheritChild.id })).body.node;
 const grandchild = (await dm("GET", `/nodes/${grandchildCreated.id}`)).body.node;
 check("a page inside the opened page inherits Players, not the grandparent's DM-only", grandchild.effectiveVisibility === "members" && (await player("GET", `/nodes/${grandchild.id}`)).status === 200);

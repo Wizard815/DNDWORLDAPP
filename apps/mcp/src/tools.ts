@@ -227,7 +227,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           parts.push("", `## Pages inside`, ...node.children.map((c) => `- ${c.title} [${c.id}]`));
         }
         if (node.tags.length > 0) {
-          parts.push("", `## Tags`, node.tags.map((t) => `#${t.title} [${t.id}]`).join(", "));
+          parts.push("", `## Tags`, node.tags.map((t) => `#${t.name}${t.source === "manual" ? " (explicit)" : ""}`).join(", "));
         }
         if (node.backlinks.length > 0) {
           parts.push("", `## Linked from`, ...node.backlinks.map((b) => `- ${b.title} [${b.nodeId}]`));
@@ -304,9 +304,10 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         body_md: z.string().optional().describe("Markdown body."),
         icon: z.string().optional().describe("A single emoji."),
         visibility: nodeVisibilitySchema.optional().describe("public | members | dm | private | inherit. Default inherit — the parent's level."),
+        tags: z.array(z.string()).optional().describe("Tags to attach, e.g. ['npc', 'npc/villain']. Created on first use. Writing #tag in the body works too."),
       },
     },
-    async ({ title, world_id, parent_id, body_md, icon, visibility }) => {
+    async ({ title, world_id, parent_id, body_md, icon, visibility, tags }) => {
       try {
         const worldId = await client.resolveWorldId(world_id);
         const { node } = await client.createNode(worldId, {
@@ -315,6 +316,7 @@ export function registerTools(server: McpServer, client: WorldClient): void {
           bodyMd: body_md,
           icon: icon ?? null,
           visibility,
+          tags,
         });
         return text(`Created "${node.title}" [${node.id}].`);
       } catch (error) {
@@ -336,15 +338,17 @@ export function registerTools(server: McpServer, client: WorldClient): void {
         body_md: z.string().optional(),
         icon: z.string().nullable().optional(),
         visibility: nodeVisibilitySchema.optional().describe("public | members | dm | private | inherit (the parent's level)."),
+        tags: z.array(z.string()).optional().describe("Replaces the page's explicit tags (not the #tags written in its body) with exactly these."),
       },
     },
-    async ({ node_id, title, body_md, icon, visibility }) => {
+    async ({ node_id, title, body_md, icon, visibility, tags }) => {
       try {
         const { node } = await client.updateNode(node_id, {
           title,
           bodyMd: body_md,
           icon,
           visibility,
+          tags,
         });
         return text(`Updated "${node.title}" [${node.id}].`);
       } catch (error) {
@@ -391,6 +395,43 @@ export function registerTools(server: McpServer, client: WorldClient): void {
       try {
         await client.archiveNode(node_id);
         return text(`Archived [${node_id}] and everything inside it.`);
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_tags",
+    {
+      title: "List tags",
+      description: "Every tag in the world with how many pages carry it. Tags nest with '/': 'npc/villain' is under 'npc'.",
+      inputSchema: { world_id: worldIdArg },
+    },
+    async ({ world_id }) => {
+      try {
+        const worldId = await client.resolveWorldId(world_id);
+        const { tags } = await client.tags(worldId);
+        if (tags.length === 0) return text("No tags yet. Write #tag in a page body, or pass tags to create_node/update_node.");
+        return text(tags.map((t) => `#${t.name} [${t.id}] — ${t.pageCount} page${t.pageCount === 1 ? "" : "s"}${t.color !== null ? ` · ${t.color}` : ""}${t.description.length > 0 ? ` — ${t.description}` : ""}`).join("\n"));
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "tag_pages",
+    {
+      title: "Pages with a tag",
+      description: "Every page carrying a tag (nested tags included unless include_children is false), filtered by what this token may see.",
+      inputSchema: { tag_id: z.string().describe("From list_tags."), include_children: z.boolean().optional() },
+    },
+    async ({ tag_id, include_children }) => {
+      try {
+        const { nodes } = await client.tagPages(tag_id, include_children ?? true);
+        if (nodes.length === 0) return text("No pages carry that tag (that you can see).");
+        return text(nodes.map((n) => `- ${n.icon ?? ""} ${n.title} [${n.id}]`.trim()).join("\n"));
       } catch (error) {
         return fail(error);
       }

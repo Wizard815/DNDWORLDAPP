@@ -18,6 +18,8 @@ import type {
   PostDto,
   RemovedNode,
   SearchHit,
+  TagDto,
+  NodeTag,
   TemplateDto,
   UnresolvedLink,
   UpdateFieldInput,
@@ -171,6 +173,18 @@ export class WorldClient {
 
   restoreNode(nodeId: string) {
     return this.request<{ ok: true }>("POST", `/nodes/${nodeId}/restore`);
+  }
+
+  tags(worldId: string) {
+    return this.request<{ tags: TagDto[] }>("GET", `/worlds/${worldId}/tags`);
+  }
+
+  tagPages(tagId: string, children = true) {
+    return this.request<{ nodes: NodeSummary[] }>("GET", `/tags/${tagId}/pages?children=${children ? "1" : "0"}`);
+  }
+
+  setNodeTags(nodeId: string, tags: string[]) {
+    return this.request<{ tags: NodeTag[] }>("PUT", `/nodes/${nodeId}/tags`, { tags });
   }
 
   removedNodes(worldId: string) {

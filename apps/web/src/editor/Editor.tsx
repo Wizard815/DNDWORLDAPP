@@ -4,7 +4,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import { useEffect, useRef, useState } from "react";
-import type { NodeSummary } from "@dndworldapp/schema";
+import type { NodeSummary, TagRef } from "@dndworldapp/schema";
 import { api } from "../api.ts";
 import { EditorPageProvider } from "./context.tsx";
 import { AutoLink } from "./extensions/AutoLink.ts";
@@ -28,6 +28,7 @@ interface Props {
   worldId: string;
   bodyMd: string;
   allNodes: NodeSummary[];
+  tags: TagRef[];
   editable: boolean;
   onCreateNamed: (title: string) => void;
   onChange: (bodyMd: string) => void;
@@ -44,7 +45,7 @@ const AUTOSAVE_QUIET_MS = 800;
  * secret blocks. See docs/HANDOFF.md §7.6 and the plan this was built from
  * for why each piece is shaped the way it is.
  */
-export function Editor({ nodeId, worldId, bodyMd, allNodes, editable, onCreateNamed, onChange }: Props) {
+export function Editor({ nodeId, worldId, bodyMd, allNodes, tags, editable, onCreateNamed, onChange }: Props) {
   // Extensions are constructed once per mount (NodeView.tsx remounts this
   // whole component via key={node.id} on navigation), but `allNodes` keeps
   // updating from React Query in the meantime — bridge refs so the
@@ -72,8 +73,10 @@ export function Editor({ nodeId, worldId, bodyMd, allNodes, editable, onCreateNa
     },
   }).current;
 
+  const tagsRef = useRef(tags);
+  tagsRef.current = tags;
   const tagBridge = useRef<TagSuggestionBridge>({
-    getAllNodes: () => allNodesRef.current,
+    getTags: () => tagsRef.current,
   }).current;
   const TagSuggestionExtension = useRef(createTagSuggestionExtension(tagBridge)).current;
 
@@ -234,7 +237,7 @@ export function Editor({ nodeId, worldId, bodyMd, allNodes, editable, onCreateNa
   }
 
   return (
-    <EditorPageProvider value={{ nodeId, worldId, allNodes, canEdit: editable, onCreateNamed }}>
+    <EditorPageProvider value={{ nodeId, worldId, allNodes, tags, canEdit: editable, onCreateNamed }}>
       <input
         ref={fileInputRef}
         type="file"

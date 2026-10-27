@@ -22,6 +22,7 @@ import { mapRoutes } from "./routes/maps.ts";
 import { nodeRoutes } from "./routes/nodes.ts";
 import { openApiRoutes } from "./routes/openapi.ts";
 import { shareRoutes } from "./routes/share.ts";
+import { tagRoutes } from "./routes/tags.ts";
 import { tokenRoutes } from "./routes/tokens.ts";
 import { worldRoutes } from "./routes/worlds.ts";
 import { foggedTile } from "./services/fog.ts";
@@ -232,6 +233,7 @@ await app.register(nodeRoutes);
 await app.register(mapRoutes);
 await app.register(shareRoutes);
 await app.register(tokenRoutes);
+await app.register(tagRoutes);
 await app.register(openApiRoutes);
 await app.register(iconRoutes);
 

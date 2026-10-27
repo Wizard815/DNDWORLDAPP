@@ -4,26 +4,25 @@ import { navigate } from "../../lib/nav.ts";
 import { useEditorPage } from "../context.tsx";
 
 /**
- * `#tagname` rendered live, as a small pill rather than raw hash-prefixed
- * text — same resolved/not-yet-saved distinction WikiLinkView draws, except
- * there is no "click to create": a tag always resolves once the page saves
- * (reindexTags() creates it then), so an unresolved chip just says so rather
- * than offering an action with nowhere to go yet.
+ * `#tagname` rendered live as a chip in the tag's color. A tag that doesn't
+ * exist yet (the page hasn't saved since it was typed) shows as pending —
+ * every tag resolves once the page saves, so there's no "create" action.
  */
 export function TagLinkView({ node }: NodeViewProps) {
-  const { allNodes } = useEditorPage();
+  const { tags } = useEditorPage();
   const name = ((node.attrs.name as string) ?? "").toLowerCase();
-  const hit = allNodes.find((n) => n.kind === "tag" && n.title.toLowerCase() === name);
+  const hit = tags.find((t) => t.name === name);
 
   return (
     <NodeViewWrapper as="span" className="inline">
       {hit !== undefined ? (
         <a
-          href={`/n/${hit.id}`}
+          href={`/tags/${hit.id}`}
           className="tag-chip"
+          data-color={hit.color ?? undefined}
           onClick={(e) => {
             e.preventDefault();
-            navigate(`/n/${hit.id}`);
+            navigate(`/tags/${hit.id}`);
           }}
         >
           #{name}

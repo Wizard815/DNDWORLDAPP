@@ -49,7 +49,6 @@ export const NODE_KINDS = [
   "calendar",
   "board",
   "view",
-  "tag",
 ] as const;
 export type NodeKind = (typeof NODE_KINDS)[number];
 export const nodeKindSchema = z.enum(NODE_KINDS);
@@ -168,6 +167,8 @@ export const createNodeInputSchema = z.object({
   /** Default 'inherit' — the parent's level, or 'members' at the top. */
   visibility: nodeVisibilitySchema.optional(),
   bodyMd: z.string().max(2_000_000).optional(),
+  /** Tags to attach explicitly (on top of any `#tag` in the body). Created on first use. */
+  tags: z.array(z.string().max(120)).max(100).optional(),
 });
 export type CreateNodeInput = z.infer<typeof createNodeInputSchema>;
 
@@ -179,6 +180,8 @@ export const updateNodeInputSchema = z
     visibility: nodeVisibilitySchema,
     templateId: z.string().nullable(),
     isArchived: z.boolean(),
+    /** Replaces the page's explicit (non-`#text`) tags with exactly these. */
+    tags: z.array(z.string().max(120)).max(100),
   })
   .partial();
 export type UpdateNodeInput = z.infer<typeof updateNodeInputSchema>;
@@ -208,8 +211,8 @@ export const nodeSummarySchema = z.object({
   childCount: z.number().int(),
   isArchived: z.boolean(),
   updatedAt: z.number().int(),
-  /** Tag names (lowercase) this page carries, for filtering the tree without another request. */
-  tagNames: z.array(z.string()),
+  /** The page's tags (name + color), for filtering and the colored dot in the tree. */
+  tags: z.array(z.lazy(() => tagRefSchema)),
 });
 export type NodeSummary = z.infer<typeof nodeSummarySchema>;
 
@@ -242,13 +245,68 @@ export const breadcrumbEntrySchema = z.object({
   icon: z.string().nullable(),
 });
 
-/** A `#tag` reference — the tag itself is a real node (kind "tag"), same "everything is a node" rule as any wikilink target. */
+// ---------------------------------------------------------------------------
+// Tags (migration 0017) — labels on pages, not pages. Lowercase names, `/`
+// for nesting ("npc/villain" is under "npc"), a color from a fixed palette so
+// chips, tree dots and graph nodes all agree. See docs/DESIGN-connections.
+// ---------------------------------------------------------------------------
+
+export const TAG_COLORS = ["red", "orange", "amber", "green", "teal", "blue", "indigo", "violet", "pink", "brown", "gray", "slate"] as const;
+export type TagColor = (typeof TAG_COLORS)[number];
+export const tagColorSchema = z.enum(TAG_COLORS);
+
+/** Canonical form: lowercase, letters/digits/_/-, `/` between nesting levels. */
+export const tagNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .regex(/^[a-z0-9_][a-z0-9_-]*(?:\/[a-z0-9_][a-z0-9_-]*)*$/, "A tag is letters, digits, _ and -, with / for nesting.");
+
 export const tagRefSchema = z.object({
   id: z.string(),
-  title: z.string(),
-  icon: z.string().nullable(),
+  name: z.string(),
+  color: tagColorSchema.nullable(),
 });
 export type TagRef = z.infer<typeof tagRefSchema>;
+
+/** A tag on a page, with where it came from: `text` (a `#tag` in the body) or `manual` (chip editor / API). */
+export const nodeTagSchema = tagRefSchema.extend({ source: z.enum(["text", "manual"]) });
+export type NodeTag = z.infer<typeof nodeTagSchema>;
+
+export const tagDtoSchema = z.object({
+  id: z.string(),
+  worldId: z.string(),
+  name: z.string(),
+  color: tagColorSchema.nullable(),
+  description: z.string(),
+  parentTagId: z.string().nullable(),
+  /** Pages carrying this exact tag that the viewer can see (children not included). */
+  pageCount: z.number().int(),
+});
+export type TagDto = z.infer<typeof tagDtoSchema>;
+
+export const createTagInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  color: tagColorSchema.nullable().optional(),
+  description: z.string().max(2_000).optional(),
+});
+export type CreateTagInput = z.infer<typeof createTagInputSchema>;
+
+export const updateTagInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    color: tagColorSchema.nullable(),
+    description: z.string().max(2_000),
+  })
+  .partial();
+export type UpdateTagInput = z.infer<typeof updateTagInputSchema>;
+
+export const mergeTagInputSchema = z.object({ intoTagId: z.string() });
+export type MergeTagInput = z.infer<typeof mergeTagInputSchema>;
+
+export const setNodeTagsInputSchema = z.object({ tags: z.array(z.string().max(120)).max(100) });
+export type SetNodeTagsInput = z.infer<typeof setNodeTagsInputSchema>;
 
 export const nodeDetailSchema = nodeSummarySchema.extend({
   worldId: z.string(),
@@ -257,7 +315,7 @@ export const nodeDetailSchema = nodeSummarySchema.extend({
   breadcrumb: z.array(breadcrumbEntrySchema),
   children: z.array(nodeSummarySchema),
   backlinks: z.array(backlinkSchema),
-  tags: z.array(tagRefSchema),
+  tags: z.array(nodeTagSchema),
   canEdit: z.boolean(),
 });
 export type NodeDetail = z.infer<typeof nodeDetailSchema>;

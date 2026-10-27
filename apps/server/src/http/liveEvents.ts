@@ -22,6 +22,7 @@ const markerMap = db.prepare("SELECT map_node_id AS nodeId FROM map_markers WHER
 const groupMap = db.prepare("SELECT map_node_id AS nodeId FROM map_groups WHERE id = ?");
 const postNode = db.prepare("SELECT node_id AS nodeId FROM posts WHERE id = ?");
 const nodeWorld = db.prepare("SELECT world_id AS worldId FROM nodes WHERE id = ?");
+const tagWorld = db.prepare("SELECT world_id AS worldId FROM tags WHERE id = ?");
 
 const WRITE_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
@@ -61,6 +62,10 @@ export function registerLiveEvents(app: FastifyInstance): void {
     if (forever !== null) {
       request.liveEventWorldId = (nodeWorld.get(forever[1]!) as { worldId: string } | undefined)?.worldId ?? null;
     }
+    const tag = /^\/api\/v1\/tags\/([^/]+)/.exec(path);
+    if (tag !== null) {
+      request.liveEventWorldId = (tagWorld.get(tag[1]!) as { worldId: string } | undefined)?.worldId ?? null;
+    }
   });
 
   app.addHook("onResponse", async (request, reply) => {
@@ -73,9 +78,14 @@ export function registerLiveEvents(app: FastifyInstance): void {
       return;
     }
 
-    const worldNodes = /^\/api\/v1\/worlds\/([^/]+)\/nodes$/.exec(path);
+    const worldNodes = /^\/api\/v1\/worlds\/([^/]+)\/(?:nodes|tags)$/.exec(path);
     if (worldNodes !== null) {
       publish(worldNodes[1]!, { type: "tree.changed" });
+      return;
+    }
+    // A tag rename/recolor/merge/delete changes chips and tree dots everywhere.
+    if (path.startsWith("/api/v1/tags/")) {
+      if (request.liveEventWorldId) publish(request.liveEventWorldId, { type: "tree.changed" });
       return;
     }
 

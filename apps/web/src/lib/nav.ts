@@ -30,6 +30,12 @@ export function usePath(): string {
   return path;
 }
 
+/** `/tags` → { tagId: null }, `/tags/<id>` → { tagId }, anything else → null. */
+export function tagsRouteFromPath(path: string): { tagId: string | null } | null {
+  const match = /^\/tags(?:\/([a-z0-9]+))?\/?$/.exec(path);
+  return match === null ? null : { tagId: match[1] ?? null };
+}
+
 export function nodeIdFromPath(path: string): string | null {
   const match = /^\/n\/([a-z0-9]+)/.exec(path);
   return match?.[1] ?? null;

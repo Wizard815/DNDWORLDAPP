@@ -46,6 +46,10 @@ import type {
   UserDto,
   Visibility,
   RemovedNode,
+  CreateTagInput,
+  NodeTag,
+  TagDto,
+  UpdateTagInput,
   WorldDto,
 } from "@dndworldapp/schema";
 
@@ -187,6 +191,18 @@ export const api = {
   trashNode: (nodeId: string) => request<{ ok: true }>(`/nodes/${nodeId}/trash`, { method: "POST" }),
   restoreNode: (nodeId: string) => request<{ ok: true }>(`/nodes/${nodeId}/restore`, { method: "POST" }),
   deleteNodeForever: (nodeId: string) => request<{ ok: true }>(`/nodes/${nodeId}/forever`, { method: "DELETE" }),
+  tags: (worldId: string) => request<{ tags: TagDto[] }>(`/worlds/${worldId}/tags`),
+  createTag: (worldId: string, input: CreateTagInput) =>
+    request<{ tag: TagDto }>(`/worlds/${worldId}/tags`, { method: "POST", ...json(input) }),
+  updateTag: (tagId: string, input: UpdateTagInput) =>
+    request<{ tag: TagDto }>(`/tags/${tagId}`, { method: "PATCH", ...json(input) }),
+  deleteTag: (tagId: string) => request<{ ok: true }>(`/tags/${tagId}`, { method: "DELETE" }),
+  mergeTag: (tagId: string, intoTagId: string) =>
+    request<{ tag: TagDto }>(`/tags/${tagId}/merge`, { method: "POST", ...json({ intoTagId }) }),
+  tagPages: (tagId: string, children = true) =>
+    request<{ nodes: NodeSummary[] }>(`/tags/${tagId}/pages?children=${children ? "1" : "0"}`),
+  setNodeTags: (nodeId: string, tags: string[]) =>
+    request<{ tags: NodeTag[] }>(`/nodes/${nodeId}/tags`, { method: "PUT", ...json({ tags }) }),
   removedNodes: (worldId: string) =>
     request<{ archived: RemovedNode[]; trashed: RemovedNode[] }>(`/worlds/${worldId}/removed`),
 

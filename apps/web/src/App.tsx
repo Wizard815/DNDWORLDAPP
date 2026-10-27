@@ -12,9 +12,10 @@ import { ShareView } from "./components/ShareView.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.tsx";
 import { Removed } from "./components/Removed.tsx";
+import { TagsView } from "./components/TagsView.tsx";
 import { Templates } from "./components/Templates.tsx";
 import { Tokens } from "./components/Tokens.tsx";
-import { navigate, nodeIdFromPath, usePath } from "./lib/nav.ts";
+import { navigate, nodeIdFromPath, tagsRouteFromPath, usePath } from "./lib/nav.ts";
 import { useLiveEvents } from "./lib/liveEvents.ts";
 import { useTheme } from "./lib/theme.ts";
 
@@ -105,6 +106,7 @@ export function App() {
   });
 
   const activeId = nodeIdFromPath(path);
+  const tagsRoute = tagsRouteFromPath(path);
 
   // The off-canvas sidebar on a phone closes itself once a page is picked.
   useEffect(() => {
@@ -124,7 +126,7 @@ export function App() {
   // back to their own dashboard by this effect (it runs regardless of which
   // branch below actually gets rendered).
   useEffect(() => {
-    if (shareToken === null && activeId === null && world?.rootNodeId != null) {
+    if (shareToken === null && activeId === null && tagsRoute === null && world?.rootNodeId != null) {
       navigate(`/n/${world.rootNodeId}`);
     }
   }, [shareToken, activeId, world]);
@@ -276,6 +278,7 @@ export function App() {
           onOpenRemoved={() => setRemovedOpen(true)}
           isGameMaster={isGameMaster}
           canCreate={canCreate}
+          tagsActive={tagsRoute !== null}
           viewAsPlayer={viewAsPlayer}
           onToggleViewAsPlayer={toggleViewAsPlayer}
           theme={theme}
@@ -289,7 +292,9 @@ export function App() {
           }}
         />
 
-        {node.data !== undefined ? (
+        {tagsRoute !== null ? (
+          <TagsView worldId={world.id} selectedTagId={tagsRoute.tagId} isGameMaster={isGameMaster && !viewAsPlayer} />
+        ) : node.data !== undefined ? (
           <>
             {/*
              * key includes viewAsPlayer: NodeView mounts an Editor whose

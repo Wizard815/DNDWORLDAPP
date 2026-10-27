@@ -468,6 +468,18 @@ const groupDeleted = await callTool("delete_map_group", { group_id: capitalGroup
 check("delete_map_group removes a group", !groupDeleted.isError, groupDeleted.text);
 await callTool("delete_map_group", { group_id: regionsGroupId });
 
+console.log("\n== tags ==");
+const taggedViaMcp = await callTool("create_node", { title: "MCP tagged page", world_id: world.id, parent_id: null, body_md: "About #mcpgoblins.", tags: ["npc/villain"] });
+const taggedId = /\[([a-z0-9]+)\]/.exec(taggedViaMcp.text)?.[1];
+const tagList = await callTool("list_tags", { world_id: world.id });
+check("list_tags shows a body #tag and an explicit tag, with nesting", !tagList.isError && tagList.text.includes("#mcpgoblins") && tagList.text.includes("#npc/villain") && tagList.text.includes("#npc "), tagList.text);
+const npcId = /#npc \[([a-z0-9]+)\]/.exec(tagList.text)?.[1];
+const npcPages = await callTool("tag_pages", { tag_id: npcId });
+check("tag_pages on the parent tag finds the page tagged with the child", !npcPages.isError && npcPages.text.includes("MCP tagged page"), npcPages.text);
+const retagged = await callTool("update_node", { node_id: taggedId, tags: [] });
+const afterRetag = await callTool("get_node", { node_id: taggedId });
+check("update_node with tags: [] drops the explicit tag but keeps the body's #tag", !retagged.isError && afterRetag.text.includes("#mcpgoblins") && !afterRetag.text.includes("#npc/villain"), afterRetag.text);
+
 console.log("\n== trash, restore, presets ==");
 const trashMe = await callTool("create_node", { title: "MCP trash me", world_id: world.id, parent_id: null });
 const trashMeId = /\[([a-z0-9]+)\]/.exec(trashMe.text)?.[1];

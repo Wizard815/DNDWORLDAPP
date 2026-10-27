@@ -29,6 +29,8 @@ interface Props {
   isGameMaster: boolean;
   /** False for a read-only guest: no new/rename/archive/move, no member or token panels. */
   canCreate: boolean;
+  /** The Tags screen is open (so its row highlights instead of a page). */
+  tagsActive: boolean;
   viewAsPlayer: boolean;
   onToggleViewAsPlayer: () => void;
   theme: ThemeId;
@@ -90,6 +92,7 @@ export function Sidebar({
   onSignOut,
   isGameMaster,
   canCreate,
+  tagsActive,
   viewAsPlayer,
   onToggleViewAsPlayer,
   theme,
@@ -101,7 +104,6 @@ export function Sidebar({
   const [filter, setFilter] = useState("");
   const panel = useResizablePanel({ storageKey: "dwa:sidebar", defaultWidth: 290, minWidth: 200, maxWidth: 480 });
   const { expanded, toggle, setExpanded, isFirstVisit } = useExpanded(worldName);
-  const [tagsOpen, setTagsOpen] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; mode: DropMode } | null>(null);
   const [menuForId, setMenuForId] = useState<string | null>(null);
@@ -141,7 +143,7 @@ export function Sidebar({
     setSeeded(true);
     setExpanded((prev) => {
       const next = new Set(prev);
-      for (const node of nodes) if (node.parentId === null && node.kind !== "tag") next.add(node.id);
+      for (const node of nodes) if (node.parentId === null) next.add(node.id);
       return next;
     });
   }, [seeded, nodes, setExpanded]);
@@ -156,7 +158,7 @@ export function Sidebar({
     for (const node of nodes) {
       const matches =
         tagNeedle !== null
-          ? tagNeedle.length === 0 || node.tagNames.some((t) => t.toLowerCase().startsWith(tagNeedle))
+          ? tagNeedle.length === 0 || node.tags.some((t) => t.name.startsWith(tagNeedle))
           : node.title.toLowerCase().includes(needle);
       if (!matches) continue;
       keep.add(node.id);
@@ -342,6 +344,13 @@ export function Sidebar({
           ) : (
             <span className="truncate">{node.title}</span>
           )}
+          {!isRenaming && node.tags.find((t) => t.color !== null) !== undefined && (
+            <span
+              className="tag-dot shrink-0"
+              data-color={node.tags.find((t) => t.color !== null)!.color!}
+              title={node.tags.map((t) => `#${t.name}`).join(" ")}
+            />
+          )}
           {isPinned && (
             <span className="shrink-0 text-[10px] text-secret" title="Pinned">
               ★
@@ -450,9 +459,7 @@ export function Sidebar({
   // DM-only folder) — it comes down with a parentId the viewer can't see, so
   // show it at the top level rather than nowhere.
   const allRoots = [...(byParent.get(null) ?? []), ...nodes.filter((n) => n.parentId !== null && !byId.has(n.parentId))];
-  const roots = allRoots.filter((n) => n.kind !== "tag");
-  const rootTags = allRoots.filter((n) => n.kind === "tag").sort((a, b) => a.title.localeCompare(b.title));
-  const showTags = tagsOpen || (visible !== null && rootTags.some((t) => visible.has(t.id)));
+  const roots = allRoots;
 
   if (panel.collapsed && !mobileOpen) {
     return (
@@ -535,21 +542,18 @@ export function Sidebar({
             <p className="px-2 py-4 text-xs text-fg-muted">Nothing here yet.</p>
           )}
 
-          {rootTags.length > 0 && (
-            <div className="mt-3">
-              <button
-                type="button"
-                onClick={() => setTagsOpen(!tagsOpen)}
-                className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] font-medium uppercase tracking-wide text-fg-muted hover:text-fg"
-                aria-expanded={showTags}
-              >
-                <span className="w-4 text-[9px]">{showTags ? "▾" : "▸"}</span>
-                Tags
-                <span className="ml-auto font-normal normal-case text-fg-faint">{rootTags.length}</span>
-              </button>
-              {showTags && rootTags.map((node) => renderRow(node, 0))}
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => navigate("/tags")}
+            className={`mt-3 flex w-full items-center gap-1.5 rounded-md px-1.5 py-[5px] text-[13px] ${
+              tagsActive ? "bg-selected font-medium text-fg-strong" : "text-fg-soft hover:bg-hover hover:text-fg"
+            }`}
+            title="Browse pages by tag"
+          >
+            <span className="w-4" />
+            <span className="shrink-0 text-[13px] leading-none">🏷️</span>
+            <span className="truncate">Tags</span>
+          </button>
         </div>
 
         <div className="space-y-0.5 border-t border-divider p-2">

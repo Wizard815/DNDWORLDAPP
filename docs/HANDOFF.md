@@ -1621,6 +1621,29 @@ down the tree with a `parentId` the viewer can't see; `Sidebar` lists such pages
 top level. `NodeSummary.tagNames` (from a `group_concat` subquery in `getTree`) is what
 `#tag` filtering in the sidebar and Ctrl+K uses.
 
+### 7.15 Tags as labels (migration 0017)
+
+A tag is a `tags` row — lowercase name with `/` for nesting ("npc/villain" is under
+"npc", and "npc" exists whenever a child does), a color from `TAG_COLORS` (12 fixed hues,
+`--tag-<name>` tokens in styles.css so chips, tree dots, swatches and the future graph
+agree), a description, `parent_tag_id`. `node_tags` rows carry a `source`: `text` rows
+are re-derived from the body's `#tags` on every save (secret-stripped first), `manual`
+rows come from the chip editor / `PUT /nodes/:id/tags` / the `tags` argument on node
+create/update, and survive prose edits. A tag present both ways is `text` (upsert wins),
+so clearing the explicit set never drops a tag the body still carries.
+
+The old tag *pages* were converted in place — same ids, body → description — and the
+pages themselves trashed as plain documents. There is no `kind: "tag"` any more.
+`services/tags.ts` has create/rename (renames nested tags with it)/merge/delete; page
+lists and counts live in `services/nodes.ts` (`pagesForTag`, `listTagsWithCounts`) because
+they need `readableSql`. Managing tags is owner/DM; tagging a page needs edit rights on
+it; reading is open to every member, with every page list and count viewer-filtered.
+
+Client: `/tags` and `/tags/<id>` (`TagsView`, Ctrl-click to intersect tags), `TagChips`
+in the Info panel, `#` autocomplete and chip rendering from `useWorldTags`, a colored dot
+on tree rows and Ctrl+K results, `#tag` in the sidebar filter and Ctrl+K. MCP:
+`list_tags`, `tag_pages`, `tags` on `create_node`/`update_node`.
+
 ### 7.14 Secret block audiences
 
 `:::secret` takes an optional `{visibility="dm|members|public"}` (default dm). The

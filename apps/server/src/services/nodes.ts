@@ -6,7 +6,7 @@ import type {
   NodeKind,
   NodeSummary,
   SearchHit,
-  TagRef,
+  TagDto,
   UnresolvedLink,
   UpdateNodeInput,
   Visibility,
@@ -20,7 +20,8 @@ import { shortId } from "../lib/id.ts";
 import { containsHiddenSecret, redactForViewer, stripSecrets } from "../lib/secrets.ts";
 import { keyAfterAll, keyBetween } from "../lib/sortkey.ts";
 import { slugify, uniqueSlug } from "../lib/slug.ts";
-import { parseTags } from "../lib/tags.ts";
+import { descendantTagIds, reindexTextTags, setManualTags, tagsFor, toTagDto } from "./tags.ts";
+import type { TagRow } from "./tags.ts";
 import { linkKey, parseWikilinks } from "../lib/wikilinks.ts";
 import { canEditNode } from "./acl.ts";
 import { removeMapFiles } from "./mapFiles.ts";
@@ -73,14 +74,6 @@ const resolvePending = db.prepare(`
   UPDATE links SET dst_node_id = ?
   WHERE world_id = ? AND dst_node_id IS NULL AND (lower(target_text) = ? OR lower(target_text) = ?)
 `);
-const deleteTagsFrom = db.prepare("DELETE FROM node_tags WHERE node_id = ?");
-const insertNodeTag = db.prepare("INSERT OR IGNORE INTO node_tags (node_id, tag_node_id) VALUES (?, ?)");
-const findTagNode = db.prepare("SELECT id FROM nodes WHERE world_id = ? AND kind = 'tag' AND lower(title) = ?");
-const selectTagsFor = db.prepare(`
-  SELECT n.id, n.title, n.icon FROM node_tags nt JOIN nodes n ON n.id = nt.tag_node_id
-  WHERE nt.node_id = ? AND n.is_archived = 0
-  ORDER BY n.title
-`);
 const unresolveStale = db.prepare(`
   UPDATE links SET dst_node_id = NULL
   WHERE dst_node_id = ? AND lower(target_text) NOT IN (?, ?)
@@ -108,8 +101,8 @@ export function rowToSummary(row: NodeRow & { child_count?: number; tags?: strin
     childCount: row.child_count ?? 0,
     isArchived: row.is_archived === 1,
     updatedAt: row.updated_at,
-    // Only getTree selects `tags` (see TAGS_SUBQUERY); everywhere else a summary just has none.
-    tagNames: row.tags != null && row.tags.length > 0 ? row.tags.split("\u001f") : [],
+    // Only queries that select TAGS_SUBQUERY `AS tags` fill this in; elsewhere a summary just has none.
+    tags: parseTagsColumn(row.tags),
   };
 }
 
@@ -118,8 +111,17 @@ export function rowToSummary(row: NodeRow & { child_count?: number; tags?: strin
  * this is far cheaper than lazy-loading each level, and it lets the client do
  * instant filtering and quick-switching without another round trip.
  */
-/** A page's tag names joined with a unit separator — one subquery per row, cheaper than a join that multiplies rows. */
-const TAGS_SUBQUERY = `(SELECT group_concat(t.title, char(31)) FROM node_tags nt JOIN nodes t ON t.id = nt.tag_node_id WHERE nt.node_id = n.id)`;
+/** A page's tags as `id\x1ename\x1ecolor` records joined by \x1f — one subquery per row, cheaper than a join that multiplies rows. */
+const TAGS_SUBQUERY = `(SELECT group_concat(t.id || char(30) || t.name || char(30) || coalesce(t.color, ''), char(31))
+                        FROM node_tags nt JOIN tags t ON t.id = nt.tag_id WHERE nt.node_id = n.id)`;
+
+function parseTagsColumn(raw: string | null | undefined): NodeSummary["tags"] {
+  if (raw == null || raw.length === 0) return [];
+  return raw.split("\u001f").map((rec) => {
+    const [id, name, color] = rec.split("\u001e");
+    return { id: id ?? "", name: name ?? "", color: (color !== undefined && color.length > 0 ? color : null) as NodeSummary["tags"][number]["color"] };
+  });
+}
 
 export function getTree(worldId: string, viewer: Viewer): NodeSummary[] {
   const outer = readableSql("n", viewer);
@@ -258,13 +260,9 @@ export function backlinksFor(nodeId: string, viewer: Viewer): Backlink[] {
       `SELECT n.id, n.title, n.icon, l.label
        FROM links l JOIN nodes n ON n.id = l.src_node_id
        WHERE l.dst_node_id = ? AND n.is_archived = 0 AND ${vis.sql}
-       UNION
-       SELECT n.id, n.title, n.icon, NULL AS label
-       FROM node_tags nt JOIN nodes n ON n.id = nt.node_id
-       WHERE nt.tag_node_id = ? AND n.is_archived = 0 AND ${vis.sql}
-       ORDER BY title`,
+       ORDER BY n.title`,
     )
-    .all(nodeId, ...vis.params, nodeId, ...vis.params) as Array<{
+    .all(nodeId, ...vis.params) as Array<{
     id: string;
     title: string;
     icon: string | null;
@@ -361,58 +359,40 @@ function resettleLinksFor(row: NodeRow): void {
 }
 
 /**
- * A `#tag` node is created the first time anyone writes that tag anywhere in
- * the world, exactly like a wikilink's "create on demand" — except a tag
- * always resolves, so there is no "unresolved tag" concept to maintain. The
- * node's title is the tag text itself, lowercased: canonical casing (like a
- * hashtag) rather than whichever of possibly several different-cased
- * mentions happened to write it first.
+ * Pages carrying a tag (and, by default, any tag nested under it), filtered
+ * by what the viewer may see. Lives here rather than in tags.ts because it
+ * needs readableSql/rowToSummary.
  */
-function findOrCreateTagNode(worldId: string, name: string, createdBy: string | null, now: number): string {
-  const existing = findTagNode.get(worldId, name) as { id: string } | undefined;
-  if (existing !== undefined) return existing.id;
-
-  const id = shortId();
-  insertNode.run({
-    id,
-    worldId,
-    parentId: null,
-    templateId: null,
-    kind: "tag",
-    title: name,
-    slug: uniqueSlug(name, (s) => slugTaken.get(worldId, s) !== undefined),
-    bodyMd: "",
-    icon: "🏷️",
-    sortKey: nextSortKey(worldId, null, null),
-    visibility: "members",
-    createdBy,
-    now,
-  });
-  return id;
+export function pagesForTag(tagId: string, viewer: Viewer, includeChildren = true): NodeSummary[] {
+  const ids = includeChildren ? [tagId, ...descendantTagIds(tagId)] : [tagId];
+  const outer = readableSql("n", viewer);
+  const inner = readableSql("c", viewer);
+  const rows = db
+    .prepare(
+      `SELECT n.*,
+              (SELECT COUNT(*) FROM nodes c WHERE c.parent_id = n.id AND c.is_archived = 0 AND ${inner.sql}) AS child_count,
+              ${TAGS_SUBQUERY} AS tags
+       FROM nodes n
+       WHERE n.id IN (SELECT node_id FROM node_tags WHERE tag_id IN (${ids.map(() => "?").join(", ")}))
+         AND n.is_archived = 0 AND ${outer.sql}
+       ORDER BY n.title COLLATE NOCASE`,
+    )
+    .all(...inner.params, ...ids, ...outer.params) as Array<NodeRow & { child_count: number; tags: string | null }>;
+  return rows.map(rowToSummary);
 }
 
-/**
- * Indexes `#tag` mentions out of the SECRET-STRIPPED body, same reasoning as
- * reindexLinks — a tag written only inside a `:::secret` block must not
- * surface as a real node_tags row, or its mere existence leaks something
- * about DM-only content to every member browsing the tag's own page.
- */
-function reindexTags(row: NodeRow): void {
-  deleteTagsFrom.run(row.id);
-  const now = Date.now();
-  for (const name of parseTags(stripSecrets(row.body_md))) {
-    const tagNodeId = findOrCreateTagNode(row.world_id, name, row.created_by, now);
-    insertNodeTag.run(row.id, tagNodeId);
-  }
-}
-
-/** A node's own tags, for the client's "Tags" panel. */
-export function tagsFor(nodeId: string): TagRef[] {
-  return (selectTagsFor.all(nodeId) as Array<{ id: string; title: string; icon: string | null }>).map((r) => ({
-    id: r.id,
-    title: r.title,
-    icon: r.icon,
-  }));
+/** Every tag in the world with how many visible, live pages carry it directly. */
+export function listTagsWithCounts(worldId: string, viewer: Viewer): TagDto[] {
+  const vis = readableSql("n", viewer);
+  const rows = db
+    .prepare(
+      `SELECT t.*,
+              (SELECT COUNT(*) FROM node_tags nt JOIN nodes n ON n.id = nt.node_id
+                WHERE nt.tag_id = t.id AND n.is_archived = 0 AND ${vis.sql}) AS page_count
+       FROM tags t WHERE t.world_id = ? ORDER BY t.name`,
+    )
+    .all(...vis.params, worldId) as Array<TagRow & { page_count: number }>;
+  return rows.map((r) => toTagDto(r, r.page_count));
 }
 
 /**
@@ -468,7 +448,8 @@ export function createNode(worldId: string, viewer: Viewer, input: CreateNodeInp
     const created = selectNode.get(id) as NodeRow;
     reindexLinks(created);
     resettleLinksFor(created);
-    reindexTags(created);
+    reindexTextTags(created);
+    if (input.tags !== undefined) setManualTags(created, input.tags);
     reindexFts(created);
     if (templateId !== null) assignTemplateFields(id, worldId, templateId);
     return created;
@@ -520,9 +501,10 @@ export function updateNode(nodeId: string, viewer: Viewer, input: UpdateNodeInpu
 
     if (input.visibility !== undefined && input.visibility !== existing.visibility) recomputeEffective(nodeId);
     const updated = selectNode.get(nodeId) as NodeRow;
+    if (input.tags !== undefined) setManualTags(updated, input.tags);
     if (input.bodyMd !== undefined) {
       reindexLinks(updated);
-      reindexTags(updated);
+      reindexTextTags(updated);
     }
     if (renaming) resettleLinksFor(updated);
     if (input.bodyMd !== undefined || renaming) reindexFts(updated);

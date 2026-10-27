@@ -7,13 +7,22 @@ is not kept here — `git log` and HANDOFF have it.
 
 ## Open, in order (2026-10-27)
 
-1. **Tags → relations → graph.** Tags stay pages for now (filterable via `#tag` in the
-   sidebar filter and Ctrl+K). The owner wants tags to be part of the relations/graph
-   work, not a separate system — design that together (ROADMAP §3).
+1. **Relations** — `docs/DESIGN-connections-2026-10-27.md` §2–3: the `relations` table,
+   API + MCP, the Connections panel (relations both ways, mentioned in, links to, on
+   maps, wanted). Then **the graph** (§4–5): endpoint, local graph in the Info panel,
+   global Graph screen. All four design decisions were answered yes on 2026-10-27.
 2. **Library icons could render better** — bigger, optionally without the colored disc,
    in the marker's color — if the owner still wants the bundled set after trying image
    icons. Not started; ask first.
 3. P3 query views, P5 calendars/timelines, P6 play mode, P7 hardening — unchanged.
+
+## Just done (2026-10-27, later) — tags as labels (design §1)
+
+Tags are no longer pages. A `tags` table with color, description and `/` nesting; the
+old tag pages were converted (same ids) and trashed. Tag by `#tag` in the text, by the
+chip row in the Info panel, or over MCP; browse at `/tags` (counts, nesting, Ctrl-click to
+intersect; owner/DM rename/recolor/describe/merge/delete there). Colored dots in the tree
+and Ctrl+K. HANDOFF §7.15. 22 smoke checks + 3 MCP checks.
 
 ## Just done (2026-10-27) — the gap list from the audit
 

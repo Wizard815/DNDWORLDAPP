@@ -3,7 +3,7 @@ const INLINE_CODE = /`[^`\n]*`/g;
 // `#word` with no preceding `#` or word character (so `##Heading` and a
 // literal `text#3` stay inert) and no space right after the `#` (so
 // `# Heading` — a markdown heading, always has one — never counts as a tag).
-const TAG = /(?<![#\w])#([\w][\w-]*)/g;
+const TAG = /(?<![#\w])#([\w][\w-]*(?:\/[\w][\w-]*)*)/g;
 
 /**
  * Blank out code so `#not-a-tag` inside a snippet stays inert, while keeping

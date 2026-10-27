@@ -8,7 +8,6 @@ export const KIND_GLYPH: Record<NodeKind, string> = {
   calendar: "📅",
   board: "🗂️",
   view: "🔎",
-  tag: "🏷️",
 };
 
 export function nodeGlyph(node: { icon: string | null; kind: NodeKind }): string {

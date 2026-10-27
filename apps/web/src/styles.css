@@ -618,3 +618,162 @@ textarea {
 .leaflet-tooltip.measure-tooltip::before {
   display: none;
 }
+
+/* Tag palette (packages/schema TAG_COLORS) — one set of hues for chips, tree dots, swatches and graph nodes. */
+:root {
+  --tag-red: #e5484d;
+  --tag-orange: #f76b15;
+  --tag-amber: #f0b429;
+  --tag-green: #30a46c;
+  --tag-teal: #12a594;
+  --tag-blue: #3e8df5;
+  --tag-indigo: #6e7bf2;
+  --tag-violet: #9d6cf0;
+  --tag-pink: #e04f9c;
+  --tag-brown: #ad7f58;
+  --tag-gray: #8b8d98;
+  --tag-slate: #5f7a99;
+}
+.tag-chip[data-color="red"] {
+  color: var(--tag-red);
+  background: color-mix(in srgb, var(--tag-red) 14%, transparent);
+}
+a.tag-chip[data-color="red"]:hover {
+  background: color-mix(in srgb, var(--tag-red) 26%, transparent);
+}
+.tag-dot[data-color="red"],
+.tag-swatch[data-color="red"] {
+  background: var(--tag-red);
+}
+.tag-chip[data-color="orange"] {
+  color: var(--tag-orange);
+  background: color-mix(in srgb, var(--tag-orange) 14%, transparent);
+}
+a.tag-chip[data-color="orange"]:hover {
+  background: color-mix(in srgb, var(--tag-orange) 26%, transparent);
+}
+.tag-dot[data-color="orange"],
+.tag-swatch[data-color="orange"] {
+  background: var(--tag-orange);
+}
+.tag-chip[data-color="amber"] {
+  color: var(--tag-amber);
+  background: color-mix(in srgb, var(--tag-amber) 14%, transparent);
+}
+a.tag-chip[data-color="amber"]:hover {
+  background: color-mix(in srgb, var(--tag-amber) 26%, transparent);
+}
+.tag-dot[data-color="amber"],
+.tag-swatch[data-color="amber"] {
+  background: var(--tag-amber);
+}
+.tag-chip[data-color="green"] {
+  color: var(--tag-green);
+  background: color-mix(in srgb, var(--tag-green) 14%, transparent);
+}
+a.tag-chip[data-color="green"]:hover {
+  background: color-mix(in srgb, var(--tag-green) 26%, transparent);
+}
+.tag-dot[data-color="green"],
+.tag-swatch[data-color="green"] {
+  background: var(--tag-green);
+}
+.tag-chip[data-color="teal"] {
+  color: var(--tag-teal);
+  background: color-mix(in srgb, var(--tag-teal) 14%, transparent);
+}
+a.tag-chip[data-color="teal"]:hover {
+  background: color-mix(in srgb, var(--tag-teal) 26%, transparent);
+}
+.tag-dot[data-color="teal"],
+.tag-swatch[data-color="teal"] {
+  background: var(--tag-teal);
+}
+.tag-chip[data-color="blue"] {
+  color: var(--tag-blue);
+  background: color-mix(in srgb, var(--tag-blue) 14%, transparent);
+}
+a.tag-chip[data-color="blue"]:hover {
+  background: color-mix(in srgb, var(--tag-blue) 26%, transparent);
+}
+.tag-dot[data-color="blue"],
+.tag-swatch[data-color="blue"] {
+  background: var(--tag-blue);
+}
+.tag-chip[data-color="indigo"] {
+  color: var(--tag-indigo);
+  background: color-mix(in srgb, var(--tag-indigo) 14%, transparent);
+}
+a.tag-chip[data-color="indigo"]:hover {
+  background: color-mix(in srgb, var(--tag-indigo) 26%, transparent);
+}
+.tag-dot[data-color="indigo"],
+.tag-swatch[data-color="indigo"] {
+  background: var(--tag-indigo);
+}
+.tag-chip[data-color="violet"] {
+  color: var(--tag-violet);
+  background: color-mix(in srgb, var(--tag-violet) 14%, transparent);
+}
+a.tag-chip[data-color="violet"]:hover {
+  background: color-mix(in srgb, var(--tag-violet) 26%, transparent);
+}
+.tag-dot[data-color="violet"],
+.tag-swatch[data-color="violet"] {
+  background: var(--tag-violet);
+}
+.tag-chip[data-color="pink"] {
+  color: var(--tag-pink);
+  background: color-mix(in srgb, var(--tag-pink) 14%, transparent);
+}
+a.tag-chip[data-color="pink"]:hover {
+  background: color-mix(in srgb, var(--tag-pink) 26%, transparent);
+}
+.tag-dot[data-color="pink"],
+.tag-swatch[data-color="pink"] {
+  background: var(--tag-pink);
+}
+.tag-chip[data-color="brown"] {
+  color: var(--tag-brown);
+  background: color-mix(in srgb, var(--tag-brown) 14%, transparent);
+}
+a.tag-chip[data-color="brown"]:hover {
+  background: color-mix(in srgb, var(--tag-brown) 26%, transparent);
+}
+.tag-dot[data-color="brown"],
+.tag-swatch[data-color="brown"] {
+  background: var(--tag-brown);
+}
+.tag-chip[data-color="gray"] {
+  color: var(--tag-gray);
+  background: color-mix(in srgb, var(--tag-gray) 14%, transparent);
+}
+a.tag-chip[data-color="gray"]:hover {
+  background: color-mix(in srgb, var(--tag-gray) 26%, transparent);
+}
+.tag-dot[data-color="gray"],
+.tag-swatch[data-color="gray"] {
+  background: var(--tag-gray);
+}
+.tag-chip[data-color="slate"] {
+  color: var(--tag-slate);
+  background: color-mix(in srgb, var(--tag-slate) 14%, transparent);
+}
+a.tag-chip[data-color="slate"]:hover {
+  background: color-mix(in srgb, var(--tag-slate) 26%, transparent);
+}
+.tag-dot[data-color="slate"],
+.tag-swatch[data-color="slate"] {
+  background: var(--tag-slate);
+}
+.tag-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--color-line-strong);
+}
+.tag-chip a {
+  color: inherit;
+  text-decoration: none;
+}

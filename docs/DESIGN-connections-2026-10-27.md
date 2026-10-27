@@ -23,7 +23,7 @@ Everything below follows from that: one "Connections" panel on every page that s
 four kinds; one tag system that is about labelling and listing; one graph endpoint that
 returns edges of all four kinds; one graph view that draws them with different weights.
 
-## 1. Tags — labels, not pages
+## 1. Tags — labels, not pages — ✅ built 2026-10-27 (HANDOFF §7.15)
 
 **Today:** `#tag` in text creates a *page* of kind `tag`; the tagged pages show up in that
 page's backlinks. It works, but a tag page has nothing on it, can be renamed into
@@ -182,7 +182,7 @@ way in.
 Rough size: 1 and 2 are each about the size of the archive/trash work; 3+4 together about
 the size of fog of war.
 
-## 7. Decide (the only blockers)
+## 7. Decide (the only blockers) — all four answered **yes** on 2026-10-27
 
 1. **Nested tags** (`#npc/villain`, filter by parent includes children) — yes / no?
    *Recommend yes.*

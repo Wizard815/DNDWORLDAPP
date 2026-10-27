@@ -9,7 +9,7 @@ interface TagLinkAttrs {
 
 /**
  * `#tagname` — an inline atom, mirroring `apps/server/src/lib/tags.ts`'s
- * regex exactly (`/(?<![#\w])#([\w][\w-]*)/`) so the server's tag indexer
+ * regex exactly (`/(?<![#\w])#([\w][\w-]*(?:\/[\w][\w-]*)*)/`) so the server's tag indexer
  * needs no changes at all: whatever this node round-trips to is what
  * `reindexTags()` already knows how to parse. No label variant, unlike
  * wikilinks — a tag's own name is always its display text.
@@ -65,7 +65,7 @@ export const TagLink = Node.create({
       // on save; the very rare case this renders a live chip for something
       // like "word#tag" (which the server would still correctly treat as
       // plain text) is cosmetic, not a data-correctness issue.
-      const match = /^#([\w][\w-]*)/.exec(src);
+      const match = /^#([\w][\w-]*(?:\/[\w][\w-]*)*)/.exec(src);
       if (match === null) return undefined;
       const name = match[1] ?? "";
       if (name.length === 0) return undefined;

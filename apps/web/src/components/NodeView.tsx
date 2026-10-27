@@ -7,10 +7,12 @@ import { navigate } from "../lib/nav.ts";
 import { useEscapeKey } from "../lib/useEscapeKey.ts";
 import { nodeGlyph } from "../lib/kinds.ts";
 import { useResizablePanel } from "../lib/useResizablePanel.ts";
+import { useWorldTags } from "../lib/useWorldTags.ts";
 import { Access } from "./Access.tsx";
 import { Glyph } from "./Glyph.tsx";
 import { IconPicker } from "./IconPicker.tsx";
 import { Posts } from "./Posts.tsx";
+import { TagChips } from "./TagChips.tsx";
 
 // Leaflet and the map editor are most of the bundle; only map pages need them.
 const MapView = lazy(() => import("./MapView.tsx").then((m) => ({ default: m.MapView })));
@@ -60,6 +62,7 @@ export function NodeView({
   onTogglePin,
   onOpenInfo,
 }: Props) {
+  const worldTags = useWorldTags(node.worldId);
   const [title, setTitle] = useState(node.title);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -349,6 +352,7 @@ export function NodeView({
                 bodyMd={node.bodyMd}
                 allNodes={allNodes}
                 editable={node.canEdit}
+                tags={worldTags.data?.tags ?? []}
                 onCreateNamed={onCreateNamed}
                 onChange={saveBody}
               />
@@ -543,26 +547,7 @@ export function Backlinks({
       >
         ✕
       </button>
-      {node.tags.length > 0 && (
-        <>
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-muted">Tags</h2>
-          <div className="mb-6 flex flex-wrap gap-1.5">
-            {node.tags.map((tag) => (
-              <a
-                key={tag.id}
-                href={`/n/${tag.id}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate(`/n/${tag.id}`);
-                }}
-                className="tag-chip"
-              >
-                #{tag.title}
-              </a>
-            ))}
-          </div>
-        </>
-      )}
+      <TagChips nodeId={node.id} worldId={node.worldId} tags={node.tags} canEdit={node.canEdit} />
 
       <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-muted">
         Mentioned in

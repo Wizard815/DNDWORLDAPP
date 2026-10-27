@@ -65,6 +65,8 @@ export function useLiveEvents(worldId: string | null): void {
           case "tree.changed":
             void queryClient.invalidateQueries({ queryKey: ["tree"] });
             void queryClient.invalidateQueries({ queryKey: ["unresolved"] });
+            void queryClient.invalidateQueries({ queryKey: ["tags"] });
+            void queryClient.invalidateQueries({ queryKey: ["tag-pages"] });
             break;
           case "node.changed":
             void queryClient.invalidateQueries({ queryKey: ["node", event.nodeId] });

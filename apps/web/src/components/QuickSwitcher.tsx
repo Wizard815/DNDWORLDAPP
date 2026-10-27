@@ -27,7 +27,7 @@ export function QuickSwitcher({
     if (needle.length === 0) return nodes.slice(0, 10);
     if (needle.startsWith("#")) {
       const tag = needle.slice(1);
-      return nodes.filter((n) => n.tagNames.some((t) => t.toLowerCase().startsWith(tag))).slice(0, 10);
+      return nodes.filter((n) => n.tags.some((t) => t.name.startsWith(tag))).slice(0, 10);
     }
     return nodes.filter((n) => n.title.toLowerCase().includes(needle)).slice(0, 10);
   }, [query, nodes]);
@@ -106,6 +106,9 @@ export function QuickSwitcher({
               >
                 <Glyph icon={node.icon ?? "📄"} />
                 <span className="truncate">{node.title}</span>
+                {node.tags.find((t) => t.color !== null) !== undefined && (
+                  <span className="tag-dot shrink-0" data-color={node.tags.find((t) => t.color !== null)!.color!} />
+                )}
                 {node.effectiveVisibility === "dm" && (
                   <span className="ml-auto text-[10px] text-secret">DM</span>
                 )}
