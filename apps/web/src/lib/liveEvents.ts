@@ -63,6 +63,7 @@ export function useLiveEvents(worldId: string | null): void {
         }
         switch (event.type) {
           case "tree.changed":
+            void queryClient.invalidateQueries({ queryKey: ["graph"] });
             void queryClient.invalidateQueries({ queryKey: ["tree"] });
             void queryClient.invalidateQueries({ queryKey: ["unresolved"] });
             void queryClient.invalidateQueries({ queryKey: ["tags"] });
@@ -72,6 +73,7 @@ export function useLiveEvents(worldId: string | null): void {
             void queryClient.invalidateQueries({ queryKey: ["node", event.nodeId] });
             void queryClient.invalidateQueries({ queryKey: ["posts", event.nodeId] });
             void queryClient.invalidateQueries({ queryKey: ["connections", event.nodeId] });
+            void queryClient.invalidateQueries({ queryKey: ["graph"] });
             void queryClient.invalidateQueries({ queryKey: ["fields", event.nodeId] });
             break;
           case "map.changed":

@@ -31,11 +31,8 @@ packaging step.
 > design decisions were answered yes on 2026-10-27):
 > 1. ~~**Relations** (design §2)~~ — ✅ built 2026-10-27 (HANDOFF §7.16).
 > 2. ~~**Connections panel** (design §3)~~ — ✅ built 2026-10-27.
-> 3. **Graph** (design §4–5) — **next** — one visibility-filtered endpoint (links, relations, fields,
->    map, parent edges), a local graph in the Info panel, then the global Graph screen
->    (cytoscape.js; relations bold, links thin, tags as node color; folder and map layers
->    off by default).
-> 4. **P3 query views** (table/board/gallery), then **P5** calendars/timelines, **P6** play
+> 3. ~~**Graph** (design §4–5)~~ — ✅ built 2026-10-27 (HANDOFF §7.17).
+> 4. **P3 query views** (table/board/gallery) — **next** — then **P5** calendars/timelines, **P6** play
 >    mode, **P7** hardening (realtime groundwork is already in; webhooks, backup/restore
 >    UI remain — Obsidian sync is not wanted).
 > 5. **DM desktop companion app** and the player app mode (ROADMAP §6–7) after the above.

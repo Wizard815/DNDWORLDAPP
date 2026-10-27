@@ -105,7 +105,7 @@ WANTED         [[Old Hobb the Hermit]] ×2   (create)
 type a label (autocomplete), optional inverse, two-way toggle, visibility, note. Each row
 has a tiny "open local graph here" affordance (§5).
 
-## 4. The web: one graph endpoint
+## 4. The web: one graph endpoint — ✅ built 2026-10-27 (HANDOFF §7.17)
 
 `GET /worlds/:id/graph` (and `?focus=<nodeId>&depth=1..3` for the local version) returns:
 
@@ -126,7 +126,7 @@ edges likewise. *(Decide 4.)*
 Scale: a campaign is hundreds to low thousands of pages — fine for a canvas library. The
 endpoint caps at 5,000 nodes and tells the client to filter if there are more.
 
-## 5. The graph view — one visual language, two scopes
+## 5. The graph view — one visual language, two scopes — ✅ built 2026-10-27 (HANDOFF §7.17)
 
 **Library:** cytoscape.js with the `fcose` layout (force-directed, good defaults) and
 `dagre` for an optional top-down "tree" layout. Canvas-based, actively maintained,

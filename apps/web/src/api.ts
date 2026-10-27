@@ -1,4 +1,5 @@
 import type {
+  GraphDto,
   ConnectionsDto,
   CreateRelationInput,
   RelationDto,
@@ -158,6 +159,16 @@ export const api = {
 
   search: (worldId: string, q: string) =>
     request<{ hits: SearchHit[] }>(`/worlds/${worldId}/search?q=${encodeURIComponent(q)}`),
+
+  graph: (worldId: string, focus?: string, depth = 1) => {
+    const params = new URLSearchParams();
+    if (focus !== undefined) {
+      params.set("focus", focus);
+      params.set("depth", String(depth));
+    }
+    const query = params.toString();
+    return request<{ graph: GraphDto }>(`/worlds/${worldId}/graph${query.length > 0 ? `?${query}` : ""}`);
+  },
 
   connections: (nodeId: string) => request<{ connections: ConnectionsDto }>(`/nodes/${nodeId}/connections`),
 

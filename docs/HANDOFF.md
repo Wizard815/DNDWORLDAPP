@@ -61,7 +61,7 @@ planned — see §9.4.
 Verified by:
 - `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 445 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 459 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
@@ -1678,6 +1678,36 @@ visibility (DM only offered to owner/DM). Editing from the target's side shows a
 saves the labels flipped, the way that page reads them. MCP: `list_relations`,
 `add_relation`, `update_relation`, `delete_relation`, `list_relation_labels`, and a
 Relations section in `get_node`.
+
+### 7.17 The graph
+
+Design doc §4–5. `GET /worlds/{id}/graph[?focus=<nodeId>&depth=1..3]`
+(`services/graph.ts`, `worldGraph`) returns `{ nodes, edges, tags, truncated }`. Nodes
+are live pages the viewer can read, with `degree` (non-structure edges) and `tagIds`.
+Edge types: `relation` (through `visibleRelationsSql`, so a hidden relation never
+appears), `field` (link-type fields, only from field values the viewer can read,
+labelled by the field's name), `link` (wiki links, one per page pair, from the
+secret-stripped link index), `map` (pins the viewer is actually sent by `listMarkers` —
+fog and marker visibility apply; "N pins" when more than one) and `parent`. Every edge
+needs both ends visible. `focus` does a BFS over non-parent edges; an unknown or hidden
+focus returns an empty graph (no 404, so the endpoint can't probe ids). Over
+`GRAPH_MAX_NODES` (5,000) it keeps the most connected and sets `truncated`. Tags in the
+response are only those on returned nodes. Smoke: `== graph ==` (player never sees a DM
+page, DM relation, DM field value, secret-block link, or fogged pin).
+
+Client: `components/GraphView.tsx` (cytoscape.js + fcose/dagre, lazy-loaded) is one
+component in two scopes — compact in the Info panel above Connections (depth 1/2/3, ⤢
+opens the full screen) and the `/graph[/<id>]` screen (sidebar "Graph", Ctrl+G). Full
+screen: find a page, Force/Tree layouts, Fit, color by tag or kind, edge layers
+(relations, link fields, links on; maps, folders off), "only pages tagged" filter, click
+for a card (open / focus here), double-click to open, edge hover explains the edge.
+Relations are bold with arrows and colored by label; link fields the same but dashed;
+links thin grey; DM-only things outlined in the secret color. `["graph"]` queries are
+invalidated by `tree.changed` and `node.changed`.
+
+Gotcha: cytoscape injects an unlayered `.__________cytoscape_container { position:
+relative }` rule that beats Tailwind v4's layered utilities, so the container's
+`absolute inset-0` must be an inline style or the canvas is 0px tall.
 
 ### 7.14 Secret block audiences
 

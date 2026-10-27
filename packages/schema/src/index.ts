@@ -1073,6 +1073,61 @@ export const connectionsDtoSchema = z.object({
 export type ConnectionsDto = z.infer<typeof connectionsDtoSchema>;
 
 // ---------------------------------------------------------------------------
+// The graph (design doc §4) — every way pages connect, as one node/edge list.
+// Viewer-filtered server-side: a page the viewer can't see is absent along
+// with every edge touching it, and a DM-only relation is absent for players.
+// ---------------------------------------------------------------------------
+
+export const GRAPH_EDGE_TYPES = ["relation", "field", "link", "map", "parent"] as const;
+export const graphEdgeTypeSchema = z.enum(GRAPH_EDGE_TYPES);
+export type GraphEdgeType = z.infer<typeof graphEdgeTypeSchema>;
+
+/** The most nodes one graph response carries; past that the client is told to filter. */
+export const GRAPH_MAX_NODES = 5000;
+
+export const graphNodeSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  icon: z.string().nullable(),
+  kind: nodeKindSchema,
+  effectiveVisibility: visibilitySchema,
+  tagIds: z.array(z.string()),
+  parentId: z.string().nullable(),
+  /** Edges touching this node in this response, parent edges excluded. */
+  degree: z.number().int(),
+});
+export type GraphNode = z.infer<typeof graphNodeSchema>;
+
+export const graphEdgeSchema = z.object({
+  id: z.string(),
+  type: graphEdgeTypeSchema,
+  source: z.string(),
+  target: z.string(),
+  label: z.string().nullable(),
+  inverseLabel: z.string().nullable(),
+  twoWay: z.boolean(),
+  note: z.string().nullable(),
+  /** relation/field only: the edge's own visibility, so a DM's view can mark DM-only ones. */
+  visibility: fieldVisibilitySchema.nullable(),
+});
+export type GraphEdge = z.infer<typeof graphEdgeSchema>;
+
+export const graphDtoSchema = z.object({
+  nodes: z.array(graphNodeSchema),
+  edges: z.array(graphEdgeSchema),
+  tags: z.array(z.object({ id: z.string(), name: z.string(), color: z.string().nullable() })),
+  /** True when the world had more visible pages than GRAPH_MAX_NODES and the list was cut. */
+  truncated: z.boolean(),
+});
+export type GraphDto = z.infer<typeof graphDtoSchema>;
+
+export const graphQuerySchema = z.object({
+  /** Local graph: only pages within `depth` steps of this one. */
+  focus: z.string().optional(),
+  depth: z.coerce.number().int().min(1).max(3).default(1),
+});
+
+// ---------------------------------------------------------------------------
 // Assets
 // ---------------------------------------------------------------------------
 

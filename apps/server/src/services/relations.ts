@@ -46,7 +46,7 @@ function pageRef(nodeId: string): PageRef {
 }
 
 /** SQL for "relations this viewer may see", over `relations r` joined to `nodes s` (source) and `nodes t` (target). */
-function visibleRelationsSql(viewer: Viewer): { sql: string; params: Array<string | null> } {
+export function visibleRelationsSql(viewer: Viewer): { sql: string; params: Array<string | null> } {
   const levels = readableLevels(viewer.role).filter((l) => l !== "private");
   const src = readableNodeSql("s", viewer);
   const dst = readableNodeSql("t", viewer);

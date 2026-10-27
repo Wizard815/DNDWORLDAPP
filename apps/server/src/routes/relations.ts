@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { createRelationInputSchema, updateRelationInputSchema } from "@dndworldapp/schema";
+import { createRelationInputSchema, graphQuerySchema, updateRelationInputSchema } from "@dndworldapp/schema";
 import { viewerForNode, viewerForWorld } from "../http/context.ts";
 import { notFound } from "../lib/errors.ts";
+import { worldGraph } from "../services/graph.ts";
 import {
   connectionsFor,
   createRelation,
@@ -63,5 +64,12 @@ export async function relationRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: NodeParams }>("/api/v1/nodes/:nodeId/connections", async (request) => {
     const { viewer } = viewerForNode(request, request.params.nodeId);
     return { connections: connectionsFor(request.params.nodeId, viewer) };
+  });
+
+  /** The graph (design §4): the whole visible world, or with ?focus=<id>&depth=1..3 just that page's neighborhood. */
+  app.get<{ Params: WorldParams }>("/api/v1/worlds/:worldId/graph", async (request) => {
+    const viewer = viewerForWorld(request, request.params.worldId);
+    const query = graphQuerySchema.parse(request.query ?? {});
+    return { graph: worldGraph(request.params.worldId, viewer, query.focus, query.depth) };
   });
 }

@@ -31,6 +31,7 @@ interface Props {
   canCreate: boolean;
   /** The Tags screen is open (so its row highlights instead of a page). */
   tagsActive: boolean;
+  graphActive: boolean;
   viewAsPlayer: boolean;
   onToggleViewAsPlayer: () => void;
   theme: ThemeId;
@@ -93,6 +94,7 @@ export function Sidebar({
   isGameMaster,
   canCreate,
   tagsActive,
+  graphActive,
   viewAsPlayer,
   onToggleViewAsPlayer,
   theme,
@@ -553,6 +555,18 @@ export function Sidebar({
             <span className="w-4" />
             <span className="shrink-0 text-[13px] leading-none">🏷️</span>
             <span className="truncate">Tags</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/graph")}
+            className={`flex w-full items-center gap-1.5 rounded-md px-1.5 py-[5px] text-[13px] ${
+              graphActive ? "bg-selected font-medium text-fg-strong" : "text-fg-soft hover:bg-hover hover:text-fg"
+            }`}
+            title="How every page connects (Ctrl+G)"
+          >
+            <span className="w-4" />
+            <span className="shrink-0 text-[13px] leading-none">🕸️</span>
+            <span className="truncate">Graph</span>
           </button>
         </div>
 

@@ -7,14 +7,22 @@ is not kept here — `git log` and HANDOFF have it.
 
 ## Open, in order (2026-10-27)
 
-1. **The graph** — `docs/DESIGN-connections-2026-10-27.md` §4–5: one visibility-filtered
-   graph endpoint (links, relations, link fields, map and parent edges), a local graph
-   in the Info panel, then the global Graph screen (cytoscape.js). Relations and the
-   Connections panel (§2–3) are done.
+1. **P3 query views** (table/board/gallery over pages, filtered by tag/field). The
+   connections work (design doc §1–5) is done; its §6 step 5 polish — saved graph
+   positions, keyboard navigation, export as PNG — is optional.
 2. **Library icons could render better** — bigger, optionally without the colored disc,
    in the marker's color — if the owner still wants the bundled set after trying image
    icons. Not started; ask first.
 3. P3 query views, P5 calendars/timelines, P6 play mode, P7 hardening — unchanged.
+
+## Just done (2026-10-27, night) — the graph (design §4–5)
+
+`GET /worlds/{id}/graph` returns every page the viewer can read and how they connect —
+relations, link fields, wiki links, map pins, folders — with the same visibility rules
+as everything else. Each page's Info panel has a small local graph above Connections
+(1–3 hops); the Graph screen (sidebar, Ctrl+G) shows the whole world with search,
+force/tree layouts, layer toggles, tag filter and color by tag/kind. HANDOFF §7.17.
+14 smoke checks (most of them leak checks).
 
 ## Just done (2026-10-27, evening) — relations and the Connections panel (design §2–3)
 

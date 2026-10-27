@@ -43,6 +43,7 @@ const IconHit = ref("IconHit", S.iconHitSchema);
 const RelationDto = ref("RelationDto", S.relationDtoSchema);
 const RelationLabelDto = ref("RelationLabelDto", S.relationLabelDtoSchema);
 const ConnectionsDto = ref("ConnectionsDto", S.connectionsDtoSchema);
+const GraphDto = ref("GraphDto", S.graphDtoSchema);
 const CreateRelationInput = ref("CreateRelationInput", S.createRelationInputSchema);
 const UpdateRelationInput = ref("UpdateRelationInput", S.updateRelationInputSchema);
 const MarkerPresetDto = ref("MarkerPresetDto", S.markerPresetDtoSchema);
@@ -811,6 +812,22 @@ const paths: Json = {
         "Relations both ways, link-type fields both ways, mentioned in, links to, maps with a pin on this page the viewer is actually sent (marker visibility and fog applied), and this page's own wanted links — all viewer-filtered.",
       parameters: [pathParam("nodeId", "Node id")],
       responses: { 200: ok(obj({ connections: ConnectionsDto }, ["connections"])), ...ERRORS },
+    },
+  },
+  "/worlds/{worldId}/graph": {
+    get: {
+      tags: ["relations"],
+      summary: "The world as a graph of pages and the ways they connect",
+      description:
+        "Nodes are the live pages the viewer can read; edges are relations, link-type fields, wiki links, map pins (marker visibility and fog applied) and parent/child structure, each only when both ends and the edge itself are visible to the viewer. " +
+        "With `focus`, only pages within `depth` hops of that page (structure edges don't count as hops); an unknown or hidden focus returns an empty graph. " +
+        `Capped at ${S.GRAPH_MAX_NODES} nodes, keeping the most connected; \`truncated\` says when that happened.`,
+      parameters: [
+        pathParam("worldId", "World id"),
+        { name: "focus", in: "query", schema: { type: "string" }, description: "Node id to center a neighborhood on." },
+        { name: "depth", in: "query", schema: { type: "integer", minimum: 1, maximum: 3, default: 1 }, description: "Hops from `focus`." },
+      ],
+      responses: { 200: ok(obj({ graph: GraphDto }, ["graph"])), ...ERRORS },
     },
   },
   "/icons": {

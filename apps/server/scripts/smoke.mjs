@@ -2164,5 +2164,58 @@ check("the DM can delete a relation", r_delRel.status === 200, r_delRel.body);
 await dm("DELETE", `/markers/${r_queenPin.id}`);
 await dm("DELETE", `/markers/${r_queenSecretPin.id}`);
 
+console.log("\n== graph ==");
+const g_island = (await dm("POST", `/worlds/${worldId}/nodes`, { title: "Graph: unconnected island", parentId: rootId })).body.node;
+const g_pin = (await dm("POST", `/nodes/${mapNode.id}/map/markers`, { x: 6, y: 6, targetNodeId: r_queen.id })).body.marker;
+const g_secretPin = (await dm("POST", `/nodes/${mapNode.id}/map/markers`, { x: 7, y: 7, targetNodeId: r_silverHand.id, visibility: "dm" })).body.marker;
+const playerGraph = (await player("GET", `/worlds/${worldId}/graph`)).body.graph;
+const dmGraph = (await dm("GET", `/worlds/${worldId}/graph`)).body.graph;
+const hasEdge = (graph, type, source, target, label) =>
+  graph.edges.some((e) => e.type === type && e.source === source && e.target === target && (label === undefined || e.label === label));
+const touches = (graph, id) => graph.edges.some((e) => e.source === id || e.target === id);
+
+check("LEAK: a page the player can't see is not a graph node", !playerGraph.nodes.some((n) => n.id === r_cabal.id), playerGraph.nodes.length);
+check("LEAK: …nor does any edge touch it", !touches(playerGraph, r_cabal.id));
+check("LEAK: a DM-only relation is not a graph edge for a player", !playerGraph.edges.some((e) => e.label === "secretly spies on"));
+check("LEAK: a link field to a hidden page is not a graph edge", !playerGraph.edges.some((e) => e.type === "field" && e.label === "Handler"));
+check("LEAK: a DM-only pin is not a map edge for a player", !hasEdge(playerGraph, "map", mapNode.id, r_silverHand.id));
+check(
+  "the graph carries relations, link fields, links, map pins and structure",
+  hasEdge(playerGraph, "relation", r_mira.id, r_queen.id, "reports to") &&
+    hasEdge(playerGraph, "field", r_mira.id, r_queen.id, "Liege") &&
+    hasEdge(playerGraph, "link", r_mira.id, r_queen.id) &&
+    hasEdge(playerGraph, "map", mapNode.id, r_queen.id) &&
+    hasEdge(playerGraph, "parent", rootId, r_mira.id),
+  playerGraph.edges.filter((e) => e.source === r_mira.id || e.target === r_queen.id),
+);
+const reportsEdge = playerGraph.edges.find((e) => e.type === "relation" && e.label === "reports to");
+check("a relation edge carries its inverse reading", reportsEdge?.inverseLabel === "commands", reportsEdge);
+check(
+  "the DM's graph has the hidden page, the DM-only relation (marked dm) and the DM-only pin",
+  dmGraph.nodes.some((n) => n.id === r_cabal.id) &&
+    dmGraph.edges.some((e) => e.label === "secretly spies on" && e.visibility === "dm") &&
+    hasEdge(dmGraph, "map", mapNode.id, r_silverHand.id),
+);
+const miraNode = playerGraph.nodes.find((n) => n.id === r_mira.id);
+check("nodes carry degree (structure edges not counted) and tag ids", miraNode !== undefined && miraNode.degree >= 4 && Array.isArray(miraNode.tagIds), miraNode);
+
+const local = (await player("GET", `/worlds/${worldId}/graph?focus=${r_mira.id}&depth=1`)).body.graph;
+const localIds = new Set(local.nodes.map((n) => n.id));
+check(
+  "a focused graph holds the page and its direct connections",
+  [r_mira.id, r_queen.id, r_silverHand.id].every((id) => localIds.has(id)),
+  [...localIds],
+);
+check("…but not unconnected pages, nor folder parents pulled in by structure alone", !localIds.has(g_island.id) && !localIds.has(rootId), [...localIds]);
+const local2 = (await player("GET", `/worlds/${worldId}/graph?focus=${r_queen.id}&depth=2`)).body.graph;
+check("depth 2 reaches neighbours of neighbours", local2.nodes.some((n) => n.id === r_silverHand.id), local2.nodes.map((n) => n.title));
+const hiddenFocus = (await player("GET", `/worlds/${worldId}/graph?focus=${r_cabal.id}`)).body.graph;
+check("LEAK: focusing a hidden page returns nothing", hiddenFocus.nodes.length === 0 && hiddenFocus.edges.length === 0, hiddenFocus);
+const badDepth = await player("GET", `/worlds/${worldId}/graph?focus=${r_mira.id}&depth=9`);
+check("depth is capped at 3", badDepth.status === 400, badDepth.status);
+
+await dm("DELETE", `/markers/${g_pin.id}`);
+await dm("DELETE", `/markers/${g_secretPin.id}`);
+
 console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}\n`);
 process.exit(failures === 0 ? 0 : 1);

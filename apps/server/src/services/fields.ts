@@ -41,7 +41,7 @@ function fieldVisibleSql(role: Viewer["role"]): { sql: string; params: string[] 
 }
 
 /** Definitions from the node's own template, if it has one, keyed for O(1) lookup. */
-function defsByKey(templateId: string | null): Map<string, TemplateFieldDef> {
+export function defsByKey(templateId: string | null): Map<string, TemplateFieldDef> {
   if (templateId === null) return new Map();
   const template = getTemplateRow(templateId);
   if (template === null) return new Map();

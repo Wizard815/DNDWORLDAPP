@@ -6944,6 +6944,115 @@
         }
       }
     },
+    "/worlds/{worldId}/graph": {
+      "get": {
+        "tags": [
+          "relations"
+        ],
+        "summary": "The world as a graph of pages and the ways they connect",
+        "description": "Nodes are the live pages the viewer can read; edges are relations, link-type fields, wiki links, map pins (marker visibility and fog applied) and parent/child structure, each only when both ends and the edge itself are visible to the viewer. With `focus`, only pages within `depth` hops of that page (structure edges don't count as hops); an unknown or hidden focus returns an empty graph. Capped at 5000 nodes, keeping the most connected; `truncated` says when that happened.",
+        "parameters": [
+          {
+            "name": "worldId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "World id"
+          },
+          {
+            "name": "focus",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node id to center a neighborhood on."
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3,
+              "default": 1
+            },
+            "description": "Hops from `focus`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "graph": {
+                      "$ref": "#/components/schemas/GraphDto"
+                    }
+                  },
+                  "required": [
+                    "graph"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the token is unknown, revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not allowed — including a token missing a scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found. Also returned for things the caller may not see, so ids cannot be probed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/icons": {
       "get": {
         "tags": [
@@ -9007,6 +9116,170 @@
           "linksTo",
           "onMaps",
           "wanted"
+        ],
+        "additionalProperties": false
+      },
+      "GraphDto": {
+        "type": "object",
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "icon": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "document",
+                    "map",
+                    "timeline",
+                    "calendar",
+                    "board",
+                    "view"
+                  ]
+                },
+                "effectiveVisibility": {
+                  "type": "string",
+                  "enum": [
+                    "public",
+                    "members",
+                    "dm",
+                    "private"
+                  ]
+                },
+                "tagIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "parentId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "degree": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "icon",
+                "kind",
+                "effectiveVisibility",
+                "tagIds",
+                "parentId",
+                "degree"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "relation",
+                    "field",
+                    "link",
+                    "map",
+                    "parent"
+                  ]
+                },
+                "source": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "inverseLabel": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "twoWay": {
+                  "type": "boolean"
+                },
+                "note": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "visibility": {
+                  "type": "string",
+                  "enum": [
+                    "public",
+                    "members",
+                    "dm"
+                  ],
+                  "nullable": true
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "source",
+                "target",
+                "label",
+                "inverseLabel",
+                "twoWay",
+                "note",
+                "visibility"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "color": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "color"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "nodes",
+          "edges",
+          "tags",
+          "truncated"
         ],
         "additionalProperties": false
       },

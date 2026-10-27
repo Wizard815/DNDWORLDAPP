@@ -15,6 +15,9 @@ import { IconPicker } from "./IconPicker.tsx";
 import { Posts } from "./Posts.tsx";
 import { TagChips } from "./TagChips.tsx";
 
+// cytoscape for the Info panel's local graph — loaded on first page view, then cached.
+const LocalGraph = lazy(() => import("./GraphView.tsx"));
+
 // Leaflet and the map editor are most of the bundle; only map pages need them.
 const MapView = lazy(() => import("./MapView.tsx").then((m) => ({ default: m.MapView })));
 
@@ -549,6 +552,10 @@ export function Backlinks({
       <TagChips nodeId={node.id} worldId={node.worldId} tags={node.tags} canEdit={node.canEdit} />
 
       <h2 className="mb-2 mt-6 text-xs font-medium uppercase tracking-wide text-fg-muted">Connections</h2>
+      <Suspense fallback={<div className="h-56 rounded-md border border-line" />}>
+        <LocalGraph worldId={node.worldId} focusId={node.id} compact />
+      </Suspense>
+      <div className="mb-3" />
       <Connections
         node={node}
         allNodes={allNodes}

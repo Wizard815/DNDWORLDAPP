@@ -36,6 +36,12 @@ export function tagsRouteFromPath(path: string): { tagId: string | null } | null
   return match === null ? null : { tagId: match[1] ?? null };
 }
 
+/** `/graph` → { focusId: null }, `/graph/<id>` → { focusId }, anything else → null. */
+export function graphRouteFromPath(path: string): { focusId: string | null } | null {
+  const match = /^\/graph(?:\/([a-z0-9]+))?\/?$/.exec(path);
+  return match === null ? null : { focusId: match[1] ?? null };
+}
+
 export function nodeIdFromPath(path: string): string | null {
   const match = /^\/n\/([a-z0-9]+)/.exec(path);
   return match?.[1] ?? null;

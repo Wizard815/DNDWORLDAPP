@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from "react";
 import type { MoveNodeInput, NodeDetail, NodeKind } from "@dndworldapp/schema";
 import { ApiError, api, setViewAsPlayer } from "./api.ts";
 import { AuthScreen } from "./components/Auth.tsx";
@@ -15,7 +15,7 @@ import { Removed } from "./components/Removed.tsx";
 import { TagsView } from "./components/TagsView.tsx";
 import { Templates } from "./components/Templates.tsx";
 import { Tokens } from "./components/Tokens.tsx";
-import { navigate, nodeIdFromPath, tagsRouteFromPath, usePath } from "./lib/nav.ts";
+import { graphRouteFromPath, navigate, nodeIdFromPath, tagsRouteFromPath, usePath } from "./lib/nav.ts";
 import { useLiveEvents } from "./lib/liveEvents.ts";
 import { useTheme } from "./lib/theme.ts";
 
@@ -107,6 +107,7 @@ export function App() {
 
   const activeId = nodeIdFromPath(path);
   const tagsRoute = tagsRouteFromPath(path);
+  const graphRoute = graphRouteFromPath(path);
 
   // The off-canvas sidebar on a phone closes itself once a page is picked.
   useEffect(() => {
@@ -126,7 +127,7 @@ export function App() {
   // back to their own dashboard by this effect (it runs regardless of which
   // branch below actually gets rendered).
   useEffect(() => {
-    if (shareToken === null && activeId === null && tagsRoute === null && world?.rootNodeId != null) {
+    if (shareToken === null && activeId === null && tagsRoute === null && graphRoute === null && world?.rootNodeId != null) {
       navigate(`/n/${world.rootNodeId}`);
     }
   }, [shareToken, activeId, world]);
@@ -136,6 +137,12 @@ export function App() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setSwitcherOpen(true);
+      }
+      // Ctrl+G: the graph, focused on the page you're on (or the whole world).
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "g") {
+        event.preventDefault();
+        const current = nodeIdFromPath(window.location.pathname);
+        navigate(current !== null ? `/graph/${current}` : "/graph");
       }
     }
     window.addEventListener("keydown", onKey);
@@ -279,6 +286,7 @@ export function App() {
           isGameMaster={isGameMaster}
           canCreate={canCreate}
           tagsActive={tagsRoute !== null}
+          graphActive={graphRoute !== null}
           viewAsPlayer={viewAsPlayer}
           onToggleViewAsPlayer={toggleViewAsPlayer}
           theme={theme}
@@ -292,7 +300,16 @@ export function App() {
           }}
         />
 
-        {tagsRoute !== null ? (
+        {graphRoute !== null ? (
+          <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-fg-muted">Loading graph…</div>}>
+            <GraphScreen
+              key={`${graphRoute.focusId ?? "world"}:${viewAsPlayer}`}
+              worldId={world.id}
+              focusId={graphRoute.focusId}
+              title={graphRoute.focusId !== null ? (nodes.find((n) => n.id === graphRoute.focusId)?.title ?? null) : null}
+            />
+          </Suspense>
+        ) : tagsRoute !== null ? (
           <TagsView worldId={world.id} selectedTagId={tagsRoute.tagId} isGameMaster={isGameMaster && !viewAsPlayer} />
         ) : node.data !== undefined ? (
           <>
@@ -394,6 +411,35 @@ export function App() {
             onClose={() => setSwitcherOpen(false)}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+// cytoscape is a few hundred KB; only the graph screen and the Info panel's local graph load it.
+const GraphView = lazy(() => import("./components/GraphView.tsx"));
+
+/** The global Graph screen (design §5), or one page's neighborhood when focused. */
+function GraphScreen({ worldId, focusId, title }: { worldId: string; focusId: string | null; title: string | null }) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col">
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-divider px-4 text-xs text-fg-muted md:px-8">
+        <span className="font-display text-sm font-semibold text-fg-strong">Graph</span>
+        {focusId !== null && (
+          <>
+            <span className="text-line-strong">/</span>
+            <button type="button" onClick={() => navigate(`/n/${focusId}`)} className="truncate hover:text-fg">
+              around {title ?? "this page"}
+            </button>
+            <button type="button" onClick={() => navigate("/graph")} className="ml-2 rounded px-1.5 py-0.5 hover:bg-hover hover:text-fg">
+              Whole world
+            </button>
+          </>
+        )}
+        <span className="ml-auto hidden text-fg-faint sm:inline">Click a page for details · double-click to open · Ctrl+G</span>
+      </header>
+      <div className="relative min-h-0 flex-1">
+        <GraphView worldId={worldId} focusId={focusId} initialDepth={focusId !== null ? 2 : 1} />
       </div>
     </div>
   );
