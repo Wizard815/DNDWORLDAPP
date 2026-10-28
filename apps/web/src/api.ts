@@ -160,11 +160,12 @@ export const api = {
   search: (worldId: string, q: string) =>
     request<{ hits: SearchHit[] }>(`/worlds/${worldId}/search?q=${encodeURIComponent(q)}`),
 
-  graph: (worldId: string, focus?: string, depth = 1) => {
+  graph: (worldId: string, focus?: string, depth = 1, tagHops = true) => {
     const params = new URLSearchParams();
     if (focus !== undefined) {
       params.set("focus", focus);
       params.set("depth", String(depth));
+      if (!tagHops) params.set("tags", "0");
     }
     const query = params.toString();
     return request<{ graph: GraphDto }>(`/worlds/${worldId}/graph${query.length > 0 ? `?${query}` : ""}`);

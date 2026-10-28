@@ -1,58 +1,75 @@
 import { useQuery } from "@tanstack/react-query";
 import cytoscape, { type Core, type ElementDefinition, type EventObject } from "cytoscape";
-import dagre from "cytoscape-dagre";
 import fcose from "cytoscape-fcose";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  TAG_COLORS,
-  iconSvgUrl,
-  imageIconUrl,
-  parseIconRef,
-  type GraphDto,
-  type GraphEdgeType,
-  type GraphNode,
-  type NodeKind,
-} from "@dndworldapp/schema";
+import { TAG_COLORS, type GraphDto, type GraphEdgeType, type GraphNode, type NodeKind } from "@dndworldapp/schema";
 import { api } from "../api.ts";
 import { KIND_GLYPH } from "../lib/kinds.ts";
 import { navigate } from "../lib/nav.ts";
 import { Glyph } from "./Glyph.tsx";
 
 cytoscape.use(fcose);
-cytoscape.use(dagre);
 
 /**
- * The graph (design doc §5): one component, two scopes — the whole world
- * (the Graph screen) or one page's neighborhood (the Info panel, and the
- * Graph screen when focused). The server has already removed everything the
- * viewer may not see (services/graph.ts); this only draws and filters.
+ * The note graph: pages as dots, wiki links as lines, and tags as dots of
+ * their own that every tagged page connects to — so pages that link to each
+ * other or share a tag cluster together. One component, two scopes: the whole
+ * world (the Graph screen) or one page's neighborhood (the Info panel, and
+ * the Graph screen when focused). The server has already removed everything
+ * the viewer may not see (services/graph.ts); this only draws and filters.
  *
- * One visual language everywhere: relations bold and colored by label with
- * arrowheads, link fields the same but dashed, wiki links thin and grey,
- * map pins dotted, folder structure faint. Node color is the page's first
- * tag (or its kind), node size its number of connections. DM-only things are
- * outlined in the secret color — only a DM's graph ever has any.
+ * Relations, link fields, map pins and folders are extra layers, off by
+ * default — family trees and org charts get their own views later.
  */
 
-export type GraphLayers = Record<GraphEdgeType, boolean>;
-export const DEFAULT_LAYERS: GraphLayers = { relation: true, field: true, link: true, map: false, parent: false };
+export interface GraphDisplay {
+  links: boolean;
+  tags: boolean;
+  orphans: boolean;
+  colorByTag: boolean;
+  relation: boolean;
+  field: boolean;
+  map: boolean;
+  parent: boolean;
+}
 
-const LAYER_LABEL: Record<GraphEdgeType, string> = {
-  relation: "Relations",
-  field: "Link fields",
-  link: "Links",
-  map: "On maps",
-  parent: "Folders",
+const DEFAULT_DISPLAY: GraphDisplay = {
+  links: true,
+  tags: true,
+  orphans: true,
+  colorByTag: true,
+  relation: false,
+  field: false,
+  map: false,
+  parent: false,
 };
 
-const KIND_COLOR: Record<NodeKind, (typeof TAG_COLORS)[number]> = {
-  document: "slate",
-  map: "green",
-  timeline: "amber",
-  calendar: "teal",
-  board: "indigo",
-  view: "violet",
-};
+const EXTRA_LAYERS: { key: Exclude<GraphEdgeType, "link">; label: string }[] = [
+  { key: "relation", label: "Relations" },
+  { key: "field", label: "Link fields" },
+  { key: "map", label: "Pins on maps" },
+  { key: "parent", label: "Folders" },
+];
+
+const DISPLAY_KEY = "dndworld.graph.display";
+
+function loadDisplay(): GraphDisplay {
+  try {
+    const raw = localStorage.getItem(DISPLAY_KEY);
+    if (raw !== null) return { ...DEFAULT_DISPLAY, ...(JSON.parse(raw) as Partial<GraphDisplay>) };
+  } catch {
+    // Storage blocked or bad JSON: defaults.
+  }
+  return DEFAULT_DISPLAY;
+}
+
+function saveDisplay(display: GraphDisplay): void {
+  try {
+    localStorage.setItem(DISPLAY_KEY, JSON.stringify(display));
+  } catch {
+    // Not worth surfacing.
+  }
+}
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
@@ -65,52 +82,30 @@ function labelColor(label: string): string {
   return cssVar(`--tag-${TAG_COLORS[hash % TAG_COLORS.length]}`);
 }
 
-/** A page icon as something cytoscape can paint inside a node: an image URL, the library SVG, or an emoji drawn into an SVG. */
-function iconImage(node: GraphNode): string {
-  const icon = node.icon ?? KIND_GLYPH[node.kind] ?? "📄";
-  const image = imageIconUrl(icon);
-  if (image !== null) return image;
-  const ref = parseIconRef(icon);
-  if (ref !== null) return iconSvgUrl(ref);
-  const safe = icon.replace(/[<>&"']/g, "");
-  return `data:image/svg+xml;utf8,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><text x="32" y="46" font-size="40" text-anchor="middle">${safe}</text></svg>`,
-  )}`;
-}
+const TAG_PREFIX = "tag:";
+const isTagId = (id: string) => id.startsWith(TAG_PREFIX);
+
+type Selection = { type: "page"; node: GraphNode } | { type: "tag"; id: string; name: string; color: string | null; count: number };
 
 function buildElements(
   data: GraphDto,
-  layers: GraphLayers,
+  display: GraphDisplay,
   tagFilter: Set<string>,
-  colorBy: "tag" | "kind",
   focusId: string | null,
+  depth: number,
+  compact: boolean,
 ): ElementDefinition[] {
-  const tagColor = new Map(data.tags.map((t) => [t.id, t.color]));
-  let nodes = data.nodes;
-  if (tagFilter.size > 0) nodes = nodes.filter((n) => n.id === focusId || n.tagIds.some((t) => tagFilter.has(t)));
-  const ids = new Set(nodes.map((n) => n.id));
-  const edges = data.edges.filter((e) => layers[e.type] && ids.has(e.source) && ids.has(e.target));
-  const maxDegree = Math.max(1, ...nodes.map((n) => n.degree));
+  const tagById = new Map(data.tags.map((t) => [t.id, t]));
+  let pages = data.nodes;
+  if (tagFilter.size > 0) pages = pages.filter((n) => n.id === focusId || n.tagIds.some((t) => tagFilter.has(t)));
+  const pageIds = new Set(pages.map((n) => n.id));
 
-  return [
-    ...nodes.map((n) => {
-      const firstTagColor = n.tagIds.map((t) => tagColor.get(t)).find((c) => c != null);
-      const color =
-        colorBy === "tag" && firstTagColor != null ? cssVar(`--tag-${firstTagColor}`) : cssVar(`--tag-${KIND_COLOR[n.kind] ?? "slate"}`);
-      return {
-        group: "nodes" as const,
-        data: {
-          id: n.id,
-          label: n.title,
-          color,
-          image: iconImage(n),
-          size: 26 + Math.round((Math.sqrt(n.degree) / Math.sqrt(maxDegree)) * 30),
-        },
-        classes: [n.effectiveVisibility === "dm" ? "dm" : "", n.id === focusId ? "focus" : ""].join(" "),
-      };
-    }),
-    ...edges.map((e) => ({
-      group: "edges" as const,
+  const edges: ElementDefinition[] = [];
+  for (const e of data.edges) {
+    const on = e.type === "link" ? display.links : display[e.type];
+    if (!on || !pageIds.has(e.source) || !pageIds.has(e.target)) continue;
+    edges.push({
+      group: "edges",
       data: {
         id: e.id,
         source: e.source,
@@ -120,13 +115,104 @@ function buildElements(
         raw: e,
       },
       classes: [e.type, e.twoWay ? "two-way" : "", e.visibility === "dm" ? "dm" : ""].join(" "),
-    })),
+    });
+  }
+
+  const tagCount = new Map<string, number>();
+  if (display.tags) {
+    for (const n of pages) {
+      for (const t of n.tagIds) {
+        if (!tagById.has(t)) continue;
+        tagCount.set(t, (tagCount.get(t) ?? 0) + 1);
+        edges.push({
+          group: "edges",
+          data: { id: `tagged:${n.id}:${t}`, source: n.id, target: `${TAG_PREFIX}${t}`, label: "", color: "" },
+          classes: "tagged",
+        });
+      }
+    }
+  }
+
+  // Focused: the server walked every kind of connection; keep only what the
+  // layers shown here reach within `depth` steps, so nothing floats in
+  // unexplained (a relation-only neighbor while Relations is off).
+  if (focusId !== null && pageIds.has(focusId)) {
+    const adjacency = new Map<string, string[]>();
+    for (const e of edges) {
+      if ((e.classes as string).startsWith("parent")) continue;
+      const { source, target } = e.data as { source: string; target: string };
+      adjacency.set(source, [...(adjacency.get(source) ?? []), target]);
+      adjacency.set(target, [...(adjacency.get(target) ?? []), source]);
+    }
+    const reached = new Set([focusId]);
+    let frontier = [focusId];
+    for (let step = 0; step < depth; step += 1) {
+      frontier = frontier.flatMap((id) => (adjacency.get(id) ?? []).filter((n) => !reached.has(n)));
+      for (const id of frontier) reached.add(id);
+    }
+    pages = pages.filter((n) => reached.has(n.id));
+    for (const id of [...tagCount.keys()]) if (!reached.has(`${TAG_PREFIX}${id}`)) tagCount.delete(id);
+    const kept = edges.filter((e) => {
+      const { source, target } = e.data as { source: string; target: string };
+      return reached.has(source) && reached.has(target);
+    });
+    edges.length = 0;
+    edges.push(...kept);
+    for (const id of tagCount.keys()) {
+      tagCount.set(id, edges.filter((e) => (e.data as { target: string }).target === `${TAG_PREFIX}${id}`).length);
+    }
+  }
+
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    if ((e.classes as string).startsWith("parent")) continue;
+    const { source, target } = e.data as { source: string; target: string };
+    degree.set(source, (degree.get(source) ?? 0) + 1);
+    degree.set(target, (degree.get(target) ?? 0) + 1);
+  }
+  if (!display.orphans) pages = pages.filter((n) => n.id === focusId || (degree.get(n.id) ?? 0) > 0);
+
+  const maxDegree = Math.max(1, ...degree.values());
+  const [minSize, spread] = compact ? [6, 12] : [8, 20];
+  const sizeFor = (d: number) => minSize + Math.round(Math.sqrt(d / maxDegree) * spread);
+  const plain = cssVar("--color-fg-muted");
+  const tagFallback = cssVar("--tag-teal");
+
+  return [
+    ...pages.map((n) => {
+      const firstTag = n.tagIds.map((t) => tagById.get(t)?.color).find((c) => c != null);
+      return {
+        group: "nodes" as const,
+        data: {
+          id: n.id,
+          label: n.title,
+          color: display.colorByTag && firstTag != null ? cssVar(`--tag-${firstTag}`) : plain,
+          size: sizeFor(degree.get(n.id) ?? 0),
+        },
+        classes: ["page", n.effectiveVisibility === "dm" ? "dm" : "", n.id === focusId ? "focus" : ""].join(" "),
+      };
+    }),
+    ...[...tagCount.entries()].map(([id, count]) => {
+      const tag = tagById.get(id)!;
+      return {
+        group: "nodes" as const,
+        data: {
+          id: `${TAG_PREFIX}${id}`,
+          label: `#${tag.name}`,
+          color: tag.color !== null ? cssVar(`--tag-${tag.color}`) : tagFallback,
+          size: sizeFor(count),
+          count,
+        },
+        classes: "tag",
+      };
+    }),
+    ...edges,
   ];
 }
 
 function stylesheet(compact: boolean): cytoscape.StylesheetJson {
-  const fg = cssVar("--color-fg-soft");
-  const faint = cssVar("--color-fg-faint");
+  const soft = cssVar("--color-fg-soft");
+  const strong = cssVar("--color-fg-strong");
   const line = cssVar("--color-line-strong");
   const secret = cssVar("--color-secret");
   const accent = cssVar("--color-accent");
@@ -138,88 +224,82 @@ function stylesheet(compact: boolean): cytoscape.StylesheetJson {
         width: "data(size)",
         height: "data(size)",
         "background-color": "data(color)",
-        "background-image": "data(image)",
-        "background-fit": "contain",
-        "background-clip": "node",
-        "background-width": "62%",
-        "background-height": "62%",
-        "border-width": 2,
-        "border-color": canvas,
-        label: compact ? "" : "data(label)",
-        color: fg,
+        "border-width": 0,
+        label: "data(label)",
+        color: soft,
         "font-family": "Inter Variable, sans-serif",
-        "font-size": 11,
+        "font-size": compact ? 9 : 10,
         "text-valign": "bottom",
-        "text-margin-y": 4,
-        "text-max-width": "120px",
+        "text-margin-y": 3,
+        "text-max-width": "140px",
         "text-wrap": "ellipsis",
-        "min-zoomed-font-size": 7,
+        // Labels fade out when zoomed far out, as in a note app's graph.
+        "min-zoomed-font-size": 8,
       },
     },
-    { selector: "node.dm", style: { "border-color": secret, "border-style": "dashed" } },
-    { selector: "node.focus", style: { "border-color": accent, "border-width": 3, label: "data(label)" } },
-    { selector: "node:selected", style: { "border-color": accent, "border-width": 3, label: "data(label)" } },
+    { selector: "node.tag", style: { shape: "ellipse", "font-style": "italic" } },
+    { selector: "node.dm", style: { "border-width": 1.5, "border-color": secret, "border-style": "dashed" } },
+    { selector: "node.focus", style: { "border-width": 2, "border-color": accent, label: "data(label)" } },
+    { selector: "node.hl", style: { label: "data(label)", color: strong, "z-index": 10 } },
+    { selector: "node:selected", style: { "border-width": 2, "border-color": accent, label: "data(label)" } },
     {
       selector: "edge",
-      style: { width: 1, "line-color": line, "curve-style": "bezier", opacity: 0.7, "target-arrow-shape": "none" },
+      style: { width: 1, "line-color": line, "curve-style": "straight", opacity: 0.5, "target-arrow-shape": "none" },
     },
+    { selector: "edge.tagged", style: { opacity: 0.3 } },
     {
       selector: "edge.relation, edge.field",
       style: {
-        width: 3,
+        width: 1.5,
         "line-color": "data(color)",
         "target-arrow-color": "data(color)",
         "source-arrow-color": "data(color)",
         "target-arrow-shape": "triangle",
-        "arrow-scale": 0.9,
-        opacity: 0.95,
-        label: "data(label)",
+        "arrow-scale": 0.7,
+        opacity: 0.8,
         "font-size": 9,
-        color: faint,
+        color: soft,
         "text-rotation": "autorotate",
         "text-background-color": canvas,
         "text-background-opacity": 0.85,
         "text-background-padding": "2px",
-        "min-zoomed-font-size": 10,
       },
     },
     { selector: "edge.field", style: { "line-style": "dashed" } },
     { selector: "edge.two-way", style: { "source-arrow-shape": "triangle" } },
     { selector: "edge.dm", style: { "line-color": secret, "target-arrow-color": secret, "source-arrow-color": secret } },
-    { selector: "edge.map", style: { "line-style": "dotted", width: 1.5 } },
-    { selector: "edge.parent", style: { opacity: 0.35, "curve-style": "straight", width: 1 } },
-    { selector: ".faded", style: { opacity: 0.18 } },
-    { selector: "edge.faded", style: { label: "" } },
+    { selector: "edge.map", style: { "line-style": "dotted" } },
+    { selector: "edge.parent", style: { opacity: 0.25 } },
+    { selector: "edge.hl", style: { opacity: 0.9, "line-color": accent, "z-index": 5 } },
+    { selector: "edge.hl.relation, edge.hl.field", style: { "line-color": "data(color)", label: "data(label)" } },
+    { selector: ".faded", style: { opacity: 0.1 } },
   ];
 }
 
-function runLayout(cy: Core, layout: "force" | "tree", animate: boolean): void {
+function runLayout(cy: Core, animate: boolean): void {
   if (cy.nodes().length === 0) return;
-  const options =
-    layout === "tree"
-      ? ({ name: "dagre", rankDir: "TB", nodeSep: 30, rankSep: 60, animate, fit: true, padding: 30 } as cytoscape.LayoutOptions)
-      : ({
-          name: "fcose",
-          quality: "default",
-          animate,
-          animationDuration: 400,
-          fit: true,
-          padding: 30,
-          nodeRepulsion: 9000,
-          idealEdgeLength: 90,
-          randomize: true,
-          // Unconnected pages are tiled beside the graph; leave room for their labels.
-          tilingPaddingVertical: 40,
-          tilingPaddingHorizontal: 70,
-        } as cytoscape.LayoutOptions);
   // Fitting a handful of nodes zooms far in; cap it so a small world reads at normal size.
   cy.one("layoutstop", () => {
-    if (cy.zoom() > 1.2) {
-      cy.zoom(1.2);
+    if (cy.zoom() > 1.4) {
+      cy.zoom(1.4);
       cy.center();
     }
   });
-  cy.layout(options).run();
+  cy.layout({
+    name: "fcose",
+    quality: "default",
+    animate,
+    animationDuration: 500,
+    fit: true,
+    padding: 30,
+    randomize: true,
+    nodeRepulsion: 9000,
+    idealEdgeLength: 80,
+    gravity: 0.3,
+    // Unconnected pages are tiled beside the graph; leave room for their labels.
+    tilingPaddingVertical: 30,
+    tilingPaddingHorizontal: 60,
+  } as cytoscape.LayoutOptions).run();
 }
 
 export function GraphView({
@@ -230,31 +310,39 @@ export function GraphView({
 }: {
   worldId: string;
   focusId?: string | null;
-  /** The Info panel's small local graph: no labels until hover, minimal controls. */
+  /** The Info panel's small local graph: smaller dots, minimal controls. */
   compact?: boolean;
   initialDepth?: number;
 }) {
   const [depth, setDepth] = useState(initialDepth);
-  const [layers, setLayers] = useState<GraphLayers>(DEFAULT_LAYERS);
+  const [display, setDisplayState] = useState<GraphDisplay>(loadDisplay);
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
-  const [colorBy, setColorBy] = useState<"tag" | "kind">("tag");
-  const [layout, setLayout] = useState<"force" | "tree">("force");
-  const [selected, setSelected] = useState<GraphNode | null>(null);
+  const [selected, setSelected] = useState<Selection | null>(null);
   const [hoverEdge, setHoverEdge] = useState<{ x: number; y: number; text: string; note: string | null } | null>(null);
   const [search, setSearch] = useState("");
+  const [layoutRun, setLayoutRun] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
 
+  const setDisplay = (patch: Partial<GraphDisplay>) =>
+    setDisplayState((prev) => {
+      const next = { ...prev, ...patch };
+      saveDisplay(next);
+      return next;
+    });
+
   const graph = useQuery({
-    queryKey: ["graph", worldId, focusId, focusId !== null ? depth : 0],
-    queryFn: () => api.graph(worldId, focusId ?? undefined, depth),
+    queryKey: ["graph", worldId, focusId, focusId !== null ? depth : 0, focusId !== null && display.tags],
+    queryFn: () => api.graph(worldId, focusId ?? undefined, depth, display.tags),
     placeholderData: (previous) => previous,
   });
   const data = graph.data?.graph;
   const nodesById = useMemo(() => new Map((data?.nodes ?? []).map((n) => [n.id, n])), [data]);
-  // Cytoscape's handlers are bound once; they read the current data through this.
-  const nodesByIdRef = useRef(nodesById);
-  nodesByIdRef.current = nodesById;
+  const tagsById = useMemo(() => new Map((data?.tags ?? []).map((t) => [t.id, t])), [data]);
+  // Cytoscape's handlers are bound once; they read the current data through these.
+  const lookup = useRef({ nodesById, tagsById, selectedId: null as string | null });
+  lookup.current.nodesById = nodesById;
+  lookup.current.tagsById = tagsById;
 
   // Create cytoscape once.
   useEffect(() => {
@@ -262,38 +350,64 @@ export function GraphView({
     const cy = cytoscape({
       container: containerRef.current,
       style: stylesheet(compact),
-      wheelSensitivity: 0.3,
       minZoom: 0.1,
       maxZoom: 4,
       boxSelectionEnabled: false,
     });
     cyRef.current = cy;
 
-    const focusOn = (id: string | null) => {
-      cy.elements().removeClass("faded");
-      if (id === null) return;
-      const node = cy.getElementById(id);
-      if (node.empty()) return;
-      cy.elements().not(node.closedNeighborhood()).addClass("faded");
+    /** Light up a node and its neighbors, fade the rest; null clears. */
+    const highlight = (id: string | null) => {
+      cy.batch(() => {
+        cy.elements().removeClass("faded hl");
+        if (id === null) return;
+        const node = cy.getElementById(id);
+        if (node.empty()) return;
+        const near = node.closedNeighborhood();
+        near.addClass("hl");
+        cy.elements().not(near).addClass("faded");
+      });
     };
+    cy.on("mouseover", "node", (e: EventObject) => highlight(e.target.id() as string));
+    cy.on("mouseout", "node", () => highlight(lookup.current.selectedId));
     cy.on("tap", "node", (e: EventObject) => {
       const id = e.target.id() as string;
-      setSelected(nodesByIdRef.current.get(id) ?? null);
-      focusOn(id);
+      lookup.current.selectedId = id;
+      if (isTagId(id)) {
+        const tag = lookup.current.tagsById.get(id.slice(TAG_PREFIX.length));
+        setSelected(
+          tag === undefined ? null : { type: "tag", id: tag.id, name: tag.name, color: tag.color, count: e.target.data("count") as number },
+        );
+      } else {
+        const node = lookup.current.nodesById.get(id);
+        setSelected(node === undefined ? null : { type: "page", node });
+      }
+      highlight(id);
     });
     cy.on("tap", (e: EventObject) => {
       if (e.target === cy) {
+        lookup.current.selectedId = null;
         setSelected(null);
-        focusOn(null);
+        highlight(null);
       }
     });
-    cy.on("dbltap", "node", (e: EventObject) => navigate(`/n/${e.target.id() as string}`));
+    cy.on("dbltap", "node", (e: EventObject) => {
+      const id = e.target.id() as string;
+      navigate(isTagId(id) ? `/tags/${id.slice(TAG_PREFIX.length)}` : `/n/${id}`);
+    });
     cy.on("mouseover", "edge", (e: EventObject) => {
-      const raw = e.target.data("raw") as GraphDto["edges"][number];
       const pos = e.renderedPosition ?? { x: 0, y: 0 };
-      const source = nodesByIdRef.current.get(raw.source)?.title ?? "";
-      const target = nodesByIdRef.current.get(raw.target)?.title ?? "";
-      const verb =
+      const { nodesById: pages, tagsById: tags } = lookup.current;
+      if (e.target.hasClass("tagged")) {
+        const page = pages.get(e.target.data("source") as string)?.title ?? "";
+        const tag = tags.get((e.target.data("target") as string).slice(TAG_PREFIX.length))?.name ?? "";
+        setHoverEdge({ x: pos.x, y: pos.y, text: `${page} is tagged #${tag}`, note: null });
+        return;
+      }
+      const raw = e.target.data("raw") as GraphDto["edges"][number];
+      const source = pages.get(raw.source)?.title ?? "";
+      const target = pages.get(raw.target)?.title ?? "";
+      const text =
         raw.type === "relation" || raw.type === "field"
           ? `${source} ${raw.twoWay ? "↔" : "→"} ${raw.label ?? ""} ${target}${raw.inverseLabel !== null ? ` (${target} ${raw.inverseLabel} ${source})` : ""}`
           : raw.type === "link"
@@ -301,7 +415,7 @@ export function GraphView({
             : raw.type === "map"
               ? `${target} is on ${source}${raw.label !== null ? ` (${raw.label})` : ""}`
               : `${target} is inside ${source}`;
-      setHoverEdge({ x: pos.x, y: pos.y, text: verb, note: raw.note });
+      setHoverEdge({ x: pos.x, y: pos.y, text, note: raw.note });
     });
     cy.on("mouseout", "edge", () => setHoverEdge(null));
     return () => {
@@ -315,25 +429,27 @@ export function GraphView({
     const cy = cyRef.current;
     if (cy === null || data === undefined) return;
     cy.elements().remove();
-    cy.add(buildElements(data, layers, tagFilter, colorBy, focusId));
+    cy.add(buildElements(data, display, tagFilter, focusId, depth, compact));
     cy.style(stylesheet(compact));
-    runLayout(cy, layout, !compact);
+    runLayout(cy, !compact);
+    lookup.current.selectedId = null;
     setSelected(null);
-  }, [data, layers, tagFilter, colorBy, layout, focusId, compact]);
+  }, [data, display, tagFilter, focusId, depth, compact, layoutRun]);
 
   const jumpTo = (query: string) => {
     const cy = cyRef.current;
     if (cy === null) return;
-    const needle = query.trim().toLowerCase();
-    const match = (data?.nodes ?? []).find((n) => n.title.toLowerCase().includes(needle));
-    if (match === undefined) return;
-    const node = cy.getElementById(match.id);
+    const needle = query.trim().toLowerCase().replace(/^#/, "");
+    if (needle.length === 0) return;
+    const node = cy
+      .nodes()
+      .filter((n) => (n.data("label") as string).toLowerCase().replace(/^#/, "").includes(needle))
+      .first();
     if (node.empty()) return;
     cy.animate({ center: { eles: node }, zoom: Math.max(cy.zoom(), 1.2) }, { duration: 300 });
     node.emit("tap");
   };
 
-  const toggleLayer = (type: GraphEdgeType) => setLayers((prev) => ({ ...prev, [type]: !prev[type] }));
   const toggleTag = (id: string) =>
     setTagFilter((prev) => {
       const next = new Set(prev);
@@ -342,18 +458,25 @@ export function GraphView({
       return next;
     });
 
-  const empty = data !== undefined && data.nodes.length <= (focusId !== null ? 1 : 0);
+  const empty = data !== undefined && data.nodes.length <= (focusId !== null ? 1 : 0) && (data.tags.length === 0 || !display.tags);
   const button = "rounded px-2 py-1 text-xs text-fg-soft hover:bg-press";
+  const heading = "mb-1 block text-[10px] uppercase tracking-wide text-fg-faint";
+  const check = (key: keyof GraphDisplay, label: string, hint?: string) => (
+    <label className="flex cursor-pointer items-center gap-2 py-0.5 text-fg-soft" title={hint}>
+      <input type="checkbox" checked={display[key]} onChange={() => setDisplay({ [key]: !display[key] })} className="accent-accent" />
+      {label}
+    </label>
+  );
 
   return (
     <div className={`relative overflow-hidden bg-canvas ${compact ? "h-56 rounded-md border border-line" : "h-full w-full"}`}>
       {/* Inline, not Tailwind: cytoscape injects an unlayered `position: relative` that beats utility classes. */}
-      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} aria-label="Graph of connected pages" role="img" />
+      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} aria-label="Graph of linked pages and tags" role="img" />
 
       {graph.isLoading && <p className="absolute inset-0 flex items-center justify-center text-xs text-fg-muted">Loading graph…</p>}
       {empty && (
         <p className="pointer-events-none absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-fg-muted">
-          {focusId !== null ? "No connections yet — add a relation or link a page." : "Nothing to draw yet."}
+          {focusId !== null ? "Nothing connected yet — link a page with [[ ]] or add a #tag." : "Nothing to draw yet."}
         </p>
       )}
 
@@ -391,25 +514,22 @@ export function GraphView({
               onKeyDown={(e) => {
                 if (e.key === "Enter") jumpTo(search);
               }}
-              placeholder="Find a page…"
-              aria-label="Find a page in the graph"
-              className="w-36 rounded border border-line bg-canvas px-2 py-1 text-xs text-fg outline-none placeholder:text-fg-faint focus:border-line-strong"
+              placeholder="Find a page or #tag…"
+              aria-label="Find a page or tag in the graph"
+              className="w-40 rounded border border-line bg-canvas px-2 py-1 text-xs text-fg outline-none placeholder:text-fg-faint focus:border-line-strong"
             />
-            <button type="button" onClick={() => setLayout(layout === "force" ? "tree" : "force")} className={button} title="Switch layout">
-              {layout === "force" ? "⟡ Force" : "⊤ Tree"}
-            </button>
             <button type="button" onClick={() => cyRef.current?.fit(undefined, 30)} className={button} title="Fit everything in view">
               ⤢ Fit
             </button>
-            <button type="button" onClick={() => setColorBy(colorBy === "tag" ? "kind" : "tag")} className={button} title="What node color means">
-              ● By {colorBy}
+            <button type="button" onClick={() => setLayoutRun((n) => n + 1)} className={button} title="Lay the graph out again">
+              ⟳ Rearrange
             </button>
           </div>
 
-          <div className="absolute bottom-3 left-3 z-10 max-h-[60%] w-56 overflow-y-auto rounded-md border border-line bg-surface/95 p-3 text-xs shadow-lg">
+          <div className="absolute bottom-3 left-3 z-10 max-h-[70%] w-56 overflow-y-auto rounded-md border border-line bg-surface/95 p-3 text-xs shadow-lg">
             {focusId !== null && (
               <div className="mb-3">
-                <span className="mb-1 block text-[10px] uppercase tracking-wide text-fg-faint">Depth</span>
+                <span className={heading}>Steps out</span>
                 <div className="flex gap-1">
                   {[1, 2, 3].map((d) => (
                     <button
@@ -425,17 +545,24 @@ export function GraphView({
                 </div>
               </div>
             )}
-            <span className="mb-1 block text-[10px] uppercase tracking-wide text-fg-faint">Layers</span>
-            {(Object.keys(LAYER_LABEL) as GraphEdgeType[]).map((type) => (
-              <label key={type} className="flex cursor-pointer items-center gap-2 py-0.5 text-fg-soft">
-                <input type="checkbox" checked={layers[type]} onChange={() => toggleLayer(type)} className="accent-accent" />
-                <LayerSwatch type={type} />
-                {LAYER_LABEL[type]}
-              </label>
-            ))}
+            <span className={heading}>Show</span>
+            {check("links", "Links", "A line for each [[link]] between two pages")}
+            {check("tags", "Tags", "Each #tag as its own dot, joined to every page that has it")}
+            {check("orphans", "Unconnected pages", "Pages with no links or tags")}
+            {check("colorByTag", "Color pages by tag", "A page takes its first tag's color; untagged pages stay grey")}
+            <details className="mt-2">
+              <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wide text-fg-faint hover:text-fg-muted">
+                More connections
+              </summary>
+              <div className="mt-1">
+                {EXTRA_LAYERS.map(({ key, label }) => (
+                  <span key={key}>{check(key, label)}</span>
+                ))}
+              </div>
+            </details>
             {(data?.tags.length ?? 0) > 0 && (
               <>
-                <span className="mb-1 mt-3 block text-[10px] uppercase tracking-wide text-fg-faint">Only pages tagged</span>
+                <span className={`${heading} mt-3`}>Only pages tagged</span>
                 <div className="flex flex-wrap gap-1">
                   {data!.tags.map((t) => (
                     <button
@@ -461,42 +588,25 @@ export function GraphView({
 
           {selected !== null && (
             <div className="absolute bottom-3 right-3 z-10 w-64 rounded-md border border-line bg-surface p-3 text-sm shadow-pop">
-              <div className="mb-1 flex items-center gap-2">
-                <Glyph icon={selected.icon ?? KIND_GLYPH[selected.kind] ?? "📄"} />
-                <span className="truncate font-medium text-fg-strong">{selected.title}</span>
-              </div>
-              <p className="mb-2 text-[11px] text-fg-muted">
-                {selected.kind} · {selected.degree} connection{selected.degree === 1 ? "" : "s"}
-                {selected.effectiveVisibility === "dm" && <span className="text-secret"> · DM only</span>}
-              </p>
-              {selected.tagIds.length > 0 && (
-                <p className="mb-2 flex flex-wrap gap-1 text-[10px]">
-                  {selected.tagIds.map((id) => {
-                    const tag = data?.tags.find((t) => t.id === id);
-                    return tag === undefined ? null : (
-                      <span key={id} style={tag.color !== null ? { color: `var(--tag-${tag.color})` } : undefined}>
-                        #{tag.name}
-                      </span>
-                    );
-                  })}
-                </p>
+              {selected.type === "page" ? (
+                <PageCard node={selected.node} tagsById={tagsById} />
+              ) : (
+                <>
+                  <p className="mb-1 truncate font-medium" style={selected.color !== null ? { color: `var(--tag-${selected.color})` } : undefined}>
+                    #{selected.name}
+                  </p>
+                  <p className="mb-2 text-[11px] text-fg-muted">
+                    Tag · {selected.count} page{selected.count === 1 ? "" : "s"} here
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/tags/${selected.id}`)}
+                    className="rounded bg-accent px-2 py-1 text-xs text-on-accent hover:bg-accent-hover"
+                  >
+                    Open tag
+                  </button>
+                </>
               )}
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => navigate(`/n/${selected.id}`)}
-                  className="rounded bg-accent px-2 py-1 text-xs text-on-accent hover:bg-accent-hover"
-                >
-                  Open page
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/graph/${selected.id}`)}
-                  className="rounded border border-line px-2 py-1 text-xs text-fg-soft hover:bg-press"
-                >
-                  Focus here
-                </button>
-              </div>
             </div>
           )}
         </>
@@ -515,20 +625,48 @@ export function GraphView({
   );
 }
 
-/** The legend: each layer's line as the graph draws it. */
-function LayerSwatch({ type }: { type: GraphEdgeType }) {
-  const style =
-    type === "relation"
-      ? "border-t-[3px] border-solid"
-      : type === "field"
-        ? "border-t-[3px] border-dashed"
-        : type === "map"
-          ? "border-t-2 border-dotted"
-          : type === "parent"
-            ? "border-t border-solid opacity-40"
-            : "border-t border-solid";
-  const color = type === "relation" || type === "field" ? "var(--tag-indigo)" : "var(--color-line-strong)";
-  return <span aria-hidden="true" className={`inline-block w-5 ${style}`} style={{ borderColor: color }} />;
+function PageCard({ node, tagsById }: { node: GraphNode; tagsById: Map<string, GraphDto["tags"][number]> }) {
+  const kind: NodeKind = node.kind;
+  return (
+    <>
+      <div className="mb-1 flex items-center gap-2">
+        <Glyph icon={node.icon ?? KIND_GLYPH[kind] ?? "📄"} />
+        <span className="truncate font-medium text-fg-strong">{node.title}</span>
+      </div>
+      <p className="mb-2 text-[11px] text-fg-muted">
+        {kind} · {node.degree} connection{node.degree === 1 ? "" : "s"}
+        {node.effectiveVisibility === "dm" && <span className="text-secret"> · DM only</span>}
+      </p>
+      {node.tagIds.length > 0 && (
+        <p className="mb-2 flex flex-wrap gap-1 text-[10px]">
+          {node.tagIds.map((id) => {
+            const tag = tagsById.get(id);
+            return tag === undefined ? null : (
+              <span key={id} style={tag.color !== null ? { color: `var(--tag-${tag.color})` } : undefined}>
+                #{tag.name}
+              </span>
+            );
+          })}
+        </p>
+      )}
+      <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={() => navigate(`/n/${node.id}`)}
+          className="rounded bg-accent px-2 py-1 text-xs text-on-accent hover:bg-accent-hover"
+        >
+          Open page
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate(`/graph/${node.id}`)}
+          className="rounded border border-line px-2 py-1 text-xs text-fg-soft hover:bg-press"
+        >
+          Focus here
+        </button>
+      </div>
+    </>
+  );
 }
 
 export default GraphView;

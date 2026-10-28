@@ -826,6 +826,12 @@ const paths: Json = {
         pathParam("worldId", "World id"),
         { name: "focus", in: "query", schema: { type: "string" }, description: "Node id to center a neighborhood on." },
         { name: "depth", in: "query", schema: { type: "integer", minimum: 1, maximum: 3, default: 1 }, description: "Hops from `focus`." },
+        {
+          name: "tags",
+          in: "query",
+          schema: { type: "string", enum: ["0", "1"], default: "1" },
+          description: "With `focus`: `1` counts a shared tag as a step (page → #tag → page), `0` walks edges only.",
+        },
       ],
       responses: { 200: ok(obj({ graph: GraphDto }, ["graph"])), ...ERRORS },
     },

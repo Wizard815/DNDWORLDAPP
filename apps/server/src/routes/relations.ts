@@ -66,10 +66,10 @@ export async function relationRoutes(app: FastifyInstance): Promise<void> {
     return { connections: connectionsFor(request.params.nodeId, viewer) };
   });
 
-  /** The graph (design §4): the whole visible world, or with ?focus=<id>&depth=1..3 just that page's neighborhood. */
+  /** The graph (design §4): the whole visible world, or with ?focus=<id>&depth=1..3[&tags=0] just that page's neighborhood. */
   app.get<{ Params: WorldParams }>("/api/v1/worlds/:worldId/graph", async (request) => {
     const viewer = viewerForWorld(request, request.params.worldId);
     const query = graphQuerySchema.parse(request.query ?? {});
-    return { graph: worldGraph(request.params.worldId, viewer, query.focus, query.depth) };
+    return { graph: worldGraph(request.params.worldId, viewer, query.focus, query.depth, query.tags) };
   });
 }

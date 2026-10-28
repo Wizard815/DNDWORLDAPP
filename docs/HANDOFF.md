@@ -61,7 +61,7 @@ planned — see §9.4.
 Verified by:
 - `npm test` — 36 unit tests (fractional indexing, wiki-link parsing, secret blocks, and
   the P4.3 marker-points parser). All pass.
-- `npm run smoke` — 459 end-to-end API checks against a running server, run against an
+- `npm run smoke` — 463 end-to-end API checks against a running server, run against an
   empty data dir. All pass — includes the `== templates & typed fields ==` section added
   for P3 (see §7.7), the `== maps ==` section added for P4.1 (see §7.8) extended with the
   P4.3 polygon/region block and its DM-leak assertion, a `== party/army tokens (P4.5) ==`
@@ -1695,15 +1695,24 @@ focus returns an empty graph (no 404, so the endpoint can't probe ids). Over
 response are only those on returned nodes. Smoke: `== graph ==` (player never sees a DM
 page, DM relation, DM field value, secret-block link, or fogged pin).
 
-Client: `components/GraphView.tsx` (cytoscape.js + fcose/dagre, lazy-loaded) is one
-component in two scopes — compact in the Info panel above Connections (depth 1/2/3, ⤢
-opens the full screen) and the `/graph[/<id>]` screen (sidebar "Graph", Ctrl+G). Full
-screen: find a page, Force/Tree layouts, Fit, color by tag or kind, edge layers
-(relations, link fields, links on; maps, folders off), "only pages tagged" filter, click
-for a card (open / focus here), double-click to open, edge hover explains the edge.
-Relations are bold with arrows and colored by label; link fields the same but dashed;
-links thin grey; DM-only things outlined in the secret color. `["graph"]` queries are
-invalidated by `tree.changed` and `node.changed`.
+Focus walks shared tags too unless `tags=0`: page → #tag is one step, #tag → another
+page with it the next (tags aren't graph nodes server-side; the BFS uses `#<tagId>`
+waypoints and drops them from the result).
+
+Client: `components/GraphView.tsx` (cytoscape.js + fcose, lazy-loaded) is a **note
+graph**, Obsidian-style: pages are plain dots sized by connections, `[[links]]` are thin
+lines, and each tag is its own dot joined to every page that has it, so pages that link
+or share tags cluster. Pages take their first tag's color (toggle). Hover a dot to light
+up its neighbors; click for a card (open / focus here; a tag opens `/tags/<id>`);
+double-click to open. "Show": Links, Tags, Unconnected pages, Color by tag; "More
+connections" (off by default): Relations, Link fields, Pins on maps, Folders — named,
+directional relations belong to the family-tree / org-chart views planned later, not
+here. Display choices persist per browser (`localStorage`). When focused, the client
+re-walks `depth` steps over only the layers shown, so a page reachable only through a
+hidden layer doesn't float in unexplained. Two scopes: compact in the Info panel above
+Connections (steps 1/2/3, ⤢ opens the full screen) and `/graph[/<id>]` (sidebar
+"Graph", Ctrl+G). `["graph"]` queries are invalidated by `tree.changed` and
+`node.changed`.
 
 Gotcha: cytoscape injects an unlayered `.__________cytoscape_container { position:
 relative }` rule that beats Tailwind v4's layered utilities, so the container's

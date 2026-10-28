@@ -15,6 +15,14 @@ is not kept here — `git log` and HANDOFF have it.
    icons. Not started; ask first.
 3. P3 query views, P5 calendars/timelines, P6 play mode, P7 hardening — unchanged.
 
+## Just done (2026-10-28) — the graph is a note graph
+
+Per the owner: the graph is for notes and tags, Obsidian-style — pages as dots,
+`[[links]]` as lines, each tag a dot joined to its pages; hover lights up neighbors.
+Relations, link fields, map pins and folders moved under "More connections", off by
+default. Family trees and org charts are separate views, still to design. The local
+graph now walks shared tags (`?tags=0` to opt out). HANDOFF §7.17. 4 more smoke checks.
+
 ## Just done (2026-10-27, night) — the graph (design §4–5)
 
 `GET /worlds/{id}/graph` returns every page the viewer can read and how they connect —

@@ -22,7 +22,9 @@ import { visibleRelationsSql } from "./relations.ts";
  * With `focus`, only pages within `depth` steps of that page are returned,
  * walking every edge kind except parent/child (folder siblings aren't
  * "connected" in the sense the local graph means); parent edges between the
- * pages that made it in are still included, for the structure layer.
+ * pages that made it in are still included, for the structure layer. With
+ * `tagHops`, a tag is a stop on the way: page → #tag is one step and #tag →
+ * another page with it is the next, as in a note graph that draws tags.
  */
 
 interface NodeRowLite {
@@ -34,7 +36,7 @@ interface NodeRowLite {
   parent_id: string | null;
 }
 
-export function worldGraph(worldId: string, viewer: Viewer, focus?: string, depth = 1): GraphDto {
+export function worldGraph(worldId: string, viewer: Viewer, focus?: string, depth = 1, tagHops = true): GraphDto {
   const vis = readableNodeSql("n", viewer);
   const rows = db
     .prepare(
@@ -145,13 +147,25 @@ export function worldGraph(worldId: string, viewer: Viewer, focus?: string, dept
     }
   }
 
+  const tagRows = db
+    .prepare("SELECT nt.node_id, nt.tag_id FROM node_tags nt JOIN tags t ON t.id = nt.tag_id WHERE t.world_id = ?")
+    .all(worldId) as { node_id: string; tag_id: string }[];
+
   let keep: Set<string> = visible;
   if (focus !== undefined && visible.has(focus)) {
     const adjacency = new Map<string, string[]>();
+    const join = (a: string, b: string) => {
+      adjacency.set(a, [...(adjacency.get(a) ?? []), b]);
+      adjacency.set(b, [...(adjacency.get(b) ?? []), a]);
+    };
     for (const e of edges) {
-      if (e.type === "parent") continue;
-      adjacency.set(e.source, [...(adjacency.get(e.source) ?? []), e.target]);
-      adjacency.set(e.target, [...(adjacency.get(e.target) ?? []), e.source]);
+      if (e.type !== "parent") join(e.source, e.target);
+    }
+    // Tags as waypoints, keyed so they can never collide with a page id.
+    if (tagHops) {
+      for (const t of tagRows) {
+        if (visible.has(t.node_id)) join(t.node_id, `#${t.tag_id}`);
+      }
     }
     keep = new Set([focus]);
     let frontier = [focus];
@@ -167,6 +181,7 @@ export function worldGraph(worldId: string, viewer: Viewer, focus?: string, dept
       }
       frontier = next;
     }
+    keep = new Set([...keep].filter((id) => !id.startsWith("#")));
   } else if (focus !== undefined) {
     keep = new Set();
   }
@@ -184,9 +199,6 @@ export function worldGraph(worldId: string, viewer: Viewer, focus?: string, dept
     keep = new Set([...keep].sort((a, b) => (degree.get(b) ?? 0) - (degree.get(a) ?? 0)).slice(0, GRAPH_MAX_NODES));
   }
 
-  const tagRows = db
-    .prepare("SELECT nt.node_id, nt.tag_id FROM node_tags nt JOIN tags t ON t.id = nt.tag_id WHERE t.world_id = ?")
-    .all(worldId) as { node_id: string; tag_id: string }[];
   const tagsByNode = new Map<string, string[]>();
   for (const t of tagRows) {
     if (keep.has(t.node_id)) tagsByNode.set(t.node_id, [...(tagsByNode.get(t.node_id) ?? []), t.tag_id]);

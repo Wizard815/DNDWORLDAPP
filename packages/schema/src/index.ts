@@ -1125,6 +1125,8 @@ export const graphQuerySchema = z.object({
   /** Local graph: only pages within `depth` steps of this one. */
   focus: z.string().optional(),
   depth: z.coerce.number().int().min(1).max(3).default(1),
+  /** With `focus`: shared tags count as steps (page → #tag → page). `0` to walk edges only. */
+  tags: z.enum(["0", "1"]).default("1").transform((v) => v === "1"),
 });
 
 // ---------------------------------------------------------------------------

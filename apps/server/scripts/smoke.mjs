@@ -2214,6 +2214,18 @@ check("LEAK: focusing a hidden page returns nothing", hiddenFocus.nodes.length =
 const badDepth = await player("GET", `/worlds/${worldId}/graph?focus=${r_mira.id}&depth=9`);
 check("depth is capped at 3", badDepth.status === 400, badDepth.status);
 
+// Shared tags are a step in the local graph: page → #tag → page.
+await dm("PUT", `/nodes/${g_island.id}/tags`, { tags: ["graph-shared"] });
+await dm("PUT", `/nodes/${r_cabal.id}/tags`, { tags: ["graph-shared"] });
+await dm("PUT", `/nodes/${r_mira.id}/tags`, { tags: ["graph-shared"] });
+const viaTag1 = (await player("GET", `/worlds/${worldId}/graph?focus=${r_mira.id}&depth=1`)).body.graph;
+check("depth 1 stops at the tag, not the pages behind it", !viaTag1.nodes.some((n) => n.id === g_island.id), viaTag1.nodes.map((n) => n.title));
+const viaTag2 = (await player("GET", `/worlds/${worldId}/graph?focus=${r_mira.id}&depth=2`)).body.graph;
+check("depth 2 reaches a page that only shares a tag", viaTag2.nodes.some((n) => n.id === g_island.id), viaTag2.nodes.map((n) => n.title));
+check("LEAK: a hidden page sharing the tag is still not in a player's graph", !viaTag2.nodes.some((n) => n.id === r_cabal.id));
+const noTagHops = (await player("GET", `/worlds/${worldId}/graph?focus=${r_mira.id}&depth=2&tags=0`)).body.graph;
+check("tags=0 walks edges only", !noTagHops.nodes.some((n) => n.id === g_island.id), noTagHops.nodes.map((n) => n.title));
+
 await dm("DELETE", `/markers/${g_pin.id}`);
 await dm("DELETE", `/markers/${g_secretPin.id}`);
 
