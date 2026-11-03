@@ -1,0 +1,36 @@
+{
+  "name": "@dndworldapp/mobile",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/App.tsx",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "build:android": "expo build:android",
+    "build:ios": "expo build:ios",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dndworldapp/dnd-client": "*",
+    "@dndworldapp/schema": "*",
+    "expo": "~51.0.0",
+    "expo-secure-store": "~13.0.0",
+    "expo-status-bar": "~1.12.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-native": "0.74.0",
+    "react-native-web": "~0.19.6",
+    "@react-navigation/native": "^6.1.9",
+    "@react-navigation/native-stack": "^6.9.17",
+    "expo-av": "~14.0.0",
+    "expo-image-picker": "~15.0.0",
+    "expo-camera": "~15.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@types/react": "~18.2.45",
+    "typescript": "^5.1.3"
+  }
+}

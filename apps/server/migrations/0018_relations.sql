@@ -10,7 +10,7 @@
 -- both pages it joins. Relations die with either page (hard delete); an
 -- archived or trashed page just stops showing them.
 
-CREATE TABLE relations (
+CREATE TABLE IF NOT EXISTS relations (
   id             TEXT PRIMARY KEY,
   world_id       TEXT NOT NULL REFERENCES worlds (id) ON DELETE CASCADE,
   source_node_id TEXT NOT NULL REFERENCES nodes (id) ON DELETE CASCADE,
@@ -25,6 +25,6 @@ CREATE TABLE relations (
   created_at     INTEGER NOT NULL,
   updated_at     INTEGER NOT NULL
 );
-CREATE INDEX relations_source_idx ON relations (source_node_id);
-CREATE INDEX relations_target_idx ON relations (target_node_id);
-CREATE INDEX relations_label_idx ON relations (world_id, label);
+CREATE INDEX IF NOT EXISTS relations_source_idx ON relations (source_node_id);
+CREATE INDEX IF NOT EXISTS relations_target_idx ON relations (target_node_id);
+CREATE INDEX IF NOT EXISTS relations_label_idx ON relations (world_id, label);
